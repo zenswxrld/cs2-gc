@@ -1,6 +1,6 @@
 # cs2-gc
 
-A separate CS2 port of [zenswxrld/Test](https://github.com/zenswxrld/Test), intended
+A separate CS2 port of [zenswxrld/CSOffline](https://github.com/zenswxrld/CSOffline), intended
 to bring its local inventory, standard case opening, progression, rewards,
 career tracking and bot features to CS2.
 

@@ -233,6 +233,37 @@ std::optional<SoMultipleObjects> DecodeSoMultipleObjects(std::span<const std::ui
     return result;
 }
 
+std::optional<RedeemRequest> DecodeRedeemRequest(std::span<const std::uint8_t> body)
+{
+    RedeemRequest request;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+    {
+        if (f.number == 1 && !U32(f, request.campaignId))
+            return std::nullopt;
+        if (f.number == 2 && !U32(f, request.redeemId))
+            return std::nullopt;
+        if (f.number == 3 && !U32(f, request.redeemableBalance))
+            return std::nullopt;
+        if (f.number == 4 && !U32(f, request.expectedCost))
+            return std::nullopt;
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    return request;
+}
+
+std::vector<std::uint8_t> EncodeSoSingleObject(const SoSingleObject &object)
+{
+    PbWriter w;
+    w.Varint(2, static_cast<std::uint64_t>(static_cast<std::int64_t>(object.typeId)));
+    w.Bytes(3, object.data);
+    w.Fixed64(4, object.version);
+    w.Message(5, OwnerWriter(object.owner));
+    return w.bytes();
+}
+
 std::optional<AdjustEquipSlots> DecodeAdjustEquipSlots(std::span<const std::uint8_t> body)
 {
     AdjustEquipSlots result;

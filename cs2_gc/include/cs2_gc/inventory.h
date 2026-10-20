@@ -18,6 +18,8 @@ struct InventoryItem
     std::uint32_t seed{};
     bool statTrak{};
     std::uint32_t rarity{}; // rarities value from the schema; zero leaves it to the client
+    std::uint32_t stickerKit{}; // for a sticker (or graffiti) item: the sticker kit index; zero otherwise
+    std::uint32_t keychain{};   // for a charm item: the keychain index; zero otherwise
 };
 
 // Local, in-memory inventory. Persistence and client sync are not wired yet.

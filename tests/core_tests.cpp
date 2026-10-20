@@ -1,3 +1,4 @@
+#include "cs2_gc/armory.h"
 #include "cs2_gc/armory_catalog.h"
 #include "cs2_gc/case_opening.h"
 #include "cs2_gc/econ_item.h"
@@ -146,7 +147,7 @@ void Progression()
     Check(profile.level == 6, "zero level threshold is normalized");
 }
 
-void Armory()
+void ArmoryCatalogueTest()
 {
     std::vector<ArmoryGood> goods;
     // Synthetic IDs; these fixtures are not an item catalogue to install.
@@ -1469,6 +1470,259 @@ void LoadoutAndPurchases()
     Check(gc.PatchFailures() == 0, "no patch failures");
 }
 
+constexpr const char *ArmoryFixture = R"("items_game"
+{
+    "rarities" { "common" { "value" "1" } "uncommon" { "value" "2" } "rare" { "value" "3" } "mythical" { "value" "4" }
+                 "legendary" { "value" "5" } "ancient" { "value" "6" } }
+    "prefabs"
+    {
+        "weapon_case_base" { }
+        "weapon_case" { "prefab" "weapon_case_base" "associated_item" "50" }
+        "rifle" { "item_rarity" "uncommon" }
+    }
+    "items"
+    {
+        "50" { "name" "the_key" }
+        "60" { "name" "the_case" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
+        "7" { "name" "weapon_rifle" "prefab" "rifle" }
+        "1209" { "name" "sticker" }
+        "1355" { "name" "keychain" }
+    }
+    "paint_kits" { "10" { "name" "k_a" } "11" { "name" "k_b" } }
+    "sticker_kits" { "300" { "name" "stk_a" } "301" { "name" "stk_b" } }
+    "keychain_definitions" { "17" { "name" "kc_a" } }
+    "client_loot_lists"
+    {
+        "set_test" { "set_test_uncommon" "1" "set_test_rare" "1" }
+        "set_test_uncommon" { "[k_a]weapon_rifle" "1" }
+        "set_test_rare" { "[k_b]weapon_rifle" "1" }
+        "stickers_test" { "stickers_test_rare" "1" }
+        "stickers_test_rare" { "[stk_a]sticker" "1" "[stk_b]sticker" "1" }
+        "kc_test" { "kc_test_rare" "1" }
+        "kc_test_rare" { "[kc_a]keychain" "1" }
+    }
+    "seasonaloperations"
+    {
+        "11"
+        {
+            "redeemable_goods" "xpshop"
+            "operational_point_redeemable" { "points" "4" "item_name" "lootlist:set_test" }
+            "operational_point_redeemable" { "points" "2" "item_name" "the_case" }
+            "operational_point_redeemable" { "points" "1" "item_name" "lootlist:stickers_test" }
+            "operational_point_redeemable" { "points" "3" "item_name" "lootlist:kc_test" }
+            "operational_point_redeemable" { "points" "5" "item_name" "lootlist:missing_list" }
+            "operational_point_redeemable" { "item_name" "no_points_given" }
+        }
+        "12" { "redeemable_goods" "credits" "operational_point_redeemable" { "points" "1" "item_name" "ignored" } }
+    }
+})";
+
+void ArmoryRedeems()
+{
+    Check(Crc32("123456789") == 0xCBF43926u && Crc32("") == 0u, "CRC32 check value");
+    Check(Crc32("lootlist:set_overpass_2024") == 2917110498u && Crc32("lootlist:keychain_pack_kc_weapon_01_lootlist") == 2218434721u,
+          "CRC32 reproduces the redeem ids captured from the game");
+
+    const auto schema = Schema::Load(ArmoryFixture);
+    Check(schema.has_value(), "armory fixture loads");
+    Check(schema->ArmoryRedeemables().size() == 5, "five usable tiles; the one without points and the credits campaign are skipped");
+    const auto *collection = schema->FindRedeemable(11, Crc32("lootlist:set_test"));
+    Check(collection && collection->points == 4 && collection->shopIndex == 0, "collection tile");
+    const auto *theCase = schema->FindRedeemable(11, Crc32("the_case"));
+    Check(theCase && theCase->points == 2 && theCase->shopIndex == 1, "case tile");
+    Check(!schema->FindRedeemable(12, Crc32("ignored")) && !schema->FindRedeemable(11, 12345) && !schema->FindRedeemable(10, Crc32("the_case")),
+          "unknown campaign or id");
+    Check(schema->ItemRarity(7) == 2 && schema->ItemRarity(60) == 0 && schema->ItemRarity(999) == 0, "item rarity from the prefab chain");
+
+    const auto sticker = schema->ResolveLootItem("[stk_a]sticker");
+    const auto charm = schema->ResolveLootItem("[kc_a]keychain");
+    const auto skin = schema->ResolveLootItem("[k_a]weapon_rifle");
+    Check(sticker && sticker->kind == LootKind::Sticker && sticker->weaponDefIndex == 1209 && sticker->stickerKitIndex == 300 &&
+              charm && charm->kind == LootKind::Keychain && charm->weaponDefIndex == 1355 && charm->keychainIndex == 17 &&
+              skin && skin->kind == LootKind::Skin && skin->paintKitIndex == 10, "skins, stickers and charms resolve");
+    Check(!schema->ResolveLootItem("[nope]sticker") && !schema->ResolveLootItem("[nope]keychain"), "unknown sticker or charm rejected");
+
+    std::mt19937_64 engine(99);
+    const RandomSource random = [&] { return engine(); };
+    const auto request = [&](const char *name, std::uint32_t cost, std::uint32_t campaign = 11) {
+        return RedeemRequest{campaign, Crc32(name), 100, cost};
+    };
+
+    // A collection: skins by tier position, uncommon being the lowest tier.
+    Inventory inventory;
+    LiveInventory live(inventory);
+    Armory armory(*schema, 11, 50);
+    const auto first = armory.Redeem(request("lootlist:set_test", 4), live, random);
+    Check(first.status == Armory::Status::Ok && first.item.defIndex == 7 && first.item.id == 1 &&
+              (first.item.paintKitIndex == 10 || first.item.paintKitIndex == 11) && first.item.seed >= 1 && armory.Balance() == 46 &&
+              live.Items().Items().size() == 1, "collection redeem grants a skin and costs 4");
+    Check(first.item.rarity == (first.item.paintKitIndex == 10 ? 2u : 3u), "the item carries its tier's rarity");
+
+    const auto caseRedeem = armory.Redeem(request("the_case", 2), live, random);
+    Check(caseRedeem.status == Armory::Status::Ok && caseRedeem.item.defIndex == 60 && caseRedeem.item.paintKitIndex == 0 &&
+              armory.Balance() == 44, "a plain item name grants that item");
+    const auto stickerRedeem = armory.Redeem(request("lootlist:stickers_test", 1), live, random);
+    Check(stickerRedeem.status == Armory::Status::Ok && stickerRedeem.item.defIndex == 1209 &&
+              (stickerRedeem.item.stickerKit == 300 || stickerRedeem.item.stickerKit == 301) && stickerRedeem.item.rarity == 3, "sticker pack");
+    const auto charmRedeem = armory.Redeem(request("lootlist:kc_test", 3), live, random);
+    Check(charmRedeem.status == Armory::Status::Ok && charmRedeem.item.defIndex == 1355 && charmRedeem.item.keychain == 17, "charm pack");
+    Check(armory.Balance() == 40 && live.Items().Items().size() == 4, "balance and inventory after four redeems");
+
+    // Every failure leaves the balance and the inventory exactly as they were.
+    const auto unchanged = [&](Armory::Status want, const RedeemRequest &r, const char *what) {
+        const auto before = live.Items().Items().size();
+        const auto balance = armory.Balance();
+        const auto result = armory.Redeem(r, live, random);
+        Check(result.status == want && live.Items().Items().size() == before && armory.Balance() == balance, what);
+    };
+    unchanged(Armory::Status::WrongCampaign, request("the_case", 2, 12), "wrong campaign");
+    unchanged(Armory::Status::UnknownGoods, RedeemRequest{11, 4242, 40, 2}, "unknown goods");
+    unchanged(Armory::Status::CostMismatch, request("the_case", 1), "the client's cost differs from the schema's");
+    unchanged(Armory::Status::NothingToGrant, request("lootlist:missing_list", 5), "a loot list that does not exist");
+    Armory poor(*schema, 11, 1);
+    const auto tooDear = poor.Redeem(request("lootlist:set_test", 4), live, random);
+    Check(tooDear.status == Armory::Status::NotEnoughCredits && poor.Balance() == 1 && live.Items().Items().size() == 4, "not enough credits");
+
+    // Odds follow tier position: the lowest tier of a collection is the common one.
+    Armory rich(*schema, 11, 1000000);
+    int uncommon = 0;
+    constexpr int Rolls = 20000;
+    LiveInventory scratch{Inventory{}};
+    for (int i = 0; i < Rolls; ++i)
+        uncommon += rich.Redeem(request("lootlist:set_test", 4), scratch, random).item.paintKitIndex == 10;
+    Check(std::abs(uncommon / double(Rolls) - 7992.0 / (7992 + 1598)) < 0.015, "collection odds: lowest tier is the common one");
+}
+
+void ArmoryEndpoint()
+{
+    namespace m = gc_msg;
+    const auto schema = Schema::Load(ArmoryFixture);
+    Check(schema.has_value(), "fixture loads");
+
+    // A recorded welcome whose pass object has generation time 5, balance 10 and one track.
+    PbWriter pass;
+    pass.Varint(1, 5);
+    pass.Varint(2, 10);
+    pass.Varint(3, 77);
+    PbWriter passType;
+    passType.Varint(1, XpShopTypeId);
+    passType.Bytes(2, pass.bytes());
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 555);
+    PbWriter cache;
+    cache.Message(2, passType);
+    cache.Fixed64(3, 100);
+    cache.Message(4, owner);
+    PbWriter welcome;
+    welcome.Varint(1, 0);
+    welcome.Message(3, cache);
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(m::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcome.bytes());
+
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    gc.EnableReplay(store);
+    auto live = std::make_shared<LiveInventory>(Inventory{});
+    auto armory = std::make_shared<Armory>(*schema, 11, 10);
+    std::mt19937_64 engine(7);
+    int grants = 0;
+    gc.EnableArmory(armory, live, [&] { return engine(); }, [&] { ++grants; });
+
+    const auto send = [&](std::uint32_t type, const std::vector<std::uint8_t> &payload) {
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(type, {}, payload, frame);
+        return gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    struct Out { std::uint32_t type{}; std::vector<std::uint8_t> body; bool any{}; };
+    const auto next = [&]() {
+        Out out;
+        std::uint32_t size = 0, got = 0;
+        if (!gc.IsMessageAvailable(&size))
+            return out;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&out.type, buffer.data(), size, &got);
+        FrameView frame;
+        ReadProtobufFrame(out.type, buffer, frame);
+        out.body.assign(frame.body.begin(), frame.body.end());
+        out.any = true;
+        return out;
+    };
+    const auto redeem = [&](const char *name, std::uint32_t cost, std::uint32_t balance = 10) {
+        PbWriter body;
+        body.Varint(1, 11);
+        body.Varint(2, Crc32(name));
+        body.Varint(3, balance);
+        body.Varint(4, cost);
+        return send(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemMissionReward, body.bytes());
+    };
+
+    // The same message as the real client sends decodes to what the handler sees.
+    PbWriter probe;
+    probe.Varint(1, 11);
+    probe.Varint(2, 2917110498u);
+    probe.Varint(3, 25);
+    probe.Varint(4, 4);
+    const auto decoded = DecodeRedeemRequest(probe.bytes());
+    Check(decoded && decoded->campaignId == 11 && decoded->redeemId == 2917110498u && decoded->redeemableBalance == 25 &&
+              decoded->expectedCost == 4, "redeem request decode");
+    Check(!DecodeRedeemRequest(Bytes({0x08})) && !DecodeRedeemRequest(Bytes({0x10, 0x80, 0x80, 0x80, 0x80, 0x10})), "malformed or oversized request rejected");
+
+    // A valid redeem: the item is created as a new unacknowledged one, then the pass balance changes.
+    Check(redeem("the_case", 2) == GCResult::OK, "redeem accepted");
+    const Out created = next();
+    const auto createdObject = DecodeSoSingleObject(created.body);
+    Check(created.any && created.type == (m::ESOMsg::k_ESOMsg_Create | ProtobufMask) && createdObject && createdObject->typeId == 1 &&
+              createdObject->owner.id == 555, "an item is created");
+    const DecodedItem item = DecodeItem(createdObject->data);
+    Check(item.ok && item.defIndex == 60 && item.account == 555 && item.id == CustomItemIdBase + 1 &&
+              item.inventory == (InventoryUnacknowledgedBit | PickupXpShopRedeem), "a new, unacknowledged Armory item");
+    const Out updated = next();
+    const auto updatedObject = DecodeSoSingleObject(updated.body);
+    Check(updated.any && updated.type == (m::ESOMsg::k_ESOMsg_Update | ProtobufMask) && updatedObject &&
+              updatedObject->typeId == static_cast<std::int32_t>(XpShopTypeId), "the pass object is updated");
+    std::map<std::uint32_t, std::vector<std::uint64_t>> fields;
+    {
+        PbReader reader(updatedObject->data);
+        PbField f;
+        while (reader.Next(f))
+            fields[f.number].push_back(f.value);
+    }
+    Check(fields.at(2) == std::vector<std::uint64_t>{8} && fields.at(1) == std::vector<std::uint64_t>{5} &&
+              fields.at(3) == std::vector<std::uint64_t>{77}, "balance 10 - 2 = 8, other fields kept");
+    Check(createdObject->version > 100 && updatedObject->version == createdObject->version + 1, "object versions move on");
+    Check(grants == 1 && live->Items().Items().size() == 1 && armory->Balance() == 8 && !next().any, "one grant, balance 8, nothing else sent");
+
+    // Bad requests send nothing, change nothing and do not call the grant hook.
+    redeem("the_case", 9);   // a cost that is not the schema's
+    redeem("not a tile", 2); // goods the schema does not list
+    Check(!next().any && armory->Balance() == 8 && grants == 1, "rejected requests change nothing and send nothing");
+    redeem("lootlist:set_test", 4); // 8 -> 4
+    Check(next().any && next().any && armory->Balance() == 4, "a later valid redeem still works");
+    redeem("lootlist:set_test", 4); // 4 -> 0
+    Check(next().any && next().any && armory->Balance() == 0 && grants == 3, "credits can be spent to zero");
+    const std::size_t ignoredBefore = gc.IgnoredMessages();
+    redeem("the_case", 2); // credits are 0
+    Check(!next().any && gc.IgnoredMessages() == ignoredBefore + 1 && armory->Balance() == 0, "no credits left: ignored");
+    send(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemMissionReward, Bytes({0x08}));
+    Check(!next().any, "malformed request ignored");
+
+    // A reconnect's welcome shows the live balance.
+    ClientHello hello;
+    send(m::EGCBaseClientMsg::k_EMsgGCClientHello, EncodeClientHello(hello));
+    const Out w = next();
+    const auto passObjects = ExtractObjects(w.body, XpShopTypeId);
+    Check(passObjects.size() == 1, "the welcome carries the pass object");
+    PbReader passReader(passObjects[0]);
+    PbField pf;
+    std::uint64_t balance = 99;
+    while (passReader.Next(pf))
+        if (pf.number == 2)
+            balance = pf.value;
+    Check(balance == 0, "a reconnect's welcome shows the live balance");
+}
+
 int main()
 {
     try
@@ -1476,7 +1730,7 @@ int main()
         Frames(); std::cout << "PASS protocol framing and malformed input\n";
         Queues(); std::cout << "PASS bounded Steam-style message queue\n";
         Progression(); std::cout << "PASS XP and star reward rules\n";
-        Armory(); std::cout << "PASS Armory categories, search and pagination\n";
+        ArmoryCatalogueTest(); std::cout << "PASS Armory categories, search and pagination\n";
         KeyValuesParsing(); std::cout << "PASS KeyValues parser and malformed input\n";
         SchemaCrates(); std::cout << "PASS schema crates, keys and loot tiers\n";
         CaseOpening(); std::cout << "PASS case opening odds and atomic consumption\n";
@@ -1496,6 +1750,8 @@ int main()
         SkinRarityAndFreshInventory(); std::cout << "PASS skin rarity and fresh inventory\n";
         ArmoryBalance(); std::cout << "PASS armory balance patch\n";
         LoadoutAndPurchases(); std::cout << "PASS loadout equipping, purchase refusal and job id echo\n";
+        ArmoryRedeems(); std::cout << "PASS armory redeems from the schema\n";
+        ArmoryEndpoint(); std::cout << "PASS armory over the endpoint\n";
         return 0;
     }
     catch (const std::exception &error)

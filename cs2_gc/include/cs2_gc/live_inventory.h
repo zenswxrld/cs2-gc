@@ -3,6 +3,7 @@
 #include "cs2_gc/gc_handshake.h"
 #include "cs2_gc/inventory.h"
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <vector>
 
@@ -16,6 +17,13 @@ public:
     explicit LiveInventory(Inventory inventory);
 
     const Inventory &Items() const { return m_inventory; }
+
+    // Adds an item to the inventory and returns it with its new id (the game sees it as
+    // CustomItemIdBase + id).
+    InventoryItem AddItem(InventoryItem item);
+
+    // Writes the items to a file in the inventory's own text format; false if that failed.
+    bool Save(const std::filesystem::path &path) const { return m_inventory.Save(path); }
 
     // The item definition for an item id the game may equip: one of ours, or a built-in default
     // item (ids of the form 0xF000000000000000 | definition). Nothing for any other id.

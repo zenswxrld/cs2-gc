@@ -39,7 +39,9 @@
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <algorithm>
 #include <map>
+#include <random>
 #include <cstring>
 #include <utility>
 #include <mutex>
@@ -220,6 +222,11 @@ public:
     void SetArmoryCredits(std::optional<std::uint32_t> credits) { m_gc.SetArmoryCredits(credits); }
     void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory) { m_gc.EnableLiveInventory(std::move(inventory)); }
     void EnableStorePurchaseFailure() { m_gc.EnableStorePurchaseFailure(); }
+    void EnableArmory(std::shared_ptr<Armory> armory, std::shared_ptr<LiveInventory> inventory, RandomSource random,
+                      std::function<void()> afterGrant)
+    {
+        m_gc.EnableArmory(std::move(armory), std::move(inventory), std::move(random), std::move(afterGrant));
+    }
 
     GCResult RetrieveMessage(std::uint32_t *type, void *destination, std::uint32_t capacity,
                              std::uint32_t *size) override
@@ -521,43 +528,83 @@ State &Init()
             else
                 s.log->Write("replay: no recordings in cs2_gc_replay, using the synthetic welcome");
 
-            // Equipping and purchases need answers too; see the README for what each one does.
-            s.coordinator->EnableStorePurchaseFailure();
-            {
-                const std::filesystem::path path(s.directory + L"cs2_gc_inventory.txt");
-                auto loaded = std::filesystem::exists(path) ? Inventory::Load(path) : std::optional<Inventory>(Inventory{});
-                s.coordinator->EnableLiveInventory(std::make_shared<LiveInventory>(loaded ? *loaded : Inventory{}));
-            }
-
-            // Optional custom items, added to the replayed welcome. The file uses the same format
-            // the inventory is saved in, so it can be edited by hand.
+            // One live inventory serves the welcome, equipping and the Armory. It starts from
+            // cs2_gc_inventory.txt (same text format the core saves in, so it can be edited by hand).
             const std::filesystem::path inventoryPath(s.directory + L"cs2_gc_inventory.txt");
-            if (std::filesystem::exists(inventoryPath))
+            std::optional<Inventory> loaded = std::filesystem::exists(inventoryPath) ? Inventory::Load(inventoryPath)
+                                                                                     : std::optional<Inventory>(Inventory{});
+            const bool inventoryFileUsable = loaded.has_value();
+            if (!loaded)
             {
-                const auto inventory = Inventory::Load(inventoryPath);
-                if (!inventory)
-                    s.log->Write("custom inventory: cs2_gc_inventory.txt is invalid, no custom items added");
-                else if (!replay->Size())
-                    s.log->Write("custom inventory: needs a recorded welcome (cs2_gc_replay) to add items to; "
-                                 "no custom items added");
+                // Never saved over later: it may be a hand-edited file with a mistake in it.
+                s.log->Write("custom inventory: cs2_gc_inventory.txt is invalid, starting empty and not saving over it");
+                loaded = Inventory{};
+            }
+            auto live = std::make_shared<LiveInventory>(std::move(*loaded));
+            s.coordinator->EnableLiveInventory(live);
+            s.coordinator->EnableStorePurchaseFailure();
+
+            if (replay->Size())
+            {
+                std::size_t statTrak = 0;
+                for (const InventoryItem &item : live->Items().Items())
+                    statTrak += item.statTrak;
+                // Read at each Hello, so items granted during the session are in a reconnect's welcome.
+                s.coordinator->SetItemProvider([live](std::uint64_t steamId) {
+                    std::vector<std::vector<std::uint8_t>> encoded;
+                    std::uint32_t position = 1000; // clear of the account's own backpack slots
+                    for (const InventoryItem &item : live->Items().Items())
+                        encoded.push_back(BuildEconItem(item, static_cast<std::uint32_t>(steamId & 0xFFFFFFFFull),
+                                                        CustomItemIdBase + item.id, position++));
+                    return encoded;
+                });
+                s.log->Write("custom inventory: " + std::to_string(live->Items().Items().size()) +
+                             " item(s) from cs2_gc_inventory.txt will be added to the welcome" +
+                             (statTrak ? "; StatTrak is not encoded yet, so " + std::to_string(statTrak) +
+                                             " item(s) will appear without it"
+                                       : std::string{}));
+            }
+            else if (!live->Items().Items().empty())
+                s.log->Write("custom inventory: needs a recorded welcome (cs2_gc_replay) to add items to; "
+                             "no custom items added");
+
+            // The Armory is built from the game's own schema, so it needs items_game.txt next to the DLL.
+            const std::filesystem::path schemaPath(s.directory + L"items_game.txt");
+            if (!std::filesystem::exists(schemaPath))
+                s.log->Write("armory: items_game.txt not found next to steam_api64.dll; Armory purchases stay "
+                             "unanswered (extract it from the game, see README)");
+            else
+            {
+                std::ifstream schemaFile(schemaPath, std::ios::binary);
+                std::ostringstream schemaText;
+                schemaText << schemaFile.rdbuf();
+                auto parsed = Schema::Load(schemaText.str());
+                if (!parsed)
+                    s.log->Write("armory: items_game.txt could not be read; Armory purchases stay unanswered");
                 else
                 {
-                    std::size_t statTrak = 0;
-                    for (const InventoryItem &item : inventory->Items())
-                        statTrak += item.statTrak;
-                    s.coordinator->SetItemProvider([items = inventory->Items()](std::uint64_t steamId) {
-                        std::vector<std::vector<std::uint8_t>> encoded;
-                        std::uint32_t position = 1000; // clear of the account's own backpack slots
-                        for (const InventoryItem &item : items)
-                            encoded.push_back(BuildEconItem(item, static_cast<std::uint32_t>(steamId & 0xFFFFFFFFull),
-                                                            CustomItemIdBase + item.id, position++));
-                        return encoded;
-                    });
-                    s.log->Write("custom inventory: " + std::to_string(inventory->Items().size()) +
-                                 " item(s) from cs2_gc_inventory.txt will be added to the welcome" +
-                                 (statTrak ? "; StatTrak is not encoded yet, so " + std::to_string(statTrak) +
-                                                 " item(s) will appear without it"
-                                           : std::string{}));
+                    Schema *schema = new Schema(std::move(*parsed)); // lives as long as the process
+                    std::uint32_t campaign = 0;
+                    for (const ArmoryRedeemable &goods : schema->ArmoryRedeemables())
+                        campaign = std::max(campaign, goods.campaignId);
+                    if (!campaign)
+                        s.log->Write("armory: items_game.txt lists no Armory goods; purchases stay unanswered");
+                    else
+                    {
+                        auto armory = std::make_shared<Armory>(*schema, campaign, proxy.armoryCredits.value_or(0));
+                        std::random_device device;
+                        auto engine = std::make_shared<std::mt19937_64>((std::uint64_t{device()} << 32) | device());
+                        Logger *log = s.log;
+                        s.coordinator->EnableArmory(armory, live, [engine] { return (*engine)(); },
+                                                    [live, inventoryPath, inventoryFileUsable, log] {
+                                                        if (inventoryFileUsable && !live->Save(inventoryPath))
+                                                            log->Write("could not save cs2_gc_inventory.txt");
+                                                    });
+                        s.log->Write("armory: " + std::to_string(schema->ArmoryRedeemables().size()) + " goods loaded "
+                                     "from items_game.txt (campaign " + std::to_string(campaign) + "), " +
+                                     std::to_string(armory->Balance()) + " credits (armory_credits). Purchases are "
+                                     "granted locally and saved to cs2_gc_inventory.txt");
+                    }
                 }
             }
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=local. Targets Steam build " +

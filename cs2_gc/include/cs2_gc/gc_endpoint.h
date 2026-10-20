@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cs2_gc/armory.h"
 #include "cs2_gc/gc_handshake.h"
 #include "cs2_gc/live_inventory.h"
 #include "cs2_gc/message_queue.h"
@@ -74,6 +75,13 @@ public:
     // Answer a store purchase request with a failure instead of leaving it unanswered. Nothing is
     // charged and nothing is granted.
     void EnableStorePurchaseFailure();
+
+    // Answer Armory purchases from the schema: a valid redeem creates the item (shown to the game as a
+    // new, unacknowledged one), lowers the credit balance and tells the game about both. The recorded
+    // Welcome (if any) provides the Armory pass object that the balance update is built from. The
+    // Welcome shows the armory's live balance from then on. Invalid requests are ignored.
+    void EnableArmory(std::shared_ptr<Armory> armory, std::shared_ptr<LiveInventory> inventory,
+                      RandomSource random, std::function<void()> afterGrant = {});
     std::size_t PatchFailures() const { return m_patchFailures; }
 
     std::size_t IgnoredMessages() const { return m_ignored; }
@@ -92,6 +100,7 @@ private:
     bool m_dropRecordedItems{};
     std::optional<std::uint32_t> m_armoryCredits;
     std::shared_ptr<LiveInventory> m_live;
+    std::shared_ptr<Armory> m_armory;
     std::uint64_t m_soVersion{1};
 };
 

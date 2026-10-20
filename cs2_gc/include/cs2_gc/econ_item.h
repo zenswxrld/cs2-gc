@@ -15,6 +15,22 @@ inline constexpr std::uint32_t AttributePaintIndex = 6;
 inline constexpr std::uint32_t AttributePaintSeed = 7;
 inline constexpr std::uint32_t AttributePaintWear = 8;
 
+// Sticker (and graffiti) kit id, and charm id. The sticker attribute is what the capture's graffiti
+// item carries; the sticker and charm items themselves are tools (definitions 1209 and 1355).
+inline constexpr std::uint32_t AttributeStickerKit = 113;   // "sticker slot 0 id"
+inline constexpr std::uint32_t AttributeKeychain = 299;     // "keychain slot 0 id"
+inline constexpr std::uint32_t DefinitionSticker = 1209;
+inline constexpr std::uint32_t DefinitionKeychain = 1355;
+
+// A new item the player has not yet acknowledged has this bit set in its `inventory` field, with
+// the way it arrived in the low bits. The values follow the order of the client's pickup-method
+// names (found_in_crate is 5, ..., ad 21, rental 22, xpshopredeem 23, purchasedvolatile 24);
+// 23 is derived from that order and still has to be confirmed in the game.
+inline constexpr std::uint32_t InventoryUnacknowledgedBit = 1u << 30;
+inline constexpr std::uint32_t PickupPurchased = 4;
+inline constexpr std::uint32_t PickupFoundInCrate = 5;
+inline constexpr std::uint32_t PickupXpShopRedeem = 23;
+
 // Quality "unique" from the same schema; the real item in the capture used it too.
 inline constexpr std::uint32_t QualityUnique = 4;
 
@@ -33,11 +49,22 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
 // balance the UI showed; treat it as unconfirmed until a changed balance shows up in the game.
 inline constexpr std::uint64_t XpShopTypeId = 6;
 
+// The raw objects of one SO type in the first cache of a Welcome. Empty if there are none or the
+// Welcome is malformed.
+std::vector<std::vector<std::uint8_t>> ExtractObjects(std::span<const std::uint8_t> welcome, std::uint64_t typeId);
+
+// One XpShop object with its redeemable balance (field 2) set, every other field kept; the balance
+// is added when the object has none. Nothing if the object is malformed.
+std::optional<std::vector<std::uint8_t>> WithXpShopBalance(std::span<const std::uint8_t> object, std::uint32_t balance);
+
 // Returns the Welcome with the redeemable balance of every XpShop object set to `balance`. All
 // other fields, objects and types are carried over unchanged. Nothing when the Welcome is
 // malformed or has no cache; a Welcome with no XpShop object is returned unchanged.
 std::optional<std::vector<std::uint8_t>> SetArmoryBalance(std::span<const std::uint8_t> welcome,
                                                           std::uint32_t balance);
+
+// SO object type of CSOEconItem, as seen in the capture.
+inline constexpr std::uint64_t ItemTypeId = 1;
 
 // Ids of the items this project creates start here, well clear of an account's own item ids.
 inline constexpr std::uint64_t CustomItemIdBase = 1000000000000ull;

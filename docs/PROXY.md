@@ -131,6 +131,16 @@ in this session's view of the inventory: nothing is stored on Valve's side.
   it was for the Armory Pass (item 1354, 2275 in currency 21). The proxy now answers with a failure and
   echoes the request's job id, so the game shows a normal purchase failure instead of timing out into the
   generic Steam error and reconnecting. Nothing is charged: no request ever reaches Valve.
+- **Armory purchases are emulated** (needs `items_game.txt` next to the DLL; see below). The Armory's tiles
+  are in `items_game.txt`: the `seasonaloperations` entry that has `redeemable_goods = xpshop` (11 in the
+  current build) lists each tile with its `points` cost and `item_name`. The game's `redeem_id` is the
+  CRC32 of that name; this matched all four requests captured so far. A valid purchase (known tile, the
+  schema's cost, enough credits) creates the item, lowers the balance and tells the game, which should
+  show "You received from Armory". A `lootlist:` tile rolls a random item from that loot list (skins,
+  stickers or charms), a plain item name (a case) grants that item. Granted items are saved to
+  `cs2_gc_inventory.txt`. Not confirmed in the game yet: the popup (it relies on pickup type 23,
+  `xpshopredeem`, derived from the order of the client's pickup names), and the layout of sticker and
+  charm items.
 - **Armory credits.** The Credits Balance and the two Armory Pass tracks live in one recorded object
   (type 6, shaped like `CSOAccountXpShop`). `armory_credits = N` in `cs2_gc.cfg` sets the balance in the
   Welcome, which tests whether that guess is right: the Armory page should then show N credits.
@@ -158,6 +168,12 @@ py -3 tools/price_sheet.py add-cases cs2_gc_replay/2501.bin items_game.txt --out
 `add-cases` adds an entry for every standard case (and any key that has none), copying the prices of an
 existing entry (`--price-from`, default "Weapon Case Key"). Back up your recorded `2501.bin`, then put
 `new_2501.bin` in `cs2_gc_replay` under the name `2501.bin`; local mode replays it. Buying is still refused.
+
+### Armory setup
+
+Copy the `items_game.txt` you extracted from the game (it is in `game\csgo`) next to `steam_api64.dll`.
+With it present, the log says `armory: 11 goods loaded from items_game.txt (campaign 11)`. Set the starting
+credits with `armory_credits = N` in `cs2_gc.cfg` (default 0); each launch starts from that number.
 
 ## Config (`cs2_gc.cfg`, optional)
 

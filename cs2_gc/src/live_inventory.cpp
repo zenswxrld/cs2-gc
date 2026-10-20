@@ -8,6 +8,12 @@ LiveInventory::LiveInventory(Inventory inventory)
 {
 }
 
+InventoryItem LiveInventory::AddItem(InventoryItem item)
+{
+    item.id = m_inventory.Add(item);
+    return item;
+}
+
 std::optional<std::uint32_t> LiveInventory::DefinitionOf(std::uint64_t itemId) const
 {
     if ((itemId >> 60) == 0xF)

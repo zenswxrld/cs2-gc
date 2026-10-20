@@ -9,7 +9,6 @@ namespace cs2_gc
 {
 namespace
 {
-constexpr std::uint64_t ItemTypeId = 1; // SO object type of CSOEconItem, as seen in the capture
 
 std::array<std::uint8_t, 4> LittleEndian(std::uint32_t value)
 {
@@ -22,6 +21,14 @@ void AddFloatAttribute(PbWriter &item, std::uint32_t defIndex, float value)
     PbWriter attribute;
     attribute.Varint(1, defIndex);
     attribute.Bytes(3, LittleEndian(std::bit_cast<std::uint32_t>(value)));
+    item.Message(12, attribute);
+}
+
+void AddIntegerAttribute(PbWriter &item, std::uint32_t defIndex, std::uint32_t value)
+{
+    PbWriter attribute;
+    attribute.Varint(1, defIndex);
+    attribute.Bytes(3, LittleEndian(value));
     item.Message(12, attribute);
 }
 
@@ -119,6 +126,10 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
         AddFloatAttribute(out, AttributePaintSeed, static_cast<float>(item.seed));
         AddFloatAttribute(out, AttributePaintWear, item.wear);
     }
+    if (item.stickerKit)
+        AddIntegerAttribute(out, AttributeStickerKit, item.stickerKit);
+    if (item.keychain)
+        AddIntegerAttribute(out, AttributeKeychain, item.keychain);
     if (item.rarity)
         out.Varint(19, item.rarity);
     return out.bytes();
@@ -241,29 +252,46 @@ std::optional<std::vector<std::uint8_t>> RewriteObjects(std::span<const std::uin
 }
 }
 
+std::optional<std::vector<std::uint8_t>> WithXpShopBalance(std::span<const std::uint8_t> object, std::uint32_t balance)
+{
+    PbWriter out;
+    PbReader reader(object);
+    PbField f;
+    bool replaced = false;
+    while (reader.Next(f))
+    {
+        if (f.number == 2 && f.wire == 0)
+        {
+            out.Varint(2, balance);
+            replaced = true;
+        }
+        else
+            Reemit(out, f);
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    if (!replaced)
+        out.Varint(2, balance);
+    return out.bytes();
+}
+
+std::vector<std::vector<std::uint8_t>> ExtractObjects(std::span<const std::uint8_t> welcome, std::uint64_t typeId)
+{
+    std::vector<std::vector<std::uint8_t>> found;
+    const auto result = RewriteObjects(welcome, typeId, [&found](std::span<const std::uint8_t> object) {
+        found.emplace_back(object.begin(), object.end());
+        return std::optional<std::vector<std::uint8_t>>{std::vector<std::uint8_t>(object.begin(), object.end())};
+    });
+    if (!result)
+        found.clear();
+    return found;
+}
+
 std::optional<std::vector<std::uint8_t>> SetArmoryBalance(std::span<const std::uint8_t> welcome,
                                                           std::uint32_t balance)
 {
     return RewriteObjects(welcome, XpShopTypeId, [balance](std::span<const std::uint8_t> object) {
-        PbWriter out;
-        PbReader reader(object);
-        PbField f;
-        bool replaced = false;
-        while (reader.Next(f))
-        {
-            if (f.number == 2 && f.wire == 0)
-            {
-                out.Varint(2, balance);
-                replaced = true;
-            }
-            else
-                Reemit(out, f);
-        }
-        if (reader.Failed())
-            return std::optional<std::vector<std::uint8_t>>{};
-        if (!replaced)
-            out.Varint(2, balance);
-        return std::optional<std::vector<std::uint8_t>>{out.bytes()};
+        return WithXpShopBalance(object, balance);
     });
 }
 }

@@ -83,6 +83,14 @@ struct AdjustEquipSlots // CMsgAdjustEquipSlots: the body of k_EMsgGCAdjustEquip
     std::uint32_t changeNum{};
 };
 
+struct RedeemRequest // CMsgGCCstrike15_v2_ClientRedeemMissionReward (an Armory purchase)
+{
+    std::uint32_t campaignId{};
+    std::uint32_t redeemId{};        // CRC32 of the goods' item name
+    std::uint32_t redeemableBalance{}; // the balance the client believes it has
+    std::uint32_t expectedCost{};
+};
+
 // Decoders reject malformed input outright; unknown fields are skipped.
 std::optional<ClientHello> DecodeClientHello(std::span<const std::uint8_t> body);
 std::optional<SoCacheSubscribed> DecodeSoCacheSubscribed(std::span<const std::uint8_t> body);
@@ -90,6 +98,8 @@ std::optional<ClientWelcome> DecodeClientWelcome(std::span<const std::uint8_t> b
 std::optional<SoSingleObject> DecodeSoSingleObject(std::span<const std::uint8_t> body);
 std::optional<SoMultipleObjects> DecodeSoMultipleObjects(std::span<const std::uint8_t> body);
 
+std::optional<RedeemRequest> DecodeRedeemRequest(std::span<const std::uint8_t> body);
+std::vector<std::uint8_t> EncodeSoSingleObject(const SoSingleObject &object);
 std::optional<AdjustEquipSlots> DecodeAdjustEquipSlots(std::span<const std::uint8_t> body);
 std::vector<std::uint8_t> EncodeSoMultipleObjects(const SoMultipleObjects &objects);
 std::vector<std::uint8_t> EncodeSoCacheSubscribed(const SoCacheSubscribed &cache);

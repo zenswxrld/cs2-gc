@@ -54,6 +54,64 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
     }
 }
 
+void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::shared_ptr<LiveInventory> inventory,
+                                        RandomSource random, std::function<void()> afterGrant)
+{
+    {
+        std::lock_guard lock(m_mutex);
+        m_armory = armory;
+    }
+    if (!armory || !inventory)
+        return;
+
+    // The recorded Armory pass object, kept so a balance change only rewrites its balance field.
+    std::vector<std::uint8_t> passObject;
+    if (m_replay)
+        if (const auto *welcome = m_replay->Find(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome))
+        {
+            auto objects = ExtractObjects(*welcome, XpShopTypeId);
+            if (!objects.empty())
+                passObject = std::move(objects.front());
+        }
+
+    SetHandler(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemMissionReward,
+               [armory, inventory, random, afterGrant, passObject](const FrameView &frame, LocalGameCoordinator &gc) {
+                   const auto request = DecodeRedeemRequest(frame.body);
+                   if (!request)
+                   {
+                       ++gc.m_ignored;
+                       return;
+                   }
+                   const auto result = armory->Redeem(*request, *inventory, random);
+                   if (result.status != Armory::Status::Ok)
+                   {
+                       ++gc.m_ignored;
+                       return;
+                   }
+
+                   const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                   SoSingleObject created;
+                   created.typeId = static_cast<std::int32_t>(ItemTypeId);
+                   created.data = BuildEconItem(result.item, accountId, CustomItemIdBase + result.item.id,
+                                                InventoryUnacknowledgedBit | PickupXpShopRedeem);
+                   created.version = ++gc.m_soVersion;
+                   created.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
+
+                   if (const auto pass = WithXpShopBalance(passObject, armory->Balance()))
+                   {
+                       SoSingleObject updated;
+                       updated.typeId = static_cast<std::int32_t>(XpShopTypeId);
+                       updated.data = *pass;
+                       updated.version = ++gc.m_soVersion;
+                       updated.owner = gc.m_config.owner;
+                       gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+                   }
+                   if (afterGrant)
+                       afterGrant();
+               });
+}
+
 void LocalGameCoordinator::EnableStorePurchaseFailure()
 {
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseInit, [](const FrameView &frame, LocalGameCoordinator &gc) {
@@ -219,9 +277,10 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
                 else
                     ++m_patchFailures;
             }
-            if (m_armoryCredits)
+            if (m_armory || m_armoryCredits)
             {
-                if (auto result = SetArmoryBalance(patched, *m_armoryCredits))
+                const std::uint32_t credits = m_armory ? m_armory->Balance() : *m_armoryCredits;
+                if (auto result = SetArmoryBalance(patched, credits))
                     patched = std::move(*result);
                 else
                     ++m_patchFailures;

@@ -4,6 +4,8 @@
 #include "cs2_gc/schema.h"
 #include <cstdint>
 #include <functional>
+#include <optional>
+#include <string_view>
 
 namespace cs2_gc
 {
@@ -32,6 +34,13 @@ struct CaseOdds
     std::uint32_t milSpec{7992}, restricted{1598}, classified{320}, covert{64};
     std::uint32_t statTrakPerMille{100};
 };
+
+// Rolls one item from a client loot list (a case's, or an Armory collection, sticker or charm pack's).
+// Tiers are ranked by rarity within the list and given the odds in rank order, so a case (rare to
+// ancient) and a collection (uncommon to legendary) are treated alike. Tiers with nothing resolvable
+// are skipped and the rest renormalised. Nothing when no tier has an item.
+std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view lootListName,
+                                          const RandomSource &random, const CaseOdds &odds = {});
 
 // Atomic: the crate and key are consumed and the item added together, or the
 // inventory is left unchanged. All rolling happens before any mutation.

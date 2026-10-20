@@ -127,10 +127,12 @@ const nodes={};
 function panel(id,parent) {
  const p={id,style:{},visible:true,IsValid:()=>true,FindChildInLayoutFile:id=>nodes[id]||null,
   FindChildTraverse:id=>null,GetParent:()=>parent,SetPanelEvent:(event,fn)=>p.activate=fn,
-  SetHasClass:()=>{}};
+  classes:{},SetHasClass:(c,v)=>{p.classes[c]=v;},BHasClass:c=>!!p.classes[c],
+  order:[],MoveChildAfter:(child,after)=>{p.order.push([child.id,after.id]);}};
  if(id)nodes[id]=p;return p;
 }
-const root=panel('root'), rows=panel('rows');
+const root=panel('root'), rows=panel('rows'), passBox=panel('pass-box');
+panel('id-xpshop-more-passes-btn',passBox);
 ['1','2','3'].forEach(row=>panel('id-xpshop-row-'+row,rows));
 const m_elContentPanel=root;
 const $={GetContextPanel:()=>root,CreatePanel:(kind,parent,id,props)=>panel(id,parent),
@@ -159,11 +161,19 @@ oldTop.forEach(name=>assert.equal(nodes[name].visible,false));
 assert.equal(nodes['cs2gc-category-capsule'],undefined);
 assert.equal(nodes['cs2gc-paging-controls'].style.horizontalAlign,'center');
 assert.equal(nodes['cs2gc-page-next'].style.width,'56px');
-assert.equal(nodes['cs2gc-armory-clock'].style.fontSize,'23px');
+assert.equal(nodes['cs2gc-armory-clock'],undefined);  // one countdown only
 nodes['cs2gc-page-next'].activate();
 assert.equal(nodes['cs2gc-page-number'].text,'1 / 2');
 assert.equal(nodes.limited.visible,true);
-assert.equal(nodes['cs2gc-armory-clock'].text,'Armory refresh: 15:00');
+const clock=nodes['id-local-rotation-countdown'];
+assert.equal(clock.text,'Armory refresh: 15:00');
+assert.equal(clock.style.color,'#ffffff'); assert.equal(clock.style.fontFamily,'Stratum2');
+assert.deepEqual(passBox.order,[['id-local-rotation-countdown','id-xpshop-more-passes-btn']]);
+assert.equal(nodes['cs2gc-category-bar'].visible,true);
+root.SetHasClass('xpshop-grids-visible',true); _LocalRotationRefresh();
+assert.equal(nodes['cs2gc-category-bar'].visible,false);  // arrows hidden while a tab is open
+root.SetHasClass('xpshop-grids-visible',false); _LocalRotationRefresh();
+assert.equal(nodes['cs2gc-category-bar'].visible,true);
 assert.equal(rows.style.marginTop,'60px');
 '''
         result=subprocess.run(['node','-e',script],capture_output=True,text=True)

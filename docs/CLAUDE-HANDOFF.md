@@ -343,3 +343,17 @@ Full build-25966348 schema loaded successfully, all supplementary rare pools val
 3. Test each terminal's unseal/offer/decline/accept/reopen. If the native client sends additional messages (including 2536), capture their actual bodies before implementing another codec. Dead Hand special drops and historical-offer/collection-XP reward UI require further work.
 4. Test five regular/StatTrak Covert contracts and their model/paint/wear in the client. Exact modern normalized-float formula and gold phase odds need verification; regular wear mapping was preserved.
 5. Compile and mount the optional confirmation source override using the user's target Panorama tools. No game-resource rewrite was installed by the ZIP.
+
+---
+
+# Claude follow-up on build 17 (user reports, 21 October 2026)
+- Armory: removed the second countdown next to the page arrows; the single countdown is now white Stratum2 text
+  directly below "Get Armory Passes" (`id-xpshop-more-passes-btn`). Page arrows hide while a tab's inspect grid is
+  open (`xpshop-grids-visible`) and return on the tile view.
+- Terminal offers: the laptop's "Offer limit" is a price cap; it no longer sets the offer count (terminal.cpp uses
+  `terminal_default_offers`). The laptop label is total minus remaining, so the first offer reads 1st.
+- `cs2_gc_reset_profile.cmd` / `reset_profile.py`: option 1 resets level/XP/Premier/matches only (inventory progression
+  block set to level 1 and `cs2_gc_gsi_state.json` + cursors moved); option 2 also moves the inventory. Files are moved
+  to a dated backup folder.
+- Still open from the same report: clicking the bottom-right sticker capsule tile opens a random tab. Likely the stock
+  scrolling tile (`shuffledArray[iScrollingTile ...]`) routes the click to whichever entry it is showing; not fixed.

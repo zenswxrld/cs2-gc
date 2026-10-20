@@ -21,14 +21,13 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
         controls.style.width = 'fit-children'; controls.style.height = '52px';
         controls.style.horizontalAlign = 'center'; controls.style.verticalAlign = 'center';
         controls.style.flowChildren = 'right';
-        ['previous','page','next','clock'].forEach(kind => {
-            if (kind === 'page' || kind === 'clock') {
-                const label = $.CreatePanel('Label', controls, kind === 'page' ? 'cs2gc-page-number' : 'cs2gc-armory-clock');
-                label.style.width = kind === 'page' ? '84px' : '268px';
+        ['previous','page','next'].forEach(kind => {
+            if (kind === 'page') {
+                const label = $.CreatePanel('Label', controls, 'cs2gc-page-number');
+                label.style.width = '84px';
                 label.style.fontSize = '23px'; label.style.fontFamily = 'Stratum2 Bold';
                 label.style.textAlign = 'center'; label.style.verticalAlign = 'center';
-                label.style.color = kind === 'clock' ? '#e8d8a0' : '#d8eeee';
-                if (kind === 'clock') label.style.marginLeft = '22px';
+                label.style.color = '#d8eeee';
                 return;
             }
             const button = $.CreatePanel('Button', controls, 'cs2gc-page-' + kind);
@@ -224,22 +223,22 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
         m_localRotationActive = active;
         const text = 'Armory refresh: ' + Math.floor(remaining / 60) + ':' + ('0' + remaining % 60).slice(-2);
         const bar = m_elContentPanel.FindChildInLayoutFile('cs2gc-category-bar');
-        if (bar) bar.FindChildInLayoutFile('cs2gc-armory-clock').text = text;
-        const parents = [root.FindChildInLayoutFile('id-xpshop-top-nav')];
-        parents.forEach((parent, index) => {
-            if (!parent) return;
-            const id = index ? 'id-local-rotation-countdown-main' : 'id-local-rotation-countdown';
-            let label = parent.FindChildInLayoutFile(id);
+        // Page arrows belong to the tile view only; hide them while a tab's inspect grid is open.
+        if (bar) bar.visible = !m_elContentPanel.BHasClass('xpshop-grids-visible');
+        // One countdown, white, CS UI font, directly below the "Get Armory Passes" button (under the green line).
+        const passes = root.FindChildInLayoutFile('id-xpshop-more-passes-btn');
+        const holder = passes ? passes.GetParent() : root.FindChildInLayoutFile('id-xpshop-top-nav');
+        if (holder) {
+            let label = holder.FindChildInLayoutFile('id-local-rotation-countdown');
             if (!label) {
-                label = $.CreatePanel('Label', parent, id);
-                label.style.fontSize = index ? '18px' : '15px';
-                label.style.color = '#e8d8a0';
-                label.style.margin = index ? '6px 0px 0px 0px' : '0px 12px';
-                if (index) { label.style.horizontalAlign = 'right'; label.style.marginTop = '8px'; }
-                else { label.style.verticalAlign = 'center'; label.style.horizontalAlign = 'left'; label.style.marginLeft = '20px'; }
+                label = $.CreatePanel('Label', holder, 'id-local-rotation-countdown');
+                label.style.fontFamily = 'Stratum2'; label.style.fontSize = '18px';
+                label.style.color = '#ffffff'; label.style.horizontalAlign = 'center';
+                label.style.marginTop = '6px';
+                if (passes) holder.MoveChildAfter(label, passes);
             }
             label.text = text;
-        });
+        }
         if (m_localRotationCycle !== -1 && m_localRotationCycle !== cycle) {
             _DeleteInspectGrid();
             _CancelTimeoutForRewardItem();

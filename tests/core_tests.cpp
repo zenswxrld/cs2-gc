@@ -3294,6 +3294,9 @@ void Terminals()
     Check(schema && schema->FindCrate(5176)->kind == CrateKind::Terminal, "volatile collection crate is a terminal");
     const auto shared = std::shared_ptr<const Schema>(&*schema, [](const Schema *) {});
     Inventory inventory;
+    GameplayConfig twoOffers;
+    twoOffers.terminal_default_offers = 2; // the offer count comes from local config
+    inventory.SetGameplay(twoOffers);
     InventoryItem terminal;
     terminal.defIndex = 5176;
     inventory.Add(terminal);
@@ -3332,7 +3335,7 @@ void Terminals()
     next.Varint(1, CustomItemIdBase + 1);
     next.Varint(2, CustomItemIdBase + 1);
     next.Varint(4, 0);
-    next.Varint(5, 2);
+    next.Varint(5, 99); // the laptop's "Offer limit" is a price cap and must not change the offer count
     request(gc_msg::EGCItemMsg::k_EMsgGCOpenCrate, next);
     replies = drain();
     auto offer = live->TerminalOffer(*schema, CustomItemIdBase + 1);

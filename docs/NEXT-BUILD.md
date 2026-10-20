@@ -186,3 +186,10 @@ while CS2 runs (the DLL processes the request); native-picker support needs a di
 - Limited-edition tile shows the wrong skin: the tile is named "XM1014 | Solitude" but displays an AK-47 (the model
   changed between screenshots, still an AK). The name and the displayed/purchased item disagree; check which item the
   catalogue row references and what the tile renders from (`armory_rotation_catalog.py`, the stock xpshop tile code).
+- CORRECTION from the user: "Offer limit: Unlimited" on the laptop is a PRICE limit (the most the offered skin may be
+  worth), not a number of offers. So:
+  * `tools/native_offer_numbers.py` is wrong to use `InventoryAPI.GetVolatileLimits().limit` as an offer count. Derive
+    the total from the GC's offer count instead (e.g. bake `terminal_default_offers` into the patch).
+  * `cs2_gc/src/terminal.cpp` AdvanceTerminal also treats `request.volatileLimit` as an offer count
+    (`limit = request.volatileLimit ? request.volatileLimit : terminal_default_offers`). It should treat it as a price
+    cap on the offered item and take the offer count from `terminal_default_offers`.

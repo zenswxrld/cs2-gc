@@ -1,5 +1,6 @@
 @echo off
 cd /d "%~dp0"
+echo Manual diagnostic mode. Normally CS2 starts rewards in the background automatically.
 if not exist "..\..\csgo\cfg" (
   echo Put this helper beside steam_api64.dll in game\bin\win64 first.
   pause

@@ -15,6 +15,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gameplay_config import load as load_gameplay
 import premier_rating
+from rewards_runtime import InstanceLock, ParentProcess, serve_until_parent_exits
+import contextlib
+import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 MAX_TOTAL = (1 << 64) - 1
@@ -181,16 +184,55 @@ def main():
     parser.add_argument('--proxy-dir', type=Path, required=True, help='Directory containing the local proxy DLL')
     parser.add_argument('--cfg-dir', type=Path, help='Install only gamestate_integration_cs2_gc.cfg here, then restart CS2')
     parser.add_argument('--port', type=int, default=31923)
+    parser.add_argument('--parent-pid', type=int, help='Exit when the launching game process closes')
+    parser.add_argument('--log-file', type=Path, help='Write diagnostics here instead of a console window')
     args = parser.parse_args()
-    if not args.proxy_dir.is_dir() or not 1 <= args.port <= 65535:
+    if (not args.proxy_dir.is_dir() or not 1 <= args.port <= 65535
+            or (args.parent_pid is not None and args.parent_pid <= 0)):
         parser.error('Use an existing proxy directory and a valid port')
-    rewards = Rewards(args.proxy_dir)
-    if args.cfg_dir:
-        if not args.cfg_dir.is_dir():
-            parser.error('--cfg-dir must be the existing game/csgo/cfg directory')
-        atomic_text(args.cfg_dir / 'gamestate_integration_cs2_gc.cfg', config_text(rewards.state['token'], args.port))
-    with HTTPServer(('127.0.0.1', args.port), handler_for(rewards)) as server:
-        server.timeout = 5
+    with InstanceLock(args.proxy_dir) as acquired:
+        if not acquired:
+            if sys.stdout:
+                print('Rewards helper is already running for this game directory.')
+            return
+        if args.log_file:
+            # No tokens or packet payloads are logged. Rotate just this helper's diagnostic log.
+            if args.log_file.exists() and args.log_file.stat().st_size > 1024 * 1024:
+                args.log_file.replace(args.log_file.with_suffix('.previous.log'))
+            with args.log_file.open('a', encoding='utf-8', buffering=1) as output:
+                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                    try:
+                        run(args)
+                    except Exception:
+                        traceback.print_exc()
+                        raise SystemExit(1)
+        else:
+            run(args)
+
+
+def run(args):
+    parent = ParentProcess(args.parent_pid)
+    try:
+        if not parent.alive():
+            return
+        run_with_parent(args, parent)
+    finally:
+        parent.close()
+
+
+def run_with_parent(args, parent):
+    # Bind before loading/writing state: another (including older) helper may own this port.
+    with HTTPServer(('127.0.0.1', args.port), BaseHTTPRequestHandler) as server:
+        rewards = Rewards(args.proxy_dir)
+        if args.cfg_dir:
+            if not args.cfg_dir.is_dir():
+                raise ValueError('--cfg-dir must be the existing game/csgo/cfg directory')
+            config_path = args.cfg_dir / 'gamestate_integration_cs2_gc.cfg'
+            content = config_text(rewards.state['token'], args.port)
+            if not config_path.exists() or config_path.read_text(encoding='utf-8') != content:
+                atomic_text(config_path, content)
+                print('GSI config installed/updated. If this is the first setup, restart CS2 once to load it.', flush=True)
+        server.RequestHandlerClass = handler_for(rewards)
         if args.cfg_dir and rewards.config['premier_enabled']:
             difficulty_path = args.cfg_dir / 'cs2_gc_premier_bots.cfg'
             last_difficulty = [-1]
@@ -202,15 +244,20 @@ def main():
                 last_difficulty[0] = difficulty
             write_difficulty()
             print('Local Premier bot config prepared. In the local server console: exec cs2_gc_premier_bots', flush=True)
-        print('Local CS2 XP bridge listening. Keep this window open while playing bot matches.')
-        while True:
-            server.handle_request()
+        print('Local CS2 rewards bridge running' + (' in background; exits with CS2.' if args.parent_pid else ' in manual diagnostic mode.'), flush=True)
+        next_status = [time.monotonic() + 30]
+        def after_request():
             if args.cfg_dir and rewards.config['premier_enabled']:
                 write_difficulty()
+            if time.monotonic() < next_status[0]: return
+            next_status[0] = time.monotonic() + 30
             if rewards.last_received is None:
                 print('Waiting for CS2: restart the game after starting this helper; then enter a bot match.', flush=True)
             elif time.monotonic() - rewards.last_received > 30:
                 print('No game data for 30 seconds. Check that CS2 is running with the installed GSI config.', flush=True)
+
+        serve_until_parent_exits(server, parent, after_request)
+        print('CS2 closed; rewards helper stopped.', flush=True)
 
 
 if __name__ == '__main__':

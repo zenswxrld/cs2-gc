@@ -47,6 +47,22 @@ bool Number(std::string_view text, T &out)
 }
 }
 
+std::wstring QuoteWindowsArgument(std::wstring_view argument)
+{
+    std::wstring out(1, L'"');
+    std::size_t slashes = 0;
+    for (const auto ch : argument)
+    {
+        if (ch == L'\\') { ++slashes; continue; }
+        out.append(ch == L'"' ? slashes * 2 + 1 : slashes, L'\\');
+        slashes = 0;
+        out += ch;
+    }
+    out.append(slashes * 2, L'\\');
+    out += L'"';
+    return out;
+}
+
 bool CommandLineHasArgument(std::string_view commandLine, std::string_view argument)
 {
     std::string token;
@@ -203,7 +219,7 @@ std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text)
         std::uint32_t *target = nullptr, minimum = 0, maximum = 1;
 #define BOOL_OPTION(name) if (key == #name) target = &config.name; else
 #define NUMBER_OPTION(name, low, high) if (key == #name) { target = &config.name; minimum = low; maximum = high; } else
-        BOOL_OPTION(xp_enabled) BOOL_OPTION(stars_enabled) BOOL_OPTION(match_drops_enabled)
+        BOOL_OPTION(rewards_auto_start) BOOL_OPTION(xp_enabled) BOOL_OPTION(stars_enabled) BOOL_OPTION(match_drops_enabled)
         BOOL_OPTION(mixed_stattrak_tradeups) BOOL_OPTION(pity_enabled) BOOL_OPTION(terminals_enabled)
         BOOL_OPTION(terminal_helper_enabled) BOOL_OPTION(armory_rotation_enabled) BOOL_OPTION(armory_rotation_enforce) BOOL_OPTION(premier_enabled) BOOL_OPTION(armory_howl_enabled)
         NUMBER_OPTION(armory_howl_star_price, 1, 1000000)

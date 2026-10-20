@@ -228,7 +228,7 @@ public:
     {
         m_rewardPath = std::move(rewardPath);
         m_afterReward = std::move(afterReward);
-        m_log.Write("progression: run start_rewards.cmd before launching CS2; it must remain open during bot matches");
+        m_log.Write("progression: gameplay rewards use the local bridge (automatic startup controlled by rewards_auto_start)");
     }
     void PollProgression()
     {
@@ -434,6 +434,10 @@ struct State
     ProxyCoordinator *coordinator{};
     ProxyCoordinator *serverCoordinator{};
     ProxyMode mode{ProxyMode::Local};
+    bool autoRewards{};
+    HANDLE rewardsProcess{};
+    unsigned rewardsLaunchAttempts{};
+    std::chrono::steady_clock::time_point nextRewardsLaunch{};
     using FindFn = void *(__cdecl *)(int, const char *);
     using CreateFn = void *(__cdecl *)(const char *);
     FindFn realFind{};
@@ -448,6 +452,82 @@ struct State
     std::uint64_t (__cdecl *realGetSteamId)(void *){};
     std::optional<std::uint32_t> genericSlotOffset; // from the real DLL's own flat-API thunk
 };
+
+// Called from the normal game callback loop, never DllMain/loader initialization.
+void StartRewardsIfNeeded(State &state)
+{
+    if (!state.autoRewards)
+        return;
+    static std::mutex launchMutex;
+    std::lock_guard lock(launchMutex);
+    const auto now = std::chrono::steady_clock::now();
+    if (now < state.nextRewardsLaunch)
+        return;
+    state.nextRewardsLaunch = now + std::chrono::seconds(10);
+    if (state.rewardsProcess)
+    {
+        if (WaitForSingleObject(state.rewardsProcess, 0) == WAIT_TIMEOUT)
+            return;
+        DWORD code = 1;
+        GetExitCodeProcess(state.rewardsProcess, &code);
+        CloseHandle(state.rewardsProcess);
+        state.rewardsProcess = nullptr;
+        if (code == 0)
+        {
+            state.autoRewards = false; // another helper already holds the directory lock
+            state.log->Write("rewards: launcher finished; an existing helper may already be running");
+            return;
+        }
+        state.log->Write("rewards: helper exited with code " + std::to_string(code) +
+                         "; see cs2_gc_rewards.log (Python 3 is required)");
+    }
+    if (state.rewardsLaunchAttempts >= 3)
+    {
+        state.autoRewards = false;
+        state.log->Write("rewards: stopped retrying; check cs2_gc_rewards.log or run start_rewards.cmd to diagnose");
+        return;
+    }
+    ++state.rewardsLaunchAttempts;
+    const auto script = std::filesystem::path(state.directory) / L"gsi_rewards.py";
+    const auto cfg = (std::filesystem::path(state.directory) / L".." / L".." / L"csgo" / L"cfg").lexically_normal();
+    if (!std::filesystem::exists(script) || !std::filesystem::is_directory(cfg))
+    {
+        state.autoRewards = false;
+        state.log->Write("rewards: missing bundled helper or game/csgo/cfg; extract the complete test ZIP beside the DLL");
+        return;
+    }
+    struct Candidate { const wchar_t *name; bool launcher; };
+    const Candidate candidates[] = {{L"pyw.exe", true}, {L"pythonw.exe", false},
+                                    {L"py.exe", true}, {L"python.exe", false}};
+    for (const auto &candidate : candidates)
+    {
+        wchar_t found[32768];
+        const auto length = SearchPathW(nullptr, candidate.name, nullptr, 32768, found, nullptr);
+        if (!length || length >= 32768)
+            continue;
+        std::wstring command = QuoteWindowsArgument(found);
+        if (candidate.launcher) command += L" -3";
+        command += L" " + QuoteWindowsArgument(script.wstring()) +
+                   L" --proxy-dir " + QuoteWindowsArgument(state.directory) +
+                   L" --cfg-dir " + QuoteWindowsArgument(cfg.wstring()) +
+                   L" --parent-pid " + std::to_wstring(GetCurrentProcessId()) +
+                   L" --log-file " + QuoteWindowsArgument((std::filesystem::path(state.directory) / L"cs2_gc_rewards.log").wstring());
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        startup.dwFlags = STARTF_USESHOWWINDOW;
+        startup.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION child{};
+        if (!CreateProcessW(found, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                            nullptr, state.directory.c_str(), &startup, &child))
+            continue;
+        CloseHandle(child.hThread);
+        state.rewardsProcess = child.hProcess;
+        state.log->Write("rewards: background helper launched; exits with CS2. Diagnostics: cs2_gc_rewards.log");
+        return;
+    }
+    state.autoRewards = false;
+    state.log->Write("rewards: Python 3 not found; install Python 3 with its launcher or PATH option, then restart CS2");
+}
 
 State &Init();
 
@@ -691,6 +771,7 @@ State &Init()
                     s.log->Write("ERROR: cs2_gc_gameplay.cfg invalid; using documented default gameplay settings");
             }
             else s.log->Write("gameplay: no cs2_gc_gameplay.cfg; using documented defaults");
+            s.autoRewards = loaded->Gameplay().rewards_auto_start != 0;
             auto live = std::make_shared<LiveInventory>(std::move(*loaded));
             s.serverCoordinator->EnableServerInventory(live);
             Logger *saveLog = s.log;
@@ -814,7 +895,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: codex-20261020-02");
+        s.log->Write("test build: codex-20261020-03");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");
@@ -988,7 +1069,10 @@ extern "C" __declspec(dllexport) void __cdecl SteamAPI_RunCallbacks()
     if (state.realRunCallbacks)
         state.realRunCallbacks();
     if (state.active && state.coordinator && state.mode == ProxyMode::Local)
+    {
+        StartRewardsIfNeeded(state);
         state.coordinator->PollProgression();
+    }
     std::uint32_t size = 0;
     if (state.active && state.coordinator && state.coordinator->IsMessageAvailable(&size))
         DeliverGcMessageAvailable(state, size);

@@ -687,6 +687,11 @@ void ProtobufDump()
 
 void ProxySupport()
 {
+    Check(QuoteWindowsArgument(L"") == L"\"\"" &&
+          QuoteWindowsArgument(L"C:\\Program Files\\CS2\\") == L"\"C:\\Program Files\\CS2\\\\\"" &&
+          QuoteWindowsArgument(L"a\"b") == L"\"a\\\"b\"", "background command safely quotes spaces, trailing slashes and quotes");
+    Check(ParseGameplayConfig("rewards_auto_start=0")->rewards_auto_start == 0 &&
+          !ParseGameplayConfig("rewards_auto_start=2"), "automatic rewards setting accepts only a boolean");
     Check(CommandLineHasArgument("cs2.exe -insecure", "-insecure"), "flag present");
     Check(CommandLineHasArgument("\"C:\\Program Files\\cs2.exe\" -novid -INSECURE +map de_dust2", "-insecure"), "case-insensitive, quoted path");
     Check(CommandLineHasArgument("cs2.exe\t-insecure\r\n", "-insecure"), "tab and newline separators");

@@ -1,4 +1,4 @@
-# Codex test build 2026-10-20-02
+# Codex test build 2026-10-20-03
 
 ## Install and test
 
@@ -6,7 +6,7 @@
 2. Copy the test ZIP's contents to `game/bin/win64`, beside your existing `steam_api64_real.dll`, `items_game.txt`, config and replay directory. Keep those existing files.
 3. `cs2_gc_gameplay.cfg` contains all gameplay options with comments. Defaults match the requests. Close/restart **both CS2 and the helper** after edits. Existing proxy/account configuration is separate and is not replaced. See the limitations below for native UI features.
 4. With CS2 closed, run `grant_test_items.cmd` once (Python 3 required). It adds 229 schema-validated test items and makes a timestamped inventory backup. Existing items, stars, pass progress and rank remain intact. Running it again adds another batch.
-5. Run `start_rewards.cmd` and leave its window open. It installs only `game/csgo/cfg/gamestate_integration_cs2_gc.cfg` and starts a loopback game-state receiver. Launch/restart CS2 afterwards so that config is read.
+5. Close any old `start_rewards.cmd` window. Leave the bundled Python helpers beside the DLL. **The DLL now starts the rewards bridge automatically in the background** when local `-insecure` CS2 runs, and the bridge stops when that game closes. Python 3 must remain installed. If GSI has never been configured, the first launch installs its dedicated config; restart CS2 once to load it. No manual helper launch is needed after that.
 6. Launch CS2 with `-insecure` in local mode. Activate an Armory Pass to earn stars. Play a bot match.
 
 Test items: 20 normal skins at each rarity from Consumer through Classified, 10 normal Coverts, 20 StatTrak skins at each of Mil-Spec/Restricted/Classified, 10 StatTrak Coverts, Fever cases and matching keys, sticker capsules, patch packs, X-Ray packages, both terminals and five Armory Passes. Each rarity/StatTrak group starts in one collection so ten standard inputs (or five Covert inputs) have valid outcomes. Finishes, patterns and wear vary. All names/IDs are checked against the supplied schema, not added as custom items.
@@ -26,7 +26,34 @@ By default every active pass advances by the earned XP, awarding one star per 40
 
 The helper commits cumulative XP and its last snapshot to `cs2_gc_gsi_state.json`, then atomically publishes `cs2_gc_rewards.txt`. The proxy applies only XP beyond its saved checkpoint. Keep both helper files; do not delete/reset one to replenish rewards. Stars, pass tracks, rank, XP and the consumed checkpoint save together in the inventory. The config's `armory_credits` seeds an inventory without a saved balance; it no longer refills stars on relaunch. Existing pre-fix spending cannot be reconstructed automatically.
 
-## New in build 02
+## New in build 03
+
+The proxy launches the local rewards bridge from the normal Steam callback loop,
+with a hidden Windows process and the actual game PID. It prefers `pyw`/`pythonw`,
+with console Python fallback also launched without a console. The bridge retains
+a Windows handle to the launching game and exits after that process ends. It
+does not run at Windows startup or install a scheduled task/service.
+
+An OS lock prevents duplicate helpers from changing the same reward state. The
+HTTP port is claimed before loading/saving state, including conflicts with an
+older helper. Startup failures are recorded in `cs2_gc_log.txt`; background
+Python diagnostics go to `cs2_gc_rewards.log`, with one previous log retained.
+Missing Python or missing bundled scripts is reported. Helper restarts are
+limited to three launches per game session. Logs do not include the GSI token or
+raw packets. Existing reward cursors keep replayed stats from paying twice.
+
+Automatic startup defaults on. Set `rewards_auto_start = 0` in
+`cs2_gc_gameplay.cfg` to use the manual `start_rewards.cmd` diagnostic mode instead.
+The manual script is optional; keep its window open only when choosing that mode.
+If an old manual helper is already running, close it once before installing this
+build so the automatic helper can own its lifecycle.
+
+Regression tests launch a real helper process, send duplicate gameplay snapshots,
+verify one reward, reject a second helper, close the parent, and verify clean exit
+and saved rewards. Full Windows cross-build and export checks are separate from
+live Windows/CS2 testing; that startup/exit flow still needs your in-game check.
+
+## Changes retained from build 02
 
 - Mixed normal/StatTrak contracts use the input fraction for StatTrak probability (3/10 = 30%, 2/5 = 40%). Gold StatTrak outcomes use knives; glove-only pools always stay normal for mixed contracts and refuse all-StatTrak contracts atomically. Intentional contract StatTrak survives startup repair.
 - If the native recipe menu filters the other variant, keep CS2 running and run `mixed_tradeup.cmd`, choose a rarity and the printed local IDs, then confirm once. It submits the normal local Craft request; it never edits your inventory file.
@@ -35,7 +62,7 @@ The helper commits cumulative XP and its last snapshot to `cs2_gc_gsi_state.json
 - The supplied latest log shows revealed terminal offers but **zero Store PurchaseInit requests** in the build-01 session. Native terminal checkout is still unresolved. Workaround: reveal the offer, keep CS2 running, run `terminal_purchase.cmd`, select the terminal and confirm. It keeps the displayed offer, consumes that terminal, saves and updates your inventory, locally and free. Close the laptop afterwards.
 - Every newly observed completed match grants **three items**, each independently 50% a keyed case or 50% a normal weapon skin of rarity blue through red. Drops do not require an Armory Pass. No automatic key, gold or Contraband match drop. Count/chance/minimum rarity are configurable. Completion counters and granted items persist together, so repeated snapshots/restarts do not duplicate drops. No retrospective payout for old matches absent from the bridge history.
 - Native match-drop notification messages follow the new inventory objects. Their live presentation still needs testing; receiving inventory items and displaying a match panel are separate checks.
-- The GSI window prints first receipt, earned XP, completed matches and waiting/stale-data diagnostics. Your supplied save has five active passes but XP/reward cursor both zero, so none of its gameplay XP reached the coordinator. **Start the helper before launching/restarting CS2 and leave it open.** A helper window waiting forever means CS2 has not sent GSI data; send that window's text with the log.
+- The GSI window prints first receipt, earned XP, completed matches and waiting/stale-data diagnostics. Your supplied save has five active passes but XP/reward cursor both zero, so none of its gameplay XP reached the coordinator. Build 03 starts it automatically. Check `cs2_gc_rewards.log` for received/waiting/earned messages; if the config was just installed, restart the game once. Send that log with `cs2_gc_log.txt` if XP remains zero.
 - `cs2_gc_gameplay.cfg` controls XP events and switches, XP per star, drop count/odds, mixed contracts, pity, terminals, rotation, local rating and Howl offer policy. Saving zero stars, level 1/0 XP defaults and pass caps remain intact. Unknown/duplicate/out-of-range keys are rejected. The helper stops on invalid config; the DLL logs an error and uses documented defaults.
 
 ### Local Premier foundation

@@ -21,3 +21,7 @@ cs2_gc_terminal_*.txt
 cs2_gc_terminal_*.txt.tmp
 
 cs2_gc_premier_bots.cfg
+
+cs2_gc_rewards.lock
+cs2_gc_rewards.log
+cs2_gc_rewards.previous.log

@@ -47,6 +47,8 @@ if(BUILD_TESTING)
 
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_FOUND)
+        add_test(NAME cs2_rewards_runtime COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_rewards_runtime.py -v)
+        set_tests_properties(cs2_rewards_runtime PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_gameplay_options COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_gameplay_options.py -v)
         set_tests_properties(cs2_gameplay_options PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_gsi_rewards COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_gsi_rewards.py -v)

@@ -1,5 +1,6 @@
 """Validated cs2_gc_gameplay.cfg shared with the proxy (restart both after edits)."""
 DEFAULTS = {
+    'rewards_auto_start': 1,
     'xp_enabled': 1, 'stars_enabled': 1, 'armory_xp_per_star': 400,
     'kill_xp': 5, 'headshot_xp': 3, 'mvp_xp': 25, 'match_complete_xp': 600,
     'match_drops_enabled': 1, 'match_drop_count': 3, 'match_case_percent': 50, 'match_skin_min_rarity': 3,

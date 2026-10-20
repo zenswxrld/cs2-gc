@@ -8,6 +8,7 @@ namespace cs2_gc
 // Runtime policy only: inventory balances/counters remain in the saved inventory.
 struct GameplayConfig
 {
+    std::uint32_t rewards_auto_start{1};
     std::uint32_t xp_enabled{1}, stars_enabled{1};
     std::uint32_t armory_xp_per_star{400};
     std::uint32_t kill_xp{5}, headshot_xp{3}, mvp_xp{25}, match_complete_xp{600};

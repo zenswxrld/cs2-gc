@@ -1,3 +1,35 @@
+# Current follow-up: build 03, automatic background rewards
+
+User wants to stop manually launching/leaving a rewards window open. Source now
+starts gsi_rewards.py from the first normal SteamAPI_RunCallbacks in local,
+-insecure mode; never from DllMain and never in capture/normal online mode.
+Windows CreateProcessW prefers pyw/pythonw, uses CREATE_NO_WINDOW, quotes every
+path/argument, sets the proxy directory and passes the actual game PID/log path.
+Game code monitors only the child process handle, never waits for it, and limits
+restarts to three per session. rewards_auto_start defaults1; 0 retains manual
+start_rewards.cmd diagnostic mode.
+
+New rewards_runtime.py holds an OS file lock per proxy directory before any
+state access, then Python binds the loopback port before loading/saving state.
+This rejects both duplicate new helpers and a port owned by an older helper
+without rewriting reward history. ParentProcess retains a SYNCHRONIZE handle to
+the actual launching game on Windows, avoiding PID-reuse races; the HTTP loop
+checks it at one-second idle intervals, closes and exits when CS2 closes. No
+scheduled tasks, Windows startup entries or services are installed.
+
+Diagnostics: cs2_gc_rewards.log (one rotated previous log) and proxy startup
+messages. Token/raw packet data never logged. Dedicated GSI cfg is written only
+when missing/changed. First-ever setup during an already-started game may require
+one restart to load GSI. Existing config/token/cursors are retained. Close an old
+manual helper once when updating so the new game-owned helper can take over.
+
+Tests cover real helper parent exit, single-instance lock/release, duplicate GSI
+not paying twice, and port collisions not creating state. Windows argument quoting
+and the config switch have core tests. Python 3 is still required on the user's
+machine. Automatic startup/shutdown must still be verified in live Windows CS2.
+
+---
+
 # Current follow-up: build 02 (20 October 2026)
 
 This section supersedes the build-01 implementation details below. Source remains on

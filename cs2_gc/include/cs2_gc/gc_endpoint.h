@@ -70,7 +70,9 @@ public:
 
     // Track the loadout: equip requests change the live inventory and the game is told through a
     // shared-object update, and a fresh Welcome carries the current slots in place of the recorded ones.
-    void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory);
+    // Sticker applications also change the inventory (and are answered by an item update plus the
+    // sticker item's removal); `afterChange` runs after each so the caller can save it.
+    void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange = {});
 
     // Answer a store purchase request with a failure instead of leaving it unanswered. Nothing is
     // charged and nothing is granted.

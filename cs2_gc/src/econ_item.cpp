@@ -130,6 +130,22 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
         AddIntegerAttribute(out, AttributeStickerKit, item.stickerKit);
     if (item.keychain)
         AddIntegerAttribute(out, AttributeKeychain, item.keychain);
+    for (const AppliedSticker &sticker : item.stickers)
+    {
+        const std::uint32_t base = AttributeStickerSlotBase + 4 * sticker.slot;
+        const std::uint32_t offset = AttributeStickerOffsetBase + 2 * sticker.slot;
+        AddIntegerAttribute(out, base, sticker.kit);
+        if (sticker.wear != 0.0f)
+            AddFloatAttribute(out, base + 1, sticker.wear);
+        if (sticker.scale != 0.0f)
+            AddFloatAttribute(out, base + 2, sticker.scale);
+        if (sticker.rotation != 0.0f)
+            AddFloatAttribute(out, base + 3, sticker.rotation);
+        if (sticker.offsetX != 0.0f)
+            AddFloatAttribute(out, offset, sticker.offsetX);
+        if (sticker.offsetY != 0.0f)
+            AddFloatAttribute(out, offset + 1, sticker.offsetY);
+    }
     if (item.rarity)
         out.Varint(19, item.rarity);
     return out.bytes();

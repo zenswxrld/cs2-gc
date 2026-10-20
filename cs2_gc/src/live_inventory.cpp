@@ -27,6 +27,46 @@ std::optional<std::uint32_t> LiveInventory::DefinitionOf(std::uint64_t itemId) c
     return item ? std::optional<std::uint32_t>{item->defIndex} : std::nullopt;
 }
 
+std::optional<LiveInventory::StickerApplied> LiveInventory::ApplySticker(const ApplyStickerRequest &request)
+{
+    if (request.stickerItemId <= CustomItemIdBase || request.targetItemId <= CustomItemIdBase ||
+        request.stickerItemId == request.targetItemId || request.slot >= StickerSlotCount)
+        return std::nullopt;
+    const InventoryItem *sticker = m_inventory.Find(request.stickerItemId - CustomItemIdBase);
+    InventoryItem *target = m_inventory.Find(request.targetItemId - CustomItemIdBase);
+    if (!sticker || !target || sticker->defIndex != DefinitionSticker || sticker->stickerKit == 0 ||
+        target->defIndex == DefinitionSticker || target->defIndex == DefinitionKeychain || target->stickerKit ||
+        target->keychain)
+        return std::nullopt;
+    for (const AppliedSticker &existing : target->stickers)
+        if (existing.slot == request.slot)
+            return std::nullopt;
+
+    AppliedSticker applied;
+    applied.slot = request.slot;
+    applied.kit = sticker->stickerKit;
+    applied.wear = request.wear;
+    applied.scale = request.scale;
+    applied.rotation = request.rotation;
+    applied.offsetX = request.offsetX;
+    applied.offsetY = request.offsetY;
+    target->stickers.push_back(applied);
+
+    StickerApplied result;
+    result.consumed = *sticker;
+    m_inventory.Remove(sticker->id);
+    result.item = *m_inventory.Find(request.targetItemId - CustomItemIdBase);
+    std::uint32_t index = 0;
+    for (const InventoryItem &item : m_inventory.Items())
+    {
+        if (item.id == result.item.id)
+            break;
+        ++index;
+    }
+    result.position = ItemPositionBase + index;
+    return result;
+}
+
 std::vector<std::vector<std::uint8_t>> LiveInventory::EncodedSlots(std::uint32_t accountId) const
 {
     std::vector<std::vector<std::uint8_t>> out;

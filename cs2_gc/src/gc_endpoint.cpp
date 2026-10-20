@@ -121,7 +121,8 @@ void LocalGameCoordinator::EnableStorePurchaseFailure()
     });
 }
 
-void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> inventory)
+void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> inventory,
+                                               std::function<void()> afterChange)
 {
     {
         std::lock_guard lock(m_mutex);
@@ -150,6 +151,35 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
                    update.version = ++gc.m_soVersion;
                    update.owner = gc.m_config.owner;
                    gc.Reply(gc_msg::ESOMsg::k_ESOMsg_UpdateMultiple, EncodeSoMultipleObjects(update));
+               });
+
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCApplySticker,
+               [inventory, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
+                   const auto request = DecodeApplyStickerRequest(frame.body);
+                   const auto applied = request ? inventory->ApplySticker(*request) : std::nullopt;
+                   if (!applied)
+                   {
+                       ++gc.m_ignored; // not ours, not a sticker, or the slot is taken: change nothing
+                       return;
+                   }
+                   const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                   SoSingleObject updated;
+                   updated.typeId = static_cast<std::int32_t>(ItemTypeId);
+                   updated.data = BuildEconItem(applied->item, accountId, CustomItemIdBase + applied->item.id,
+                                                applied->position);
+                   updated.version = ++gc.m_soVersion;
+                   updated.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+
+                   SoSingleObject destroyed;
+                   destroyed.typeId = static_cast<std::int32_t>(ItemTypeId);
+                   destroyed.data = BuildEconItem(applied->consumed, accountId,
+                                                  CustomItemIdBase + applied->consumed.id, applied->position);
+                   destroyed.version = ++gc.m_soVersion;
+                   destroyed.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(destroyed));
+                   if (afterChange)
+                       afterChange();
                });
 }
 

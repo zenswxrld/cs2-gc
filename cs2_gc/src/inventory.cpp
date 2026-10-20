@@ -31,6 +31,12 @@ const InventoryItem *Inventory::Find(std::uint64_t id) const
     return it == m_items.end() ? nullptr : &*it;
 }
 
+InventoryItem *Inventory::Find(std::uint64_t id)
+{
+    const auto it = std::find_if(m_items.begin(), m_items.end(), [id](const InventoryItem &i) { return i.id == id; });
+    return it == m_items.end() ? nullptr : &*it;
+}
+
 namespace
 {
 template <typename T>
@@ -38,6 +44,23 @@ bool ParseNumber(std::string_view text, T &out)
 {
     const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), out);
     return ec == std::errc{} && end == text.data() + text.size();
+}
+
+bool ParseSticker(std::string_view text, AppliedSticker &sticker)
+{
+    float *floats[] = {&sticker.wear, &sticker.scale, &sticker.rotation, &sticker.offsetX, &sticker.offsetY};
+    auto next = [&text]() {
+        const auto end = text.find(' ');
+        const std::string_view word = text.substr(0, end);
+        text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
+        return word;
+    };
+    if (!ParseNumber(next(), sticker.kit) || sticker.kit == 0)
+        return false;
+    for (float *value : floats)
+        if (!ParseNumber(next(), *value) || !std::isfinite(*value))
+            return false;
+    return text.empty();
 }
 
 std::string FloatText(float value)
@@ -62,8 +85,12 @@ std::string Inventory::ToText() const
             << "\t\t\t\"stattrak\"\t\"" << (item.statTrak ? 1 : 0) << "\"\n"
             << "\t\t\t\"rarity\"\t\"" << item.rarity << "\"\n"
             << "\t\t\t\"sticker_kit\"\t\"" << item.stickerKit << "\"\n"
-            << "\t\t\t\"keychain\"\t\"" << item.keychain << "\"\n"
-            << "\t\t}\n";
+            << "\t\t\t\"keychain\"\t\"" << item.keychain << "\"\n";
+        for (const AppliedSticker &sticker : item.stickers)
+            out << "\t\t\t\"sticker_" << sticker.slot << "\"\t\"" << sticker.kit << ' ' << FloatText(sticker.wear)
+                << ' ' << FloatText(sticker.scale) << ' ' << FloatText(sticker.rotation) << ' '
+                << FloatText(sticker.offsetX) << ' ' << FloatText(sticker.offsetY) << "\"\n";
+        out << "\t\t}\n";
     }
     out << "\t}\n}\n";
     return out.str();
@@ -99,6 +126,17 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
         if ((entry.Find("sticker_kit") && !ParseNumber(entry.Value("sticker_kit"), item.stickerKit)) ||
             (entry.Find("keychain") && !ParseNumber(entry.Value("keychain"), item.keychain)))
             return std::nullopt;
+        for (std::uint32_t slot = 0; slot < StickerSlotCount; ++slot)
+        {
+            const KvNode *node = entry.Find("sticker_" + std::to_string(slot));
+            if (!node)
+                continue;
+            AppliedSticker sticker;
+            sticker.slot = slot;
+            if (node->block || !ParseSticker(node->value, sticker))
+                return std::nullopt;
+            item.stickers.push_back(sticker);
+        }
         item.statTrak = statTrak == 1;
         inventory.m_items.push_back(item);
     }

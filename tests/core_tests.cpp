@@ -1723,10 +1723,114 @@ void ArmoryEndpoint()
     Check(balance == 0, "a reconnect's welcome shows the live balance");
 }
 
+void StickerApplication()
+{
+    namespace m = gc_msg;
+    Inventory inventory;
+    InventoryItem weapon;
+    weapon.defIndex = 7;
+    weapon.paintKitIndex = 282;
+    weapon.wear = 0.1f;
+    weapon.seed = 5;
+    inventory.Add(weapon);
+    InventoryItem sticker;
+    sticker.defIndex = DefinitionSticker;
+    sticker.stickerKit = 77;
+    inventory.Add(sticker);
+    const std::uint64_t weaponId = CustomItemIdBase + 1, stickerId = CustomItemIdBase + 2;
+
+    PbWriter body;
+    body.Varint(1, stickerId);
+    body.Varint(2, weaponId);
+    body.Varint(3, 3);
+    body.Fixed32(6, std::bit_cast<std::uint32_t>(15.0f));
+    body.Fixed32(8, std::bit_cast<std::uint32_t>(0.25f));
+    const auto request = DecodeApplyStickerRequest(body.bytes());
+    Check(request && request->stickerItemId == stickerId && request->targetItemId == weaponId && request->slot == 3 &&
+              request->rotation == 15.0f && request->offsetX == 0.25f && request->scale == 0.0f,
+          "apply-sticker request decodes");
+    PbWriter wrongWire;
+    wrongWire.Varint(6, 1);
+    Check(!DecodeApplyStickerRequest(wrongWire.bytes()) && !DecodeApplyStickerRequest(Bytes({0x0A, 0x09, 1})),
+          "malformed apply-sticker request rejected");
+
+    auto live = std::make_shared<LiveInventory>(inventory);
+    ApplyStickerRequest bad = *request;
+    bad.slot = 5;
+    Check(!live->ApplySticker(bad), "slot past the last is refused");
+    bad = *request;
+    bad.stickerItemId = weaponId;
+    Check(!live->ApplySticker(bad), "a non-sticker item cannot be applied");
+    bad = *request;
+    bad.targetItemId = 4242;
+    Check(!live->ApplySticker(bad) && live->Items().Items().size() == 2, "unknown target refused, nothing changed");
+
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    int saves = 0;
+    gc.EnableLiveInventory(live, [&saves] { ++saves; });
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCApplySticker, {}, body.bytes(), frame);
+    gc.SendMessage(m::EGCItemMsg::k_EMsgGCApplySticker | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    const auto read = [&]() -> std::optional<std::pair<std::uint32_t, SoSingleObject>> {
+        std::uint32_t size = 0, got = 0, type = 0;
+        if (!gc.IsMessageAvailable(&size))
+            return std::nullopt;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&type, buffer.data(), size, &got);
+        FrameView view;
+        ReadProtobufFrame(type, buffer, view);
+        auto object = DecodeSoSingleObject(view.body);
+        if (!object)
+            return std::nullopt;
+        return std::make_pair(type & ~ProtobufMask, *object);
+    };
+    const auto updated = read();
+    const auto destroyed = read();
+    Check(updated && updated->first == m::ESOMsg::k_ESOMsg_Update && updated->second.typeId == 1, "item updated");
+    Check(destroyed && destroyed->first == m::ESOMsg::k_ESOMsg_Destroy && destroyed->second.typeId == 1,
+          "sticker item destroyed");
+    Check(saves == 1 && live->Items().Items().size() == 1, "inventory saved, sticker item consumed");
+    const InventoryItem &applied = live->Items().Items()[0];
+    Check(applied.stickers.size() == 1 && applied.stickers[0].slot == 3 && applied.stickers[0].kit == 77 &&
+              applied.stickers[0].rotation == 15.0f,
+          "sticker recorded on the weapon");
+
+    // The attributes the game reads: slot 3 id is 125, rotation 128, offset x 284.
+    const auto encoded = BuildEconItem(applied, 555, weaponId, ItemPositionBase);
+    const auto has = [&](std::uint32_t attribute) {
+        PbReader reader(encoded);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 12 && f.wire == 2)
+            {
+                PbReader inner(f.bytes);
+                PbField g;
+                while (inner.Next(g))
+                    if (g.number == 1 && g.value == attribute)
+                        return true;
+            }
+        return false;
+    };
+    Check(has(125) && has(128) && has(284) && !has(126) && !has(127), "sticker attributes encoded for slot 3");
+    Check(updated && updated->second.data == encoded, "the update carries the item with its sticker");
+
+    Check(!live->ApplySticker(*request), "a sticker cannot be applied twice");
+    const auto restored = Inventory::FromText(live->Items().ToText());
+    Check(restored && restored->Items().size() == 1 && restored->Items()[0].stickers.size() == 1 &&
+              restored->Items()[0].stickers[0].offsetX == 0.25f,
+          "applied stickers survive a save and load");
+    Check(!Inventory::FromText("\"inventory\" { \"next_id\" \"2\" \"items\" { \"1\" { \"def_index\" \"7\" \"paint_kit\" \"0\" "
+                               "\"wear\" \"0\" \"seed\" \"0\" \"stattrak\" \"0\" \"sticker_0\" \"0 0 0 0 0 0\" } } }"),
+          "a sticker with no kit is rejected on load");
+}
+
 int main()
 {
     try
     {
+        StickerApplication(); std::cout << "PASS sticker application\n";
         Frames(); std::cout << "PASS protocol framing and malformed input\n";
         Queues(); std::cout << "PASS bounded Steam-style message queue\n";
         Progression(); std::cout << "PASS XP and star reward rules\n";

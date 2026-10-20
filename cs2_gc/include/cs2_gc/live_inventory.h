@@ -37,6 +37,18 @@ public:
     std::optional<std::vector<std::vector<std::uint8_t>>> Adjust(const AdjustEquipSlots &request,
                                                                  std::uint32_t accountId);
 
+    struct StickerApplied
+    {
+        InventoryItem item;                // the weapon with the sticker on it
+        std::uint32_t position{};          // its backpack position, as a Welcome would give it
+        InventoryItem consumed;            // the sticker item, now removed
+    };
+
+    // Applies a sticker item to a weapon slot. All checks come first: both ids must be ours, the
+    // first a sticker item, the second not a sticker, charm or graffiti, and the slot (0-4) free.
+    // On failure nothing changes.
+    std::optional<StickerApplied> ApplySticker(const ApplyStickerRequest &request);
+
 private:
     struct Slot
     {

@@ -91,6 +91,18 @@ struct RedeemRequest // CMsgGCCstrike15_v2_ClientRedeemMissionReward (an Armory 
     std::uint32_t expectedCost{};
 };
 
+struct ApplyStickerRequest // CMsgApplySticker: the body of k_EMsgGCApplySticker
+{
+    std::uint64_t stickerItemId{};
+    std::uint64_t targetItemId{};
+    std::uint32_t slot{};
+    float wear{};
+    float rotation{};
+    float scale{};
+    float offsetX{};
+    float offsetY{};
+};
+
 // Decoders reject malformed input outright; unknown fields are skipped.
 std::optional<ClientHello> DecodeClientHello(std::span<const std::uint8_t> body);
 std::optional<SoCacheSubscribed> DecodeSoCacheSubscribed(std::span<const std::uint8_t> body);
@@ -98,6 +110,7 @@ std::optional<ClientWelcome> DecodeClientWelcome(std::span<const std::uint8_t> b
 std::optional<SoSingleObject> DecodeSoSingleObject(std::span<const std::uint8_t> body);
 std::optional<SoMultipleObjects> DecodeSoMultipleObjects(std::span<const std::uint8_t> body);
 
+std::optional<ApplyStickerRequest> DecodeApplyStickerRequest(std::span<const std::uint8_t> body);
 std::optional<RedeemRequest> DecodeRedeemRequest(std::span<const std::uint8_t> body);
 std::vector<std::uint8_t> EncodeSoSingleObject(const SoSingleObject &object);
 std::optional<AdjustEquipSlots> DecodeAdjustEquipSlots(std::span<const std::uint8_t> body);

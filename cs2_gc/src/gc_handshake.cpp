@@ -1,5 +1,7 @@
 #include "cs2_gc/gc_handshake.h"
 #include "cs2_gc/protobuf.h"
+#include <bit>
+#include <cmath>
 #include <limits>
 
 namespace cs2_gc
@@ -248,6 +250,41 @@ std::optional<RedeemRequest> DecodeRedeemRequest(std::span<const std::uint8_t> b
             return std::nullopt;
         if (f.number == 4 && !U32(f, request.expectedCost))
             return std::nullopt;
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    return request;
+}
+
+std::optional<ApplyStickerRequest> DecodeApplyStickerRequest(std::span<const std::uint8_t> body)
+{
+    ApplyStickerRequest request;
+    PbReader reader(body);
+    PbField f;
+    auto asFloat = [](const PbField &field, float &out) {
+        if (field.wire != 5)
+            return false;
+        out = std::bit_cast<float>(static_cast<std::uint32_t>(field.value));
+        return std::isfinite(out);
+    };
+    while (reader.Next(f))
+    {
+        switch (f.number)
+        {
+        case 1:
+        case 2:
+            if (f.wire != 0)
+                return std::nullopt;
+            (f.number == 1 ? request.stickerItemId : request.targetItemId) = f.value;
+            break;
+        case 3: if (!U32(f, request.slot)) return std::nullopt; break;
+        case 5: if (!asFloat(f, request.wear)) return std::nullopt; break;
+        case 6: if (!asFloat(f, request.rotation)) return std::nullopt; break;
+        case 7: if (!asFloat(f, request.scale)) return std::nullopt; break;
+        case 8: if (!asFloat(f, request.offsetX)) return std::nullopt; break;
+        case 9: if (!asFloat(f, request.offsetY)) return std::nullopt; break;
+        default: break;
+        }
     }
     if (reader.Failed())
         return std::nullopt;

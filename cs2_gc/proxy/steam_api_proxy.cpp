@@ -220,7 +220,10 @@ public:
     void SetItemProvider(LocalGameCoordinator::ItemProvider provider) { m_gc.SetItemProvider(std::move(provider)); }
     void SetDropRecordedItems(bool drop) { m_gc.SetDropRecordedItems(drop); }
     void SetArmoryCredits(std::optional<std::uint32_t> credits) { m_gc.SetArmoryCredits(credits); }
-    void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory) { m_gc.EnableLiveInventory(std::move(inventory)); }
+    void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange)
+    {
+        m_gc.EnableLiveInventory(std::move(inventory), std::move(afterChange));
+    }
     void EnableStorePurchaseFailure() { m_gc.EnableStorePurchaseFailure(); }
     void EnableArmory(std::shared_ptr<Armory> armory, std::shared_ptr<LiveInventory> inventory, RandomSource random,
                       std::function<void()> afterGrant)
@@ -541,7 +544,11 @@ State &Init()
                 loaded = Inventory{};
             }
             auto live = std::make_shared<LiveInventory>(std::move(*loaded));
-            s.coordinator->EnableLiveInventory(live);
+            Logger *saveLog = s.log;
+            s.coordinator->EnableLiveInventory(live, [live, inventoryPath, inventoryFileUsable, saveLog] {
+                if (inventoryFileUsable && !live->Save(inventoryPath))
+                    saveLog->Write("could not save cs2_gc_inventory.txt");
+            });
             s.coordinator->EnableStorePurchaseFailure();
 
             if (replay->Size())
@@ -552,7 +559,7 @@ State &Init()
                 // Read at each Hello, so items granted during the session are in a reconnect's welcome.
                 s.coordinator->SetItemProvider([live](std::uint64_t steamId) {
                     std::vector<std::vector<std::uint8_t>> encoded;
-                    std::uint32_t position = 1000; // clear of the account's own backpack slots
+                    std::uint32_t position = ItemPositionBase;
                     for (const InventoryItem &item : live->Items().Items())
                         encoded.push_back(BuildEconItem(item, static_cast<std::uint32_t>(steamId & 0xFFFFFFFFull),
                                                         CustomItemIdBase + item.id, position++));

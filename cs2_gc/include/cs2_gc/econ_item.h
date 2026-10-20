@@ -19,6 +19,10 @@ inline constexpr std::uint32_t AttributePaintWear = 8;
 // item carries; the sticker and charm items themselves are tools (definitions 1209 and 1355).
 inline constexpr std::uint32_t AttributeStickerKit = 113;   // "sticker slot 0 id"
 inline constexpr std::uint32_t AttributeKeychain = 299;     // "keychain slot 0 id"
+// Applied stickers, per slot 0-4 (items_game.txt): id, wear, scale and rotation at 113 + 4 * slot
+// (+0..+3, the id stored as an integer), offset x and y at 278 + 2 * slot (+0, +1).
+inline constexpr std::uint32_t AttributeStickerSlotBase = 113;
+inline constexpr std::uint32_t AttributeStickerOffsetBase = 278;
 inline constexpr std::uint32_t DefinitionSticker = 1209;
 inline constexpr std::uint32_t DefinitionKeychain = 1355;
 
@@ -65,6 +69,10 @@ std::optional<std::vector<std::uint8_t>> SetArmoryBalance(std::span<const std::u
 
 // SO object type of CSOEconItem, as seen in the capture.
 inline constexpr std::uint64_t ItemTypeId = 1;
+
+// Backpack position of the first of our items in a Welcome (clear of the account's own slots); the
+// rest follow in inventory order.
+inline constexpr std::uint32_t ItemPositionBase = 1000;
 
 // Ids of the items this project creates start here, well clear of an account's own item ids.
 inline constexpr std::uint64_t CustomItemIdBase = 1000000000000ull;

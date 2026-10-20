@@ -141,6 +141,12 @@ in this session's view of the inventory: nothing is stored on Valve's side.
   `cs2_gc_inventory.txt`. Not confirmed in the game yet: the popup (it relies on pickup type 23,
   `xpshopredeem`, derived from the order of the client's pickup names), and the layout of sticker and
   charm items.
+- **Applying stickers works through the local GC** (offline test only until confirmed in the game). The apply
+  screen's Confirm Position sends `ApplySticker` (1086: sticker item, weapon item, slot, rotation, offsets). The
+  proxy checks both items are its own and the slot is free, writes the sticker onto the weapon (attributes
+  113 + 4 * slot for id, wear, scale and rotation; 278 + 2 * slot for the offsets, per `items_game.txt`), answers
+  with an SO update of the weapon and an SO destroy of the sticker item, and saves `cs2_gc_inventory.txt`
+  (`sticker_<slot>` lines on the weapon). Scraping and removing stickers are not handled.
 - **Armory credits.** The Credits Balance and the two Armory Pass tracks live in one recorded object
   (type 6, shaped like `CSOAccountXpShop`). `armory_credits = N` in `cs2_gc.cfg` sets the balance in the
   Welcome, which tests whether that guess is right: the Armory page should then show N credits.

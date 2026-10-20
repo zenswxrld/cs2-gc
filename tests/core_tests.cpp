@@ -4,6 +4,8 @@
 #include "cs2_gc/gc_endpoint.h"
 #include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/protobuf.h"
+#include "cs2_gc/protobuf_dump.h"
+#include "cs2_gc/proxy_support.h"
 #include "cs2_gc/message_queue.h"
 #include "cs2_gc/progression.h"
 #include "cs2_gc/schema.h"
@@ -432,6 +434,7 @@ void GcMessageIds()
     Check(m::ESOMsg::k_ESOMsg_Create == 21 && m::ESOMsg::k_ESOMsg_CacheSubscribed == 24, "SO cache messages");
     Check(m::EGCItemMsg::k_EMsgGCOpenCrate == 2534, "this build opens cases with OpenCrate");
     Check(m::GCConnectionStatus::GCConnectionStatus_HAVE_SESSION == 0, "connection status");
+    Check(std::string_view(m::MessageName(4006)) == "EGCBaseClientMsg::k_EMsgGCClientHello" && !m::MessageName(1), "name lookup");
     Check(TargetSteamBuildId == "25947352" && TargetClientDllSha256.size() == 64 &&
               TargetEngine2DllSha256.size() == 64 && TargetSteamApiDllSha256.size() == 64,
           "fingerprint record");
@@ -607,6 +610,84 @@ void Endpoint()
     Check(!gc.Reply(0, {}), "invalid reply type rejected");
 }
 
+void ProtobufDump()
+{
+    const auto has = [](const std::string &text, const char *part) { return text.find(part) != std::string::npos; };
+
+    PbWriter inner;
+    inner.Varint(1, 7);
+    inner.String(2, "hello");
+    PbWriter w;
+    w.Varint(1, 150);
+    w.Message(2, inner);
+    w.Bytes(3, Bytes({0x00, 0xFF, 0x80}));
+    w.Fixed64(4, 5);
+    w.Fixed32(5, 9);
+    w.Bytes(6, {});
+    const std::string text = DumpProtobuf(w.bytes());
+    Check(has(text, "1: varint 150\n") && has(text, "2: message {\n  1: varint 7\n  2: text \"hello\"\n}\n"), "nested and text");
+    Check(has(text, "3: bytes[3] 00 ff 80") && has(text, "4: fixed64 0x0000000000000005") &&
+              has(text, "5: fixed32 0x00000009") && has(text, "6: bytes[0]"), "scalars and bytes");
+
+    // SteamID64-shaped values never appear in the output, in any wire type.
+    constexpr std::uint64_t Id = 0x0110000100000000ull + 123456789;
+    PbWriter ids;
+    ids.Fixed64(1, Id);
+    ids.Varint(2, Id);
+    PbWriter nestedId;
+    nestedId.Fixed64(1, Id);
+    ids.Message(3, nestedId);
+    const std::string redacted = DumpProtobuf(ids.bytes());
+    Check(!has(redacted, "0110000") && !has(redacted, std::to_string(Id).c_str()) &&
+              !has(redacted, "123456789") && has(redacted, "<steamid redacted>"), "steam ids redacted");
+
+    PbWriter textId;
+    textId.String(1, "id=76561198012345678");
+    Check(!has(DumpProtobuf(textId.bytes()), "7656119") && has(DumpProtobuf(textId.bytes()), "<steamid redacted>"),
+          "decimal steam id text redacted");
+    Check(has(DumpProtobuf(Bytes({0x08})), "<malformed protobuf"), "malformed input is reported, not crashed on");
+    Check(DumpProtobuf({}).empty(), "empty message");
+
+    // Deep nesting and huge inputs stay bounded.
+    std::vector<std::uint8_t> deep = Bytes({0x08, 0x01});
+    for (int i = 0; i < 50; ++i)
+    {
+        PbWriter layer;
+        layer.Bytes(1, deep);
+        deep = layer.bytes();
+    }
+    Check(!DumpProtobuf(deep).empty(), "deep nesting bounded");
+    PbWriter many;
+    for (int i = 0; i < 5000; ++i)
+        many.Varint(1, i);
+    const std::string capped = DumpProtobuf(many.bytes(), 1000);
+    Check(capped.size() < 1100 && has(capped, "<output truncated>"), "output capped");
+
+    Check(HexPreview(Bytes({1, 0xAB})) == "01 ab" && has(HexPreview(std::vector<std::uint8_t>(100, 1), 4), "(100 bytes)"),
+          "hex preview");
+}
+
+void ProxySupport()
+{
+    Check(CommandLineHasArgument("cs2.exe -insecure", "-insecure"), "flag present");
+    Check(CommandLineHasArgument("\"C:\\Program Files\\cs2.exe\" -novid -INSECURE +map de_dust2", "-insecure"), "case-insensitive, quoted path");
+    Check(CommandLineHasArgument("cs2.exe\t-insecure\r\n", "-insecure"), "tab and newline separators");
+    Check(!CommandLineHasArgument("cs2.exe", "-insecure") && !CommandLineHasArgument("", "-insecure"), "flag absent");
+    Check(!CommandLineHasArgument("cs2.exe -insecure2", "-insecure") && !CommandLineHasArgument("cs2.exe --insecure", "-insecure") &&
+              !CommandLineHasArgument("cs2.exe -notinsecure", "-insecure"), "whole token only");
+    Check(!CommandLineHasArgument("cs2.exe \"-insecure foo\"", "-insecure"), "quoted text is one token");
+    Check(!CommandLineHasArgument("C:\\games\\-insecure\\cs2.exe -novid", "-insecure"), "path text is not a flag");
+
+    const auto config = ParseProxyConfig("# comment\n steam_id = 76561198000000000 \nwelcome_version=3 # trailing\r\nowner_type=1\ncache_version=9\n");
+    Check(config && config->steamId == 76561198000000000ull && config->welcomeVersion == 3 && config->ownerType == 1 &&
+              config->cacheVersion == 9, "config values");
+    const auto defaults = ParseProxyConfig("");
+    Check(defaults && defaults->steamId == 0 && defaults->ownerType == 1 && defaults->cacheVersion == 1, "defaults");
+    for (const char *bad : {"steam_id=abc", "steam_id=", "steam_id=12x", "steam_id=-1", "welcome_version=4294967296",
+                            "owner_type=99999999999", "steamid=1", "nonsense", "=5", "steam_id=1 2"})
+        Check(!ParseProxyConfig(bad), bad);
+}
+
 int main()
 {
     try
@@ -623,6 +704,8 @@ int main()
         ProtobufWire(); std::cout << "PASS protobuf reader and writer\n";
         HandshakeCodec(); std::cout << "PASS handshake message codecs\n";
         Endpoint(); std::cout << "PASS local game coordinator hello/welcome\n";
+        ProtobufDump(); std::cout << "PASS protobuf dump and SteamID redaction\n";
+        ProxySupport(); std::cout << "PASS launch guard and proxy config parsing\n";
         return 0;
     }
     catch (const std::exception &error)

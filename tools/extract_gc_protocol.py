@@ -20,6 +20,8 @@ WANTED = (
     "EGCMsgResponse",
     "GCConnectionStatus",
 )
+# Enums whose values are message types on the GC wire; only these feed MessageName().
+WIRE_ENUMS = ("EGCBaseClientMsg", "EGCBaseMsg", "ESOMsg", "EGCItemMsg", "ECsgoGCMsg")
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 NAME_PREFIX = re.compile(rb"\x0a([\x05-\x7f])([A-Za-z0-9_/.]{4,120}\.proto)")
 MAX_FIELD = 2_000_000
@@ -151,7 +153,16 @@ def render_header(data, enums, build_id=None):
                 raise ValueError(f"{name}.{label} does not fit in uint32")
             lines.append(f"inline constexpr std::uint32_t {label} = {number};")
         lines += ["}", ""]
-    lines.append("}")
+    lines += ["struct NameEntry", "{", "    std::uint32_t id;", "    const char *name;", "};",
+              "inline constexpr NameEntry kMessageNames[] = {"]
+    for name in WIRE_ENUMS:
+        for label, number in enums[name][1]:
+            lines.append(f'    {{{number}, "{name}::{label}"}},')
+    lines += ["};", "",
+              "// First match wins; nullptr for IDs this build's descriptors do not name.",
+              "inline const char *MessageName(std::uint32_t id)", "{",
+              "    for (const NameEntry &entry : kMessageNames)", "        if (entry.id == id)",
+              "            return entry.name;", "    return nullptr;", "}", "}"]
     return "\n".join(lines) + "\n"
 
 

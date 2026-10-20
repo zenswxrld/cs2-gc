@@ -83,6 +83,11 @@ class ExtractionTests(unittest.TestCase):
         self.assertIn("// other.proto", text)
         self.assertIn("steam build id (supplied by the user): 123", text)
         self.assertIn("coff timestamp: 777", text)
+        self.assertIn('{4006, "EGCBaseClientMsg::k_EMsgGCClientHello"},', text)
+        self.assertIn("inline const char *MessageName(std::uint32_t id)", text)
+        # result enums are not wire message types, so they stay out of the name table
+        self.assertNotIn('"EGCMsgResponse::', text)
+        self.assertNotIn('"GCConnectionStatus::', text)
 
     def test_missing_enum_fails_loudly(self):
         partial = {k: v for k, v in FULL.items() if k != "ESOMsg"}

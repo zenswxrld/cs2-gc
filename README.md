@@ -36,6 +36,9 @@ CS:GO binaries into CS2.**
   cross-checked with Google's protobuf library against the target client's own descriptors.
   It is not attached to Steam's interface, and the welcome version, owner ID and cache
   contents are caller-supplied because they cannot be derived offline.
+- A diagnostic `steam_api64.dll` stand-in that gives the game the local GC and logs what it
+  sends, active only with `-insecure`. It cross-compiles but has **never been run**; see
+  [docs/PROXY.md](docs/PROXY.md) for the risks before using it.
 - A read-only Windows CS2 build inspector and automated core checks.
 
 ## Store direction

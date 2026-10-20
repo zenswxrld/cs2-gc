@@ -32,6 +32,52 @@ std::optional<std::uint32_t> LiveInventory::DefinitionOf(std::uint64_t itemId) c
     return item ? std::optional<std::uint32_t>{item->defIndex} : std::nullopt;
 }
 
+std::optional<LiveInventory::Opened> LiveInventory::Open(const Schema &schema, std::uint64_t crateItemId,
+                                                         std::uint64_t keyItemId, const RandomSource &random)
+{
+    if (crateItemId <= CustomItemIdBase)
+        return std::nullopt;
+    const InventoryItem *crate = m_inventory.Find(crateItemId - CustomItemIdBase);
+    if (!crate)
+        return std::nullopt;
+    Opened opened;
+    opened.crate = *crate;
+    if (keyItemId > CustomItemIdBase)
+        if (const InventoryItem *key = m_inventory.Find(keyItemId - CustomItemIdBase))
+            opened.key = *key;
+    const OpenResult result = OpenCase(m_inventory, schema, crateItemId - CustomItemIdBase,
+                                       keyItemId > CustomItemIdBase ? keyItemId - CustomItemIdBase : 0, random);
+    if (result.error != OpenError::None)
+        return std::nullopt;
+    opened.item = result.item;
+    // Only a case consumes its key.
+    const CrateInfo *info = schema.FindCrate(opened.crate.defIndex);
+    if (!info || info->kind != CrateKind::Case)
+        opened.key.reset();
+    return opened;
+}
+
+std::optional<LiveInventory::Renamed> LiveInventory::Rename(std::uint64_t itemId, const std::string &name)
+{
+    if (itemId <= CustomItemIdBase || name.size() > 40)
+        return std::nullopt;
+    for (const char c : name)
+        if (c == '"' || c == '\\' || static_cast<unsigned char>(c) < 0x20)
+            return std::nullopt;
+    InventoryItem *item = m_inventory.Find(itemId - CustomItemIdBase);
+    if (!item)
+        return std::nullopt;
+    item->customName = name;
+    std::uint32_t index = 0;
+    for (const InventoryItem &candidate : m_inventory.Items())
+    {
+        if (candidate.id == item->id)
+            break;
+        ++index;
+    }
+    return Renamed{*item, ItemPositionBase + index};
+}
+
 std::optional<LiveInventory::StickerApplied> LiveInventory::ApplySticker(const ApplyStickerRequest &request)
 {
     if (request.stickerItemId <= CustomItemIdBase || request.targetItemId <= CustomItemIdBase ||

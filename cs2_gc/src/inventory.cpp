@@ -86,6 +86,8 @@ std::string Inventory::ToText() const
             << "\t\t\t\"rarity\"\t\"" << item.rarity << "\"\n"
             << "\t\t\t\"sticker_kit\"\t\"" << item.stickerKit << "\"\n"
             << "\t\t\t\"keychain\"\t\"" << item.keychain << "\"\n";
+        if (!item.customName.empty())
+            out << "\t\t\t\"custom_name\"\t\"" << item.customName << "\"\n";
         for (const AppliedSticker &sticker : item.stickers)
             out << "\t\t\t\"sticker_" << sticker.slot << "\"\t\"" << sticker.kit << ' ' << FloatText(sticker.wear)
                 << ' ' << FloatText(sticker.scale) << ' ' << FloatText(sticker.rotation) << ' '
@@ -136,6 +138,12 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             if (node->block || !ParseSticker(node->value, sticker))
                 return std::nullopt;
             item.stickers.push_back(sticker);
+        }
+        if (const KvNode *name = entry.Find("custom_name"))
+        {
+            if (name->block || name->value.size() > 40 || name->value.find('"') != std::string::npos)
+                return std::nullopt;
+            item.customName = name->value;
         }
         item.statTrak = statTrak == 1;
         inventory.m_items.push_back(item);

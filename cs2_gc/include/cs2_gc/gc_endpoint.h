@@ -74,6 +74,13 @@ public:
     // sticker item's removal); `afterChange` runs after each so the caller can save it.
     void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange = {});
 
+    // Opening containers and naming items. A container opened with the right key (capsules need none)
+    // is destroyed along with the key, the rolled item is created as found in a crate, and the game is
+    // sent the unlock notification it waits for. Naming sets the item's custom name. `afterChange` runs
+    // after each so the caller can save.
+    void EnableContainers(std::shared_ptr<LiveInventory> inventory, std::shared_ptr<const Schema> schema,
+                          RandomSource random, std::function<void()> afterChange);
+
     // Sell items for free. A valid purchase (every line an item `canSell` accepts, a sane quantity)
     // is answered with a transaction id; the proxy then reports the authorisation through the
     // MicroTxnAuthorizationResponse callback (TakePendingAuthorization), the game sends Finalize, and

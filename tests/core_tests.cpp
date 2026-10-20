@@ -1786,11 +1786,28 @@ void StickerApplication()
             return std::nullopt;
         return std::make_pair(type & ~ProtobufMask, *object);
     };
-    const auto updated = read();
     const auto destroyed = read();
+    const auto updated = read();
     Check(updated && updated->first == m::ESOMsg::k_ESOMsg_Update && updated->second.typeId == 1, "item updated");
     Check(destroyed && destroyed->first == m::ESOMsg::k_ESOMsg_Destroy && destroyed->second.typeId == 1,
           "sticker item destroyed");
+    {
+        // Then the notification the apply screen waits for: request 1086 (apply sticker), the weapon's id.
+        std::uint32_t size = 0, got = 0, type = 0;
+        Check(gc.IsMessageAvailable(&size), "a notification follows");
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&type, buffer.data(), size, &got);
+        FrameView view;
+        ReadProtobufFrame(type, buffer, view);
+        std::uint64_t item = 0, request = 0;
+        PbReader reader(view.body);
+        PbField f;
+        while (reader.Next(f))
+            (f.number == 1 ? item : request) = f.value;
+        Check((type & ~ProtobufMask) == m::EGCItemMsg::k_EMsgGCItemCustomizationNotification && request == 1086 &&
+                  item == weaponId,
+              "apply-sticker notification names the weapon");
+    }
     Check(saves == 1 && live->Items().Items().size() == 1, "inventory saved, sticker item consumed");
     const InventoryItem &applied = live->Items().Items()[0];
     Check(applied.stickers.size() == 1 && applied.stickers[0].slot == 3 && applied.stickers[0].kit == 77 &&
@@ -2078,10 +2095,107 @@ void ArmoryPassActivation()
     Check(balance == 30, "and shows the configured credits, not the recorded ones");
 }
 
+void ContainersAndNaming()
+{
+    namespace m = gc_msg;
+    const auto schema = Schema::Load(ArmoryFixture);
+    Check(schema.has_value(), "fixture loads");
+    const auto shared = std::shared_ptr<const Schema>(&*schema, [](const Schema *) {});
+
+    Inventory inventory;
+    InventoryItem crate;
+    crate.defIndex = 60; // "the_case" in the fixture
+    inventory.Add(crate);
+    InventoryItem wrongKey;
+    wrongKey.defIndex = 7;
+    inventory.Add(wrongKey);
+    auto live = std::make_shared<LiveInventory>(inventory);
+
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    std::mt19937_64 engine(3);
+    int saves = 0;
+    gc.EnableContainers(live, shared, [&] { return engine(); }, [&saves] { ++saves; });
+
+    const auto send = [&](std::uint32_t type, const PbWriter &body) {
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(type, {}, body.bytes(), frame);
+        gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    struct Out { std::uint32_t type{}; std::vector<std::uint8_t> body; };
+    const auto read = [&]() -> std::optional<Out> {
+        std::uint32_t size = 0, got = 0;
+        if (!gc.IsMessageAvailable(&size))
+            return std::nullopt;
+        Out out;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&out.type, buffer.data(), size, &got);
+        FrameView view;
+        ReadProtobufFrame(out.type, buffer, view);
+        out.type &= ~ProtobufMask;
+        out.body.assign(view.body.begin(), view.body.end());
+        return out;
+    };
+    const auto open = [&](std::uint64_t key, std::uint64_t crateId) {
+        PbWriter body;
+        body.Varint(1, key);
+        body.Varint(2, crateId);
+        send(m::EGCItemMsg::k_EMsgGCOpenCrate, body);
+    };
+
+    const std::size_t ignored = gc.IgnoredMessages();
+    open(0, CustomItemIdBase + 1);                    // a case with no key
+    open(CustomItemIdBase + 2, CustomItemIdBase + 1); // the wrong key
+    open(0, 424242);                                  // not ours
+    Check(!read() && gc.IgnoredMessages() == ignored + 3 && live->Items().Items().size() == 2 && saves == 0,
+          "bad open requests change nothing");
+    PbWriter malformed;
+    malformed.Varint(1, 5); // no container
+    send(m::EGCItemMsg::k_EMsgGCOpenCrate, malformed);
+    Check(!read(), "an open request without a container is ignored");
+
+    // A name sticks to an item, and the game is told.
+    PbWriter name;
+    name.Varint(1, 0);
+    name.Varint(2, CustomItemIdBase + 2);
+    name.String(4, "Stuff");
+    send(m::EGCItemMsg::k_EMsgGCNameItem, name);
+    const auto update = read();
+    const auto notice = read();
+    Check(update && update->type == m::ESOMsg::k_ESOMsg_Update && notice &&
+              notice->type == m::EGCItemMsg::k_EMsgGCItemCustomizationNotification && saves == 1,
+          "naming updates the item and notifies");
+    const auto named = Inventory::FromText(live->Items().ToText());
+    Check(named && named->Items().size() == 2 && named->Items()[1].customName == "Stuff", "the name is saved");
+    const auto econ = BuildEconItem(named->Items()[1], 555, CustomItemIdBase + 2, ItemPositionBase);
+    bool hasName = false;
+    {
+        PbReader reader(econ);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 12 && f.wire == 2)
+            {
+                PbReader inner(f.bytes);
+                PbField g;
+                while (inner.Next(g))
+                    if (g.number == 1 && g.value == AttributeCustomName)
+                        hasName = true;
+            }
+    }
+    Check(hasName, "the custom name attribute is encoded");
+    PbWriter bad;
+    bad.Varint(2, CustomItemIdBase + 2);
+    bad.String(4, "a\"b");
+    send(m::EGCItemMsg::k_EMsgGCNameItem, bad);
+    Check(!read() && live->Items().Items()[1].customName == "Stuff", "a name with a quote is refused");
+}
+
 int main()
 {
     try
     {
+        ContainersAndNaming(); std::cout << "PASS containers and naming\n";
         ArmoryPassActivation(); std::cout << "PASS armory pass activation\n";
         StorePurchases(); std::cout << "PASS store purchases\n";
         StickerApplication(); std::cout << "PASS sticker application\n";

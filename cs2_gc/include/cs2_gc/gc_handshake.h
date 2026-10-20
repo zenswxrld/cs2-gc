@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace cs2_gc
@@ -114,6 +115,19 @@ struct StorePurchaseRequest // CMsgGCStorePurchaseInit: the body of k_EMsgGCStor
     std::vector<Line> lines;
 };
 
+struct OpenCrateRequest // CMsgOpenCrate: the body of k_EMsgGCOpenCrate
+{
+    std::uint64_t keyItemId{};   // tool_item_id; zero for containers that need no key
+    std::uint64_t crateItemId{}; // subject_item_id
+};
+
+struct NameItemRequest // k_EMsgGCNameItem, fields as seen in a capture: 1 name tag item (0 here), 2 item, 4 name
+{
+    std::uint64_t tagItemId{};
+    std::uint64_t itemId{};
+    std::string name;
+};
+
 // Decoders reject malformed input outright; unknown fields are skipped.
 std::optional<ClientHello> DecodeClientHello(std::span<const std::uint8_t> body);
 std::optional<SoCacheSubscribed> DecodeSoCacheSubscribed(std::span<const std::uint8_t> body);
@@ -125,6 +139,8 @@ std::optional<ApplyStickerRequest> DecodeApplyStickerRequest(std::span<const std
 std::optional<StorePurchaseRequest> DecodeStorePurchaseRequest(std::span<const std::uint8_t> body);
 std::optional<std::uint64_t> DecodeTxnId(std::span<const std::uint8_t> body); // Finalize / Cancel: field 1
 std::optional<std::uint64_t> DecodeUseItemRequest(std::span<const std::uint8_t> body); // CMsgUseItem.item_id
+std::optional<OpenCrateRequest> DecodeOpenCrateRequest(std::span<const std::uint8_t> body);
+std::optional<NameItemRequest> DecodeNameItemRequest(std::span<const std::uint8_t> body);
 std::optional<RedeemRequest> DecodeRedeemRequest(std::span<const std::uint8_t> body);
 std::vector<std::uint8_t> EncodeSoSingleObject(const SoSingleObject &object);
 std::optional<AdjustEquipSlots> DecodeAdjustEquipSlots(std::span<const std::uint8_t> body);

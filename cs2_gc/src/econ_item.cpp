@@ -146,6 +146,16 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
         if (sticker.offsetY != 0.0f)
             AddFloatAttribute(out, offset + 1, sticker.offsetY);
     }
+    if (!item.customName.empty())
+    {
+        // A string attribute's value_bytes hold a serialized CAttribute_String (value = field 1).
+        PbWriter text;
+        text.String(1, item.customName);
+        PbWriter attribute;
+        attribute.Varint(1, AttributeCustomName);
+        attribute.Bytes(3, text.bytes());
+        out.Message(12, attribute);
+    }
     if (item.rarity)
         out.Varint(19, item.rarity);
     return out.bytes();

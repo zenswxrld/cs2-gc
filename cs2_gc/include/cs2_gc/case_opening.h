@@ -42,6 +42,7 @@ struct CaseOdds
 std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view lootListName,
                                           const RandomSource &random, const CaseOdds &odds = {});
 
+// Cases need their key; capsules and graffiti boxes open without one (the key id is ignored).
 // Atomic: the crate and key are consumed and the item added together, or the
 // inventory is left unchanged. All rolling happens before any mutation.
 OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t crateId,

@@ -231,6 +231,11 @@ public:
         m_gc.EnableStorePurchases(std::move(inventory), std::move(canSell), std::move(afterGrant));
     }
     std::optional<std::uint64_t> TakePendingAuthorization() { return m_gc.TakePendingAuthorization(); }
+    void EnableContainers(std::shared_ptr<LiveInventory> inventory, std::shared_ptr<const Schema> schema,
+                          RandomSource random, std::function<void()> afterChange)
+    {
+        m_gc.EnableContainers(std::move(inventory), std::move(schema), std::move(random), std::move(afterChange));
+    }
     void EnableArmory(std::shared_ptr<Armory> armory, std::shared_ptr<LiveInventory> inventory, RandomSource random,
                       std::function<void()> afterGrant)
     {
@@ -605,6 +610,18 @@ State &Init()
                             if (inventoryFileUsable && !live->Save(inventoryPath))
                                 saveLog->Write("could not save cs2_gc_inventory.txt");
                         });
+                    std::random_device containerDevice;
+                    auto containerEngine = std::make_shared<std::mt19937_64>((std::uint64_t{containerDevice()} << 32) |
+                                                                              containerDevice());
+                    s.coordinator->EnableContainers(
+                        live, std::shared_ptr<const Schema>(schema, [](const Schema *) {}),
+                        [containerEngine] { return (*containerEngine)(); },
+                        [live, inventoryPath, inventoryFileUsable, saveLog] {
+                            if (inventoryFileUsable && !live->Save(inventoryPath))
+                                saveLog->Write("could not save cs2_gc_inventory.txt");
+                        });
+                    s.log->Write("containers: cases (with their key), sticker capsules and graffiti boxes open "
+                                 "locally; naming items works. Music kit boxes and souvenir packages are not handled");
                     s.log->Write("store: purchases are granted locally and free (needs the Store price sheet to list "
                                  "the item); saved to cs2_gc_inventory.txt");
                     std::uint32_t campaign = 0;

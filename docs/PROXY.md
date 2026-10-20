@@ -147,6 +147,14 @@ in this session's view of the inventory: nothing is stored on Valve's side.
   113 + 4 * slot for id, wear, scale and rotation; 278 + 2 * slot for the offsets, per `items_game.txt`), answers
   with an SO update of the weapon and an SO destroy of the sticker item, and saves `cs2_gc_inventory.txt`
   (`sticker_<slot>` lines on the weapon). Scraping and removing stickers are not handled.
+- **Opening containers works through the local GC** (offline-tested against the real `items_game.txt`: all 42 cases
+  and 136 sticker capsules roll an item). The game's `OpenCrate` (2534: key item, container item) destroys the
+  container and the key (cases only), creates the rolled item as found in a crate, and sends the unlock
+  notification (message 1090, request 1007) the "Unlock Container" screen waits for. Not handled: music kit
+  boxes, souvenir packages, graffiti boxes and about 55 old capsules whose loot lists the schema loader
+  cannot resolve. The apply-sticker screen likewise waits for a notification (request 1086), now sent.
+- **Naming items** (`NameItem` 1006: item and name) sets the custom name attribute (111) and notifies; the name
+  is saved in `cs2_gc_inventory.txt`. The name tag item is not consumed (the game sent no tag id).
 - **Armory Pass.** The pass is item 1354 (`XpShopTicket1`), bought in the Store like any item. The Armory page then
   shows an Activate button on an empty track; it sends a use-item request (1025). The proxy consumes the ticket
   and adds an empty pass (`xp_tracks` entry of 0) to the pass object, so a new track appears. Passes activated and

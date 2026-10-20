@@ -107,21 +107,25 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
 
     const InventoryItem *crateItem = inventory.Find(crateId);
     const CrateInfo *crate = crateItem ? schema.FindCrate(crateItem->defIndex) : nullptr;
-    if (!crate || crate->kind != CrateKind::Case)
+    const bool keyless = crate && (crate->kind == CrateKind::Capsule || crate->kind == CrateKind::GraffitiBox);
+    if (!crate || (crate->kind != CrateKind::Case && !keyless))
     {
         result.error = OpenError::NoSuchCrate;
         return result;
     }
-    const InventoryItem *keyItem = inventory.Find(keyId);
-    if (!keyItem)
+    if (!keyless)
     {
-        result.error = OpenError::NoSuchKey;
-        return result;
-    }
-    if (keyItem->defIndex != crate->keyDefIndex)
-    {
-        result.error = OpenError::WrongKey;
-        return result;
+        const InventoryItem *keyItem = inventory.Find(keyId);
+        if (!keyItem)
+        {
+            result.error = OpenError::NoSuchKey;
+            return result;
+        }
+        if (keyItem->defIndex != crate->keyDefIndex)
+        {
+            result.error = OpenError::WrongKey;
+            return result;
+        }
     }
 
     auto rolled = RollLootList(schema, crate->lootListName, random, odds);
@@ -134,7 +138,8 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
 
     // Nothing above mutated the inventory; consume and grant together.
     inventory.Remove(crateId);
-    inventory.Remove(keyId);
+    if (!keyless)
+        inventory.Remove(keyId);
     item.id = inventory.Add(item);
     result.item = item;
     return result;

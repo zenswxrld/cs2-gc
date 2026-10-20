@@ -310,6 +310,48 @@ std::optional<std::uint64_t> DecodeTxnId(std::span<const std::uint8_t> body)
     return txn;
 }
 
+std::optional<OpenCrateRequest> DecodeOpenCrateRequest(std::span<const std::uint8_t> body)
+{
+    OpenCrateRequest request;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+        if (f.number == 1 || f.number == 2)
+        {
+            if (f.wire != 0)
+                return std::nullopt;
+            (f.number == 1 ? request.keyItemId : request.crateItemId) = f.value;
+        }
+    if (reader.Failed() || request.crateItemId == 0)
+        return std::nullopt;
+    return request;
+}
+
+std::optional<NameItemRequest> DecodeNameItemRequest(std::span<const std::uint8_t> body)
+{
+    NameItemRequest request;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+    {
+        if ((f.number == 1 || f.number == 2) && f.wire != 0)
+            return std::nullopt;
+        if (f.number == 1)
+            request.tagItemId = f.value;
+        else if (f.number == 2)
+            request.itemId = f.value;
+        else if (f.number == 4)
+        {
+            if (f.wire != 2)
+                return std::nullopt;
+            request.name.assign(reinterpret_cast<const char *>(f.bytes.data()), f.bytes.size());
+        }
+    }
+    if (reader.Failed() || request.itemId == 0)
+        return std::nullopt;
+    return request;
+}
+
 std::optional<ApplyStickerRequest> DecodeApplyStickerRequest(std::span<const std::uint8_t> body)
 {
     ApplyStickerRequest request;

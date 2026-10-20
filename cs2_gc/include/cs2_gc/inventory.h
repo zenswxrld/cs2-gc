@@ -34,6 +34,7 @@ struct InventoryItem
     std::uint32_t rarity{}; // rarities value from the schema; zero leaves it to the client
     std::uint32_t stickerKit{}; // for a sticker (or graffiti) item: the sticker kit index; zero otherwise
     std::uint32_t keychain{};   // for a charm item: the keychain index; zero otherwise
+    std::string customName;               // set with a name tag; empty when none
     std::vector<AppliedSticker> stickers; // stickers applied to this item, one per slot
 };
 

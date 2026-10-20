@@ -8,6 +8,21 @@ namespace cs2_gc
 {
 namespace
 {
+// CMsgGCItemCustomizationNotification: item_id (1), request (2). The game waits for it to finish
+// an unlock, sticker or naming screen. The request values are the client's own
+// k_EGCItemCustomizationNotification_* enum, read from its descriptors.
+constexpr std::uint32_t NotificationNameItem = 1006;
+constexpr std::uint32_t NotificationUnlockCrate = 1007;
+constexpr std::uint32_t NotificationApplySticker = 1086;
+
+std::vector<std::uint8_t> EncodeCustomizationNotification(std::uint32_t request, std::uint64_t itemId)
+{
+    PbWriter out;
+    out.Varint(1, itemId);
+    out.Varint(2, request);
+    return out.bytes();
+}
+
 // Observed in a capture of the real GC for build 25947352: sent by the GC right after the
 // Welcome without being asked.
 constexpr std::uint32_t PostWelcome[] = {
@@ -278,6 +293,73 @@ void LocalGameCoordinator::EnableStorePurchases(std::shared_ptr<LiveInventory> i
                });
 }
 
+void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inventory,
+                                            std::shared_ptr<const Schema> schema, RandomSource random,
+                                            std::function<void()> afterChange)
+{
+    if (!inventory || !schema)
+        return;
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCOpenCrate,
+               [inventory, schema, random, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
+                   const auto request = DecodeOpenCrateRequest(frame.body);
+                   const auto opened = request ? inventory->Open(*schema, request->crateItemId, request->keyItemId, random)
+                                               : std::nullopt;
+                   if (!opened)
+                   {
+                       ++gc.m_ignored; // not ours, wrong or missing key, or nothing the schema can roll
+                       return;
+                   }
+                   const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                   const auto destroy = [&](const InventoryItem &item) {
+                       SoSingleObject object;
+                       object.typeId = static_cast<std::int32_t>(ItemTypeId);
+                       object.data = BuildEconItem(item, accountId, CustomItemIdBase + item.id, ItemPositionBase);
+                       object.version = ++gc.m_soVersion;
+                       object.owner = gc.m_config.owner;
+                       gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(object));
+                   };
+                   destroy(opened->crate);
+                   if (opened->key)
+                       destroy(*opened->key);
+                   SoSingleObject created;
+                   created.typeId = static_cast<std::int32_t>(ItemTypeId);
+                   created.data = BuildEconItem(opened->item, accountId, CustomItemIdBase + opened->item.id,
+                                                InventoryUnacknowledgedBit | PickupFoundInCrate);
+                   created.version = ++gc.m_soVersion;
+                   created.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
+                   gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                            EncodeCustomizationNotification(NotificationUnlockCrate,
+                                                            CustomItemIdBase + opened->item.id));
+                   if (afterChange)
+                       afterChange();
+               });
+
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCNameItem,
+               [inventory, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
+                   const auto request = DecodeNameItemRequest(frame.body);
+                   const auto renamed = request ? inventory->Rename(request->itemId, request->name) : std::nullopt;
+                   if (!renamed)
+                   {
+                       ++gc.m_ignored;
+                       return;
+                   }
+                   const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                   SoSingleObject updated;
+                   updated.typeId = static_cast<std::int32_t>(ItemTypeId);
+                   updated.data = BuildEconItem(renamed->item, accountId, CustomItemIdBase + renamed->item.id,
+                                                renamed->position);
+                   updated.version = ++gc.m_soVersion;
+                   updated.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+                   gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                            EncodeCustomizationNotification(NotificationNameItem,
+                                                            CustomItemIdBase + renamed->item.id));
+                   if (afterChange)
+                       afterChange();
+               });
+}
+
 void LocalGameCoordinator::EnableStorePurchaseFailure()
 {
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseInit, [](const FrameView &frame, LocalGameCoordinator &gc) {
@@ -329,6 +411,14 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
                        return;
                    }
                    const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                   SoSingleObject destroyed;
+                   destroyed.typeId = static_cast<std::int32_t>(ItemTypeId);
+                   destroyed.data = BuildEconItem(applied->consumed, accountId,
+                                                  CustomItemIdBase + applied->consumed.id, applied->position);
+                   destroyed.version = ++gc.m_soVersion;
+                   destroyed.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(destroyed));
+
                    SoSingleObject updated;
                    updated.typeId = static_cast<std::int32_t>(ItemTypeId);
                    updated.data = BuildEconItem(applied->item, accountId, CustomItemIdBase + applied->item.id,
@@ -337,13 +427,9 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
                    updated.owner = gc.m_config.owner;
                    gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
 
-                   SoSingleObject destroyed;
-                   destroyed.typeId = static_cast<std::int32_t>(ItemTypeId);
-                   destroyed.data = BuildEconItem(applied->consumed, accountId,
-                                                  CustomItemIdBase + applied->consumed.id, applied->position);
-                   destroyed.version = ++gc.m_soVersion;
-                   destroyed.owner = gc.m_config.owner;
-                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(destroyed));
+                   gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                            EncodeCustomizationNotification(NotificationApplySticker,
+                                                            CustomItemIdBase + applied->item.id));
                    if (afterChange)
                        afterChange();
                });

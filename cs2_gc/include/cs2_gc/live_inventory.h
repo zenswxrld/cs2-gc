@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cs2_gc/case_opening.h"
 #include "cs2_gc/gc_handshake.h"
 #include "cs2_gc/inventory.h"
 #include <cstdint>
@@ -51,6 +52,27 @@ public:
     // first a sticker item, the second not a sticker, charm or graffiti, and the slot (0-4) free.
     // On failure nothing changes.
     std::optional<StickerApplied> ApplySticker(const ApplyStickerRequest &request);
+
+    struct Opened
+    {
+        InventoryItem item;                  // the new item
+        InventoryItem crate;                 // the container, now removed
+        std::optional<InventoryItem> key;    // the key, now removed (cases only)
+    };
+
+    // Opens one of our containers with one of our keys (ids as the game sees them; key 0 for
+    // capsules). Nothing changes on failure.
+    std::optional<Opened> Open(const Schema &schema, std::uint64_t crateItemId, std::uint64_t keyItemId,
+                               const RandomSource &random);
+
+    // Sets (or, with an empty name, clears) the custom name of one of our items; the updated item
+    // and its backpack position, or nothing if the id is not ours.
+    struct Renamed
+    {
+        InventoryItem item;
+        std::uint32_t position{};
+    };
+    std::optional<Renamed> Rename(std::uint64_t itemId, const std::string &name);
 
 private:
     struct Slot

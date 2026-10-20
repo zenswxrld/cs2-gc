@@ -397,6 +397,14 @@ std::optional<ApplyStickerRequest> DecodeApplyStickerRequest(std::span<const std
         case 8: if (!asFloat(f, request.offsetX)) return std::nullopt; break;
         case 9: if (!asFloat(f, request.offsetY)) return std::nullopt; break;
         case 10: if (!asFloat(f, request.offsetZ)) return std::nullopt; break;
+        case 11:
+        {
+            float target = 0.0f;
+            if (!asFloat(f, target))
+                return std::nullopt;
+            request.wearTarget = target;
+            break;
+        }
         default: break;
         }
     }

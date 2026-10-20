@@ -1691,7 +1691,7 @@ void ArmoryEndpoint()
             fields[f.number].push_back(f.value);
     }
     Check(fields.at(2) == std::vector<std::uint64_t>{8} && fields.at(1) == std::vector<std::uint64_t>{5} &&
-              fields.at(3) == std::vector<std::uint64_t>{77}, "balance 10 - 2 = 8, other fields kept");
+              !fields.count(3), "balance 10 - 2 = 8, other fields kept, the recorded account's pass dropped");
     Check(createdObject->version > 100 && updatedObject->version == createdObject->version + 1, "object versions move on");
     Check(grants == 1 && live->Items().Items().size() == 1 && armory->Balance() == 8 && !next().any, "one grant, balance 8, nothing else sent");
 
@@ -2073,7 +2073,7 @@ void ArmoryPassActivation()
     const Out destroyed = next();
     const auto pass1 = DecodeSoSingleObject(updated.body);
     Check(updated.type == m::ESOMsg::k_ESOMsg_Update && pass1 && pass1->typeId == static_cast<std::int32_t>(XpShopTypeId) &&
-              tracks(pass1->data) == std::vector<std::uint64_t>({77, 0}), "activating adds an empty pass, keeps the recorded one");
+              tracks(pass1->data) == std::vector<std::uint64_t>({1}), "activating adds a pass at 1 XP; the recorded account's passes are not carried over");
     Check(destroyed.type == m::ESOMsg::k_ESOMsg_Destroy && live->Items().Items().size() == 1 && saves == 1,
           "the ticket is consumed and the inventory saved");
     const Out passNotice = next();
@@ -2096,7 +2096,7 @@ void ArmoryPassActivation()
     gc.SendMessage(m::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
     const Out w = next();
     const auto objects = ExtractObjects(w.body, XpShopTypeId);
-    Check(objects.size() == 1 && tracks(objects[0]) == std::vector<std::uint64_t>({77, 0}),
+    Check(objects.size() == 1 && tracks(objects[0]) == std::vector<std::uint64_t>({1}),
           "a reconnect's welcome keeps the activated pass");
     PbReader reader(objects.empty() ? std::span<const std::uint8_t>{} : std::span<const std::uint8_t>(objects[0]));
     PbField f;
@@ -2284,6 +2284,60 @@ void CharmsAndCoupons()
     const auto restored = Inventory::FromText(live->Items().ToText());
     Check(restored && restored->Items()[0].charm && restored->Items()[0].charm->offsetX == 9.5f,
           "an attached charm survives a save and load");
+
+    // The built-in Remove Keychain Tool takes the charm off again: the weapon is updated, the charm is a
+    // loose item and the game is told (RemoveKeychain, 1092).
+    {
+        PbWriter detach;
+        detach.Varint(1, 0xF000000000000000ull | DefinitionRemoveKeychainTool);
+        detach.Varint(2, CustomItemIdBase + 1);
+        std::vector<std::uint8_t> detachFrame;
+        WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCApplySticker, {}, detach.bytes(), detachFrame);
+        gc.SendMessage(m::EGCItemMsg::k_EMsgGCApplySticker | ProtobufMask, detachFrame.data(),
+                       static_cast<std::uint32_t>(detachFrame.size()));
+        std::vector<std::uint32_t> kinds;
+        std::uint64_t request = 0;
+        std::uint32_t pending = 0;
+        while (gc.IsMessageAvailable(&pending))
+        {
+            std::uint32_t got = 0, type = 0;
+            std::vector<std::uint8_t> buffer(pending);
+            gc.RetrieveMessage(&type, buffer.data(), pending, &got);
+            kinds.push_back(type & ~ProtobufMask);
+            if ((type & ~ProtobufMask) == m::EGCItemMsg::k_EMsgGCItemCustomizationNotification)
+            {
+                FrameView view;
+                ReadProtobufFrame(type, buffer, view);
+                PbReader reader(view.body);
+                PbField f;
+                while (reader.Next(f))
+                    if (f.number == 2)
+                        request = f.value;
+            }
+        }
+        Check(kinds.size() == 3 && kinds[0] == m::ESOMsg::k_ESOMsg_Create && kinds[1] == m::ESOMsg::k_ESOMsg_Update &&
+                  request == 1092,
+              "removing a charm creates the charm item, updates the weapon and sends RemoveKeychain");
+        Check(!live->Items().Items()[0].charm && live->Items().Items().size() == 3 &&
+                  live->Items().Items()[2].defIndex == DefinitionKeychain && live->Items().Items()[2].keychain == 33,
+              "the charm is back in the inventory");
+        gc.SendMessage(m::EGCItemMsg::k_EMsgGCApplySticker | ProtobufMask, detachFrame.data(),
+                       static_cast<std::uint32_t>(detachFrame.size()));
+        Check(!gc.IsMessageAvailable(&pending), "a weapon without a charm has nothing to remove");
+        // Put the charm item back on the weapon for the checks that follow.
+        PbWriter again2;
+        again2.Varint(1, CustomItemIdBase + 4);
+        again2.Varint(2, CustomItemIdBase + 1);
+        WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCApplySticker, {}, again2.bytes(), detachFrame);
+        gc.SendMessage(m::EGCItemMsg::k_EMsgGCApplySticker | ProtobufMask, detachFrame.data(),
+                       static_cast<std::uint32_t>(detachFrame.size()));
+        while (gc.IsMessageAvailable(&pending))
+        {
+            std::uint32_t got = 0, type = 0;
+            std::vector<std::uint8_t> buffer(pending);
+            gc.RetrieveMessage(&type, buffer.data(), pending, &got);
+        }
+    }
 
     PbWriter again;
     again.Varint(1, CustomItemIdBase + 3);
@@ -2540,6 +2594,35 @@ void SlabsScrapesAndCoupons()
     request(m::EGCItemMsg::k_EMsgGCApplySticker, scrape);
     Check(drain().empty(), "nothing is left to scrape");
 
+    // With a slider target the wear goes to that level; the end of the slider removes the sticker.
+    {
+        Inventory slider;
+        InventoryItem armed;
+        armed.defIndex = 7;
+        AppliedSticker onSlot;
+        onSlot.slot = 1;
+        onSlot.kit = 300;
+        onSlot.wear = 0.2f;
+        armed.stickers.push_back(onSlot);
+        slider.Add(armed);
+        LiveInventory sliderLive(slider);
+        const auto partway = sliderLive.ScrapeSticker(CustomItemIdBase + 1, 1, 0.6f);
+        Check(partway && !partway->removed && std::abs(sliderLive.Items().Items()[0].stickers[0].wear - 0.6f) < 1e-6f,
+              "a target sets the wear to that level");
+        const auto lower = sliderLive.ScrapeSticker(CustomItemIdBase + 1, 1, 0.3f);
+        Check(lower && std::abs(sliderLive.Items().Items()[0].stickers[0].wear - 0.6f) < 1e-6f,
+              "scraping never lowers the wear");
+        const auto gone = sliderLive.ScrapeSticker(CustomItemIdBase + 1, 1, 1.0f);
+        Check(gone && gone->removed && sliderLive.Items().Items()[0].stickers.empty(), "a target of 1 removes the sticker");
+        PbWriter body;
+        body.Varint(2, weaponId);
+        body.Varint(3, 3);
+        body.Fixed32(5, std::bit_cast<std::uint32_t>(1.0f));
+        body.Fixed32(11, std::bit_cast<std::uint32_t>(1.0f));
+        const auto decoded = DecodeApplyStickerRequest(body.bytes());
+        Check(decoded && decoded->wearTarget && *decoded->wearTarget == 1.0f, "the wear target decodes");
+    }
+
     // Sealing a sticker in a slab: both go, one charm of keychain 37 holding the sticker comes.
     PbWriter seal;
     seal.Varint(1, stickerId);
@@ -2628,10 +2711,81 @@ void SlabsScrapesAndCoupons()
           "a single-sticker coupon grants the sticker, a container coupon stays a coupon");
 }
 
+void ArmoryPassCapAndPersistence()
+{
+    namespace m = gc_msg;
+    const auto schema = Schema::Load(ArmoryFixture);
+    PbWriter pass;
+    pass.Varint(1, 5);
+    pass.Varint(2, 10);
+    pass.Varint(3, 1361);
+    pass.Varint(3, 1361);
+    PbWriter passType;
+    passType.Varint(1, XpShopTypeId);
+    passType.Bytes(2, pass.bytes());
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 555);
+    PbWriter cache;
+    cache.Message(2, passType);
+    cache.Fixed64(3, 100);
+    cache.Message(4, owner);
+    PbWriter welcome;
+    welcome.Varint(1, 0);
+    welcome.Message(3, cache);
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(m::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcome.bytes());
+
+    Inventory inventory;
+    for (int i = 0; i < 7; ++i)
+    {
+        InventoryItem ticket;
+        ticket.defIndex = DefinitionArmoryPass;
+        inventory.Add(ticket);
+    }
+    auto live = std::make_shared<LiveInventory>(inventory);
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    gc.EnableReplay(store);
+    auto armory = std::make_shared<Armory>(*schema, 11, 30);
+    std::mt19937_64 engine(1);
+    gc.EnableArmory(armory, live, [&] { return engine(); }, [] {});
+
+    const auto use = [&](std::uint64_t id) {
+        PbWriter body;
+        body.Varint(1, id);
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCUseItemRequest, {}, body.bytes(), frame);
+        gc.SendMessage(m::EGCItemMsg::k_EMsgGCUseItemRequest | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+        std::uint32_t size = 0;
+        int sent = 0;
+        while (gc.IsMessageAvailable(&size))
+        {
+            std::uint32_t got = 0, type = 0;
+            std::vector<std::uint8_t> buffer(size);
+            gc.RetrieveMessage(&type, buffer.data(), size, &got);
+            ++sent;
+        }
+        return sent;
+    };
+    for (int i = 1; i <= 5; ++i)
+        Check(use(CustomItemIdBase + i) == 3, "a pass activates (update, destroy, notification)");
+    Check(use(CustomItemIdBase + 6) == 0 && live->Items().XpTracks().size() == 5 && live->Items().Items().size() == 2,
+          "a sixth pass is refused and its ticket is kept");
+
+    const auto restored = Inventory::FromText(live->Items().ToText());
+    Check(restored && restored->XpTracks() == std::vector<std::uint32_t>(5, 1u), "the passes are saved with the inventory");
+    Check(!Inventory::FromText("\"inventory\" { \"next_id\" \"1\" \"xp_tracks\" \"0\" \"items\" { } }") &&
+              !Inventory::FromText("\"inventory\" { \"next_id\" \"1\" \"xp_tracks\" \"1 1 1 1 1 1\" \"items\" { } }"),
+          "a zero-XP or sixth pass in the file is rejected");
+}
+
 int main()
 {
     try
     {
+        ArmoryPassCapAndPersistence(); std::cout << "PASS armory pass cap and persistence\n";
         SlabsScrapesAndCoupons(); std::cout << "PASS slabs, scrapes and coupons\n";
         StorageUnits(); std::cout << "PASS storage units\n";
         CharmsAndCoupons(); std::cout << "PASS charms\n";

@@ -181,8 +181,18 @@ in this session's view of the inventory: nothing is stored on Valve's side.
   kept crashing on the slab screen each session afterwards, since the file reloads it. The proxy now strips
   stickers and charms from slab items when it loads the inventory (log line: "removed stickers or charms from N
   Sticker Slab item(s)") and refuses to apply anything to a slab except by sealing.
-- **Scraping stickers**: an `ApplySticker` with no sticker item raises that slot's wear by a ninth; past 1 the
-  sticker is removed and RemoveSticker (1053) is sent (the CS:GO fork's rule).
+- **Armory passes** (corrected): the page draws a pass only when its XP is non-zero (`xp_tracks[i]` is tested for
+  truth), so a new pass starts at 1 XP. At most 5 passes can be active. They are saved in `cs2_gc_inventory.txt`
+  (`xp_tracks`), and the recorded account's own two passes are dropped, so the Armory starts with none. A
+  ticket is kept when a sixth would exceed the limit.
+- **Removing a charm**: the built-in Remove Keychain Tool (definition 65, id `0xF000000000000041`) is sent through
+  `ApplySticker` with the weapon as the item. The charm becomes a loose item again, the weapon is updated and
+  RemoveKeychain (1092) is sent.
+- **Scraping and removing stickers**: an `ApplySticker` with no sticker item targets the sticker in that slot. Field 11
+  (`sticker_wear_target`) is read as the level chosen on the "Sticker Scrape Level" slider: the wear moves to it
+  (never down), and a target of 1 or more removes the sticker and sends RemoveSticker (1053). Without a target
+  the wear rises by a ninth (the CS:GO fork's rule). Field 5 (`sticker_wear`) is seen as -1.0 and 1.0 and is not
+  used; this reading of the two fields is a guess, not confirmed.
 - **Naming items** (`NameItem` 1006: item and name) sets the custom name attribute (111) and notifies; the name
   is saved in `cs2_gc_inventory.txt`. The name tag item is not consumed (the game sent no tag id).
 - **Armory Pass.** The pass is item 1354 (`XpShopTicket1`), bought in the Store like any item. The Armory page then

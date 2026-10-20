@@ -79,9 +79,19 @@ std::optional<std::vector<std::uint8_t>> WithXpShopBalance(std::span<const std::
 // object is malformed.
 std::optional<std::vector<std::uint8_t>> WithXpShopTrack(std::span<const std::uint8_t> object, std::uint32_t xp);
 
+// The pass object with its `xp_tracks` (field 3) replaced by exactly these entries, every other field kept.
+// The Armory page only draws a pass whose XP is non-zero. Nothing if the object is malformed.
+std::optional<std::vector<std::uint8_t>> WithXpShopTracks(std::span<const std::uint8_t> object,
+                                                          std::span<const std::uint32_t> tracks);
+
 // The item definition of the Armory Pass ticket (`XpShopTicket1`, tool type xp_shop_ticket): bought in
 // the Store, then used from the Armory page, which sends a use-item request.
 inline constexpr std::uint32_t DefinitionArmoryPass = 1354;
+
+// The built-in "Remove Keychain Tool" (the Charm Detachments entry in the inventory). The game uses it with
+// the ApplySticker message: the "sticker" is its default item id (0xF000000000000000 | 65) and the item is
+// the weapon to take the charm off.
+inline constexpr std::uint32_t DefinitionRemoveKeychainTool = 65;
 
 // Returns the Welcome with the redeemable balance of every XpShop object set to `balance`. All
 // other fields, objects and types are carried over unchanged. Nothing when the Welcome is

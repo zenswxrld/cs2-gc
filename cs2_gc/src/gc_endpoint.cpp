@@ -17,6 +17,7 @@ constexpr std::uint32_t NotificationUnlockCrate = 1007;
 constexpr std::uint32_t NotificationApplySticker = 1086;
 constexpr std::uint32_t NotificationApplyKeychain = 1091;
 constexpr std::uint32_t NotificationRemoveSticker = 1053;
+constexpr std::uint32_t NotificationRemoveKeychain = 1092;
 constexpr std::uint32_t NotificationEncapsulateSticker = 1055;
 constexpr std::uint32_t NotificationCasketTooFull = 1011;
 constexpr std::uint32_t NotificationCasketContents = 1012;
@@ -97,8 +98,12 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
             auto objects = ExtractObjects(*welcome, XpShopTypeId);
             if (!objects.empty())
             {
+                // The recorded account's own passes are not ours: start from the ones activated here (none at first).
+                auto pass = WithXpShopBalance(objects.front(), armory->Balance());
+                if (pass)
+                    pass = WithXpShopTracks(*pass, inventory->Items().XpTracks());
                 std::lock_guard lock(m_txnMutex);
-                m_xpShop = WithXpShopBalance(objects.front(), armory->Balance()).value_or(std::move(objects.front()));
+                m_xpShop = pass.value_or(std::move(objects.front()));
             }
         }
 
@@ -158,8 +163,10 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                    std::optional<std::vector<std::uint8_t>> pass;
                    {
                        std::lock_guard lock(gc.m_txnMutex);
-                       if (definition == DefinitionArmoryPass && !gc.m_xpShop.empty() && (*itemId >> 60) != 0xF)
-                           pass = WithXpShopTrack(gc.m_xpShop, 0);
+                       // A new pass starts at 1 XP: the page draws a pass only when its XP is non-zero.
+                       if (definition == DefinitionArmoryPass && !gc.m_xpShop.empty() && (*itemId >> 60) != 0xF &&
+                           inventory->AddXpTrack(1))
+                           pass = WithXpShopTracks(gc.m_xpShop, inventory->Items().XpTracks());
                        if (pass)
                            gc.m_xpShop = *pass;
                    }
@@ -495,10 +502,42 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
                        std::lock_guard lock(gc.m_txnMutex);
                        schema = gc.m_schema;
                    }
+                   // The built-in Remove Keychain Tool takes the charm off a weapon and gives it back as an item.
+                   if (request && (request->stickerItemId >> 60) == 0xF &&
+                       (request->stickerItemId & 0xFFFFFFFFull) == DefinitionRemoveKeychainTool)
+                   {
+                       const auto detached = inventory->DetachCharm(request->targetItemId);
+                       if (!detached)
+                       {
+                           ++gc.m_ignored;
+                           return;
+                       }
+                       const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                       SoSingleObject created;
+                       created.typeId = static_cast<std::int32_t>(ItemTypeId);
+                       created.data = BuildEconItem(detached->charm, accountId, CustomItemIdBase + detached->charm.id,
+                                                    InventoryUnacknowledgedBit | PickupPurchased);
+                       created.version = ++gc.m_soVersion;
+                       created.owner = gc.m_config.owner;
+                       gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
+                       SoSingleObject updated;
+                       updated.typeId = static_cast<std::int32_t>(ItemTypeId);
+                       updated.data = BuildEconItem(detached->weapon, accountId, CustomItemIdBase + detached->weapon.id,
+                                                    detached->position);
+                       updated.version = ++gc.m_soVersion;
+                       updated.owner = gc.m_config.owner;
+                       gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+                       gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                                EncodeCustomizationNotification(NotificationRemoveKeychain,
+                                                                CustomItemIdBase + detached->weapon.id));
+                       if (afterChange)
+                           afterChange();
+                       return;
+                   }
                    // No sticker item means a scrape of the one in that slot.
                    if (request && request->stickerItemId == 0)
                    {
-                       const auto scraped = inventory->ScrapeSticker(request->targetItemId, request->slot);
+                       const auto scraped = inventory->ScrapeSticker(request->targetItemId, request->slot, request->wearTarget);
                        if (!scraped)
                        {
                            ++gc.m_ignored;

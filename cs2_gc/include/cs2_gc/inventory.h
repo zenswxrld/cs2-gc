@@ -33,6 +33,8 @@ struct AppliedKeychain
     std::uint32_t slabSticker{}; // for a sealed Sticker Slab: the sticker kit inside it
 };
 
+inline constexpr std::size_t MaxXpTracks = 5; // the Armory page has room for five passes
+
 struct InventoryItem
 {
     std::uint64_t id{};
@@ -63,6 +65,10 @@ public:
     InventoryItem *Find(std::uint64_t id);
     const std::vector<InventoryItem> &Items() const { return m_items; }
 
+    // The Armory passes the player has activated: one XP value each, saved with the items.
+    const std::vector<std::uint32_t> &XpTracks() const { return m_xpTracks; }
+    std::vector<std::uint32_t> &XpTracks() { return m_xpTracks; }
+
     // KeyValues text, so the file stays hand-editable. FromText is strict: any
     // malformed, duplicate or out-of-range entry rejects the whole file rather
     // than loading a partial inventory.
@@ -76,6 +82,7 @@ public:
 
 private:
     std::vector<InventoryItem> m_items;
+    std::vector<std::uint32_t> m_xpTracks;
     std::uint64_t m_nextId{1};
 };
 }

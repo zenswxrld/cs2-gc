@@ -103,6 +103,7 @@ struct ApplyStickerRequest // CMsgApplySticker: the body of k_EMsgGCApplySticker
     float offsetX{};
     float offsetY{};
     float offsetZ{};
+    std::optional<float> wearTarget; // sticker_wear_target: the level chosen on the scrape slider
 };
 
 struct StorePurchaseRequest // CMsgGCStorePurchaseInit: the body of k_EMsgGCStorePurchaseInit

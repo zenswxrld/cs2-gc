@@ -19,6 +19,9 @@ public:
 
     const Inventory &Items() const { return m_inventory; }
 
+    // Activates one more Armory Pass, starting at `xp`; false when MaxXpTracks are already active.
+    bool AddXpTrack(std::uint32_t xp);
+
     // Adds an item to the inventory and returns it with its new id (the game sees it as
     // CustomItemIdBase + id).
     InventoryItem AddItem(InventoryItem item);
@@ -91,6 +94,17 @@ public:
     StorageChange StoreItem(std::uint64_t casketItemId, std::uint64_t itemId, std::uint32_t now);
     StorageChange TakeItem(std::uint64_t casketItemId, std::uint64_t itemId, std::uint32_t now);
 
+    struct Detached
+    {
+        InventoryItem weapon;     // the weapon without its charm
+        std::uint32_t position{};
+        InventoryItem charm;      // the charm, now a loose item again
+    };
+
+    // Takes the charm off one of our weapons and returns it to the inventory as an item of its own. Nothing
+    // if the item is not ours or carries no charm.
+    std::optional<Detached> DetachCharm(std::uint64_t weaponItemId);
+
     struct Scraped
     {
         InventoryItem item;        // the weapon after the scrape
@@ -98,9 +112,12 @@ public:
         bool removed{};            // the sticker wore away completely
     };
 
-    // Scrapes the sticker in one slot of one of our items: its wear rises by a ninth, and past 1 it is
-    // removed. Nothing if the item is not ours or has no sticker in that slot.
-    std::optional<Scraped> ScrapeSticker(std::uint64_t itemId, std::uint32_t slot);
+    // Scrapes the sticker in one slot of one of our items. With a target (the level chosen on the scrape
+    // slider) its wear goes to that level, never down, and a target of 1 or more removes it; without one
+    // the wear rises by a ninth and past 1 the sticker is removed. Nothing if the item is not ours or has
+    // no sticker in that slot.
+    std::optional<Scraped> ScrapeSticker(std::uint64_t itemId, std::uint32_t slot,
+                                         std::optional<float> target = std::nullopt);
 
     // Strips stickers and charms from Sticker Slabs. An earlier build wrote a sticker onto a slab item
     // (as if it were a weapon), saved it, and the game crashed on it. Returns how many items were repaired.

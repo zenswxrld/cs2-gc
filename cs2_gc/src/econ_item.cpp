@@ -340,6 +340,22 @@ std::optional<std::vector<std::uint8_t>> WithXpShopTrack(std::span<const std::ui
     return out.bytes();
 }
 
+std::optional<std::vector<std::uint8_t>> WithXpShopTracks(std::span<const std::uint8_t> object,
+                                                          std::span<const std::uint32_t> tracks)
+{
+    PbWriter out;
+    PbReader reader(object);
+    PbField f;
+    while (reader.Next(f))
+        if (!(f.number == 3 && f.wire == 0))
+            Reemit(out, f);
+    if (reader.Failed())
+        return std::nullopt;
+    for (const std::uint32_t xp : tracks)
+        out.Varint(3, xp);
+    return out.bytes();
+}
+
 std::vector<std::vector<std::uint8_t>> ExtractObjects(std::span<const std::uint8_t> welcome, std::uint64_t typeId)
 {
     std::vector<std::vector<std::uint8_t>> found;

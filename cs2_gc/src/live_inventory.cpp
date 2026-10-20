@@ -15,6 +15,14 @@ InventoryItem LiveInventory::AddItem(InventoryItem item)
     return item;
 }
 
+bool LiveInventory::AddXpTrack(std::uint32_t xp)
+{
+    if (m_inventory.XpTracks().size() >= MaxXpTracks)
+        return false;
+    m_inventory.XpTracks().push_back(xp);
+    return true;
+}
+
 bool LiveInventory::RemoveItem(std::uint64_t itemId)
 {
     return itemId > CustomItemIdBase && m_inventory.Remove(itemId - CustomItemIdBase);
@@ -48,7 +56,28 @@ std::size_t LiveInventory::RepairSlabs(const Schema &schema)
     return repaired;
 }
 
-std::optional<LiveInventory::Scraped> LiveInventory::ScrapeSticker(std::uint64_t itemId, std::uint32_t slot)
+std::optional<LiveInventory::Detached> LiveInventory::DetachCharm(std::uint64_t weaponItemId)
+{
+    if (weaponItemId <= CustomItemIdBase)
+        return std::nullopt;
+    InventoryItem *weapon = m_inventory.Find(weaponItemId - CustomItemIdBase);
+    if (!weapon || !weapon->charm)
+        return std::nullopt;
+    InventoryItem charm;
+    charm.defIndex = DefinitionKeychain;
+    charm.keychain = weapon->charm->kit;
+    charm.slabSticker = weapon->charm->slabSticker;
+    weapon->charm.reset();
+    Detached detached;
+    detached.charm = AddItem(charm);
+    // AddItem may have moved items; look the weapon up again.
+    detached.weapon = *m_inventory.Find(weaponItemId - CustomItemIdBase);
+    detached.position = PositionOf(detached.weapon.id);
+    return detached;
+}
+
+std::optional<LiveInventory::Scraped> LiveInventory::ScrapeSticker(std::uint64_t itemId, std::uint32_t slot,
+                                                                   std::optional<float> target)
 {
     if (itemId <= CustomItemIdBase)
         return std::nullopt;
@@ -60,7 +89,10 @@ std::optional<LiveInventory::Scraped> LiveInventory::ScrapeSticker(std::uint64_t
     if (sticker == item->stickers.end())
         return std::nullopt;
     Scraped scraped;
-    sticker->wear += 1.0f / 9.0f;
+    if (target)
+        sticker->wear = *target >= 1.0f ? 2.0f : std::max(sticker->wear, std::max(*target, 0.0f));
+    else
+        sticker->wear += 1.0f / 9.0f;
     if (sticker->wear > 1.0f)
     {
         item->stickers.erase(sticker);

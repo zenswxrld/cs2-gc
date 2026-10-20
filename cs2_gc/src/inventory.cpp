@@ -74,7 +74,15 @@ std::string FloatText(float value)
 std::string Inventory::ToText() const
 {
     std::ostringstream out;
-    out << "\"inventory\"\n{\n\t\"next_id\"\t\"" << m_nextId << "\"\n\t\"items\"\n\t{\n";
+    out << "\"inventory\"\n{\n\t\"next_id\"\t\"" << m_nextId << "\"\n";
+    if (!m_xpTracks.empty())
+    {
+        out << "\t\"xp_tracks\"\t\"";
+        for (std::size_t i = 0; i < m_xpTracks.size(); ++i)
+            out << (i ? " " : "") << m_xpTracks[i];
+        out << "\"\n";
+    }
+    out << "\t\"items\"\n\t{\n";
     for (const InventoryItem &item : m_items)
     {
         out << "\t\t\"" << item.id << "\"\n\t\t{\n"
@@ -119,6 +127,21 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
     Inventory inventory;
     if (!ParseNumber(root->Value("next_id"), inventory.m_nextId) || inventory.m_nextId == 0)
         return std::nullopt;
+
+    if (const KvNode *tracks = root->Find("xp_tracks"))
+    {
+        std::string_view text = tracks->value;
+        while (!text.empty())
+        {
+            const auto end = text.find(' ');
+            std::uint32_t xp = 0;
+            if (tracks->block || inventory.m_xpTracks.size() >= MaxXpTracks ||
+                !ParseNumber(text.substr(0, end), xp) || xp == 0 || xp > 100000000u)
+                return std::nullopt;
+            inventory.m_xpTracks.push_back(xp);
+            text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
+        }
+    }
 
     std::set<std::uint64_t> seen;
     for (const KvNode &entry : items->children)

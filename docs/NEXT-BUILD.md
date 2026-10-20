@@ -156,3 +156,9 @@ while CS2 runs (the DLL processes the request); native-picker support needs a di
   own csgo pak01_dir.vpk returns Valve's listed value `7ff6546070bd65d225450fd1cb8e2751`.
 - The helper backs the file up once (`vpk.signatures.cs2_gc_backup`) and adds a pak01 block listing only cs2_gc_*
   folders. The remove/disable scripts restore the backup.
+
+## Confirmed live (build 14)
+- The native trade-up screen accepts 10 mixed StatTrak and normal Restricted items (screenshot: 10 / 10 selected). So the
+  VPK overrides now load: our folders listed in vpk.signatures with the directory checksum are accepted, and the
+  recipe-only override in cs2_gc_native is active. Still to check in the same build: contract result, scoreboard row,
+  terminal offer numbers, Armory rotation script.

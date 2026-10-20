@@ -47,14 +47,21 @@ ids.push('1000000000002','1000000000003'); _LocalCollectDrops();
 // An inventory popup acknowledges rewards before the end screen starts.
 ids = ['1000000000001']; rank=4518; level=2;
 _m_data._m_arrPanelObjects[1].Start();
-assert.equal(nodes['local-results-level'].text, 'Profile level 2');
-assert.equal(nodes['local-results-rating'].text, 'CS Rating  4518   (+311)');
+assert.equal(nodes['local-results-level'], undefined);  // XP and rating use the stock panels now
 assert.equal(nodes['local-results-items'].children.length,1);
 _LocalResultsRefresh(); assert.equal(nodes['local-results-items'].children.length,1);
 assert.equal(nodes['local-results-items'].children[0].children[0].props.itemid, '1000000000002');
 m_localResultsOpen = false;
 ids.push('1000000000004'); _LocalResultsRefresh();
 assert.equal(nodes['local-results-items'].children.length,1);
+// The start-of-match baseline for the stock XP/rating panels is recorded once and cleared per match.
+EndOfMatch.LocalBaseline = null; m_localResultsOpen = false; level = 3; rank = 4600;
+_LocalResultsCapture();
+assert.deepEqual(EndOfMatch.LocalBaseline, {level: 3, xp: 0, rating: 4600, wins: 10});
+// No drops: the tab hides itself and the sequence moves on.
+m_localResultsDrops = []; ids = []; make('rb--eom-local-results'); const before = next;
+_m_data._m_arrPanelObjects[1].Start();
+assert.equal(next, before + 1); assert.equal(nodes['rb--eom-local-results'].visible, false);
 '''
         self.run_js(script)
 

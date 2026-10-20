@@ -42,6 +42,16 @@ SCRIPT = '''
             m_localResultsOldRating = Number(FriendsListAPI.GetFriendCompetitiveRank(MyPersonaAPI.GetXuid(), 'Premier')) || 0;
         }
         _LocalCollectDrops();
+        if (!m_localResultsOpen && !EndOfMatch.LocalBaseline && MyPersonaAPI.IsInventoryValid()) {
+            // Start-of-match values for the stock XP bar and rating reveal (native_endmatch_stock.py).
+            const xuid = MyPersonaAPI.GetXuid();
+            EndOfMatch.LocalBaseline = {
+                level: Number(MyPersonaAPI.GetCurrentLevel()) || 1,
+                xp: typeof MyPersonaAPI.GetCurrentXp === 'function' ? Number(MyPersonaAPI.GetCurrentXp()) || 0 : 0,
+                rating: Number(FriendsListAPI.GetFriendCompetitiveRank(xuid, 'Premier')) || 0,
+                wins: Number(FriendsListAPI.GetFriendCompetitiveWins(xuid, 'Premier')) || 0
+            };
+        }
         if (!GameStateAPI.IsDemoOrHltv() && !GameStateAPI.IsQueuedMatchmaking()) {
             const map = GameStateAPI.GetMapBSPName();
             if (map && map !== m_localDelayMap) {
@@ -54,15 +64,6 @@ SCRIPT = '''
     function _LocalResultsRefresh() {
         if (!m_localResultsOpen || !m_localResultsPanel || !m_localResultsPanel.IsValid()) return;
         const panel = m_localResultsPanel;
-        const xuid = MyPersonaAPI.GetXuid();
-        const wins = Number(FriendsListAPI.GetFriendCompetitiveWins(xuid, 'Premier')) || 0;
-        const score = wins >= __PLACEMENTS__ ? Number(FriendsListAPI.GetFriendCompetitiveRank(xuid, 'Premier')) || 0 : 0;
-        const level = Number(MyPersonaAPI.GetCurrentLevel()) || 1;
-        panel.FindChildTraverse('local-results-level').text = 'Profile level ' + level;
-        const rating = panel.FindChildTraverse('local-results-rating');
-        const difference = score && m_localResultsOldRating ? score - m_localResultsOldRating : 0;
-        rating.text = score ? 'CS Rating  ' + score + (difference ? '   (' + (difference > 0 ? '+' : '') + difference + ')' : '') :
-            'Premier placements  ' + wins + ' / ' + __PLACEMENTS__ + ' wins';
         _LocalCollectDrops();
         const items = m_localResultsDrops;
         const list = panel.FindChildTraverse('local-results-items');
@@ -98,9 +99,7 @@ SCRIPT = '''
         card.style.width = '1160px'; card.style.height = 'fit-children'; card.style.horizontalAlign = 'center';
         card.style.marginTop = '64px'; card.style.padding = '32px'; card.style.flowChildren = 'down';
         card.style.backgroundColor = '#14232cff'; card.style.border = '1px solid #3d585d';
-        $.CreatePanel('Label', card, '', {text:'MATCH COMPLETE', style:'font-size:24px;color:#e8d8a0;margin-bottom:18px;'});
-        $.CreatePanel('Label', card, 'local-results-rating', {style:'font-size:34px;color:#dddddd;margin-bottom:12px;'});
-        $.CreatePanel('Label', card, 'local-results-level', {style:'font-size:24px;color:#a9c8dc;margin-bottom:25px;'});
+        $.CreatePanel('Label', card, '', {text:'MATCH DROPS', style:'font-size:24px;color:#e8d8a0;margin-bottom:18px;'});
         $.CreatePanel('Panel', card, 'local-results-items', {style:'width:100%;height:240px;flow-children:right;overflow:scroll squish;'});
         $.CreatePanel('Label', card, 'local-results-status', {style:'font-size:20px;color:#c4d1db;margin-top:18px;'});
         // Stock subpanels register during layout loading. Insert after the victory card.
@@ -109,6 +108,14 @@ SCRIPT = '''
             _m_data._m_arrPanelObjects.splice(Math.min(1, _m_data._m_arrPanelObjects.length), 0, {
                 name:'eom-local-results',
                 Start: () => {
+                    // XP and rating use the stock panels; this tab is only for item drops.
+                    _LocalCollectDrops();
+                    if (!m_localResultsDrops.length) {
+                        const tab = _m_cP.FindChildTraverse('rb--eom-local-results');
+                        if (tab) tab.visible = false;
+                        EndOfMatch.ShowNextPanel();
+                        return;
+                    }
                     EndOfMatch.SwitchToPanel('eom-local-results');
                     EndOfMatch.StartDisplayTimer(__DURATION__);
                     _LocalResultsRefresh();
@@ -136,9 +143,10 @@ def patch(source, config):
     source = source.replace(navigate, navigate + "\n        _m_cP.FindChildTraverse('id-eom-layout').style.height = tab === 'eom-local-results' ? '100%' : '300px';", 1)
     source = source.replace(start, code + '\n' + start, 1)
     source = source.replace(layout, layout + '\n        _LocalResultsInitialize();', 1)
-    source = source.replace(title, '            elRBtn.FindChildTraverse("id-navbar-button__label").text = elPanel.id === "eom-local-results" ? "REWARDS & RATING" : $.Localize("#" + elPanel.id);', 1)
+    source = source.replace(title, '            elRBtn.FindChildTraverse("id-navbar-button__label").text = elPanel.id === "eom-local-results" ? "DROPS" : $.Localize("#" + elPanel.id);', 1)
     source = source.replace(shutdown, shutdown + '''
         m_localResultsOpen = false;
+        EndOfMatch.LocalBaseline = null;
         m_localResultsPanel = null;
         m_localResultsBaseline = null;
         m_localResultsDrops = [];

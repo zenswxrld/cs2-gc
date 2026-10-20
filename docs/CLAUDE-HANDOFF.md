@@ -415,3 +415,12 @@ Full build-25966348 schema loaded successfully, all supplementary rare pools val
   item_context_entries: Open on a local case (id 1e12..2e12) with exactly one chosen action item goes straight to
   popup_capability_decodable with that key as tool_id (same settings the stock picker passes). Not verified live.
   Bot names list replaced with realistic gamer handles.
+- 17i: stock end-of-match panels. New `native_endmatch_stock.py` patches the user's endofmatch-rank and
+  endofmatch-skillgroup scripts (folders cs2_gc_eom_xp / cs2_gc_eom_rating): when the engine has no XP / skill
+  group data (always offline), they are fed from local values against `EndOfMatch.LocalBaseline` (captured by the
+  native_endmatch.py patch at match start, cleared at EOM shutdown): XP from MyPersonaAPI.GetCurrentLevel/
+  GetCurrentXp (GetCurrentXp exists in client.dll strings; guarded with typeof), rating/wins from
+  FriendsListAPI Premier. The rating panel retries for up to 4 s for the post-match update. Codex's custom panel
+  is now drops-only and hides itself when nothing dropped. Not verified live.
+  `bot_prefix ""` added to the launcher cfg and premier bots cfg to try to drop "[BOT]" (cvar exists in
+  server.dll; whether it is the source of the tag is unverified).

@@ -57,6 +57,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     std::ofstream config(cfg, std::ios::trunc);
     config << "// Debug launcher generated controls; no persistent autoexec edits.\n"
            << "setinfo cs2_gc_rotation_offset 0\n"
+           << "bot_prefix \"\"\n" // no "[BOT]" before bot names (bots that join afterwards)
            << "alias cs2_gc_give_stars \"echo CS2GC_" << nonce << " stars 100\"\n"
            << "alias cs2_gc_give_stars_1000 \"echo CS2GC_" << nonce << " stars 1000\"\n"
            << "alias cs2_gc_force_rotation \"incrementvar cs2_gc_rotation_offset 0 1000000 1; echo CS2GC_" << nonce << " rotate\"\n"

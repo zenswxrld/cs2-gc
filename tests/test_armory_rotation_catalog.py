@@ -164,6 +164,11 @@ assert.equal(clock.GetParent().id,'cs2gc-category-bar'); assert.equal(clock.styl
 root.SetHasClass('xpshop-grids-visible',true); _LocalRotationRefresh();
 assert.equal(nodes['cs2gc-category-bar'].visible,true);      // the timer stays visible in a tab
 assert.equal(rows.style.marginTop,'36px');
+// Opening a tile also checks its own tab button, so the stock InventoryUpdate re-opens this tab, not an older one.
+let opened=null; globalThis._UpdateInspectGrid = e => { opened = e.item_name; };
+panel('capsule-nav'); panel('charm-nav').checked = true;
+_LocalOpenEntry({item_name:'capsule'});
+assert.equal(opened,'capsule'); assert.equal(nodes['capsule-nav'].checked,true);
 '''
         result=subprocess.run(['node','-e',script],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)

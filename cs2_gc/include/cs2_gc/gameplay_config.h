@@ -9,7 +9,7 @@ namespace cs2_gc
 struct GameplayConfig
 {
     std::uint32_t armory_collection_slots{3};
-    std::uint32_t armory_charm_slots{2};
+    std::uint32_t armory_charm_slots{3};
     std::uint32_t armory_sticker_slots{2};
     std::uint32_t armory_case_slots{2};
     std::uint32_t armory_capsule_slots{2};

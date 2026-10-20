@@ -2,7 +2,7 @@
 DEFAULTS = {
     'end_match_screens': 1, 'end_match_duration': 20, 'match_end_delay': 45,
     'armory_collection_slots': 3,
-    'armory_charm_slots': 2,
+    'armory_charm_slots': 3,
     'armory_sticker_slots': 2,
     'armory_case_slots': 2,
     'armory_capsule_slots': 2,

@@ -363,3 +363,12 @@ Full build-25966348 schema loaded successfully, all supplementary rare pools val
 - Reset script bug fixed: in a .cmd file `set MODE=progress` cleared the CHOICE errorlevel, so option 2 always ran as
   option 1 (rank reset, inventory kept). The answer is now read before any SET, and the full reset fails loudly if
   cs2_gc_inventory.txt is still present afterwards.
+- Live-confirmed by the user: terminal offers now read 1st, 2nd, ... in order.
+- Bottom-right Armory tile opening "a random tab": the stock `InventoryUpdate()` re-activates whichever nav RadioButton
+  is `checked`, and our GC pushes inventory updates often. The patched tile click called `_UpdateInspectGrid` directly
+  without checking that entry's nav button, so the next update jumped to an older tab. `_LocalOpenEntry()` now checks
+  the entry's `<item_name>-nav` button before opening the grid. Needs live confirmation.
+- Top row had 3 tiles because the defaults gave it 2 charms + 1 agent; `armory_charm_slots` default is now 3 (C++ and
+  Python and the example cfg). Users with their own cfg must set `armory_charm_slots = 3` themselves.
+- The countdown's right margin is computed each second from the "Get Another Armory Pass" button
+  (`GetPositionWithinWindow` + `actuallayoutwidth`), so it lines up with the button.

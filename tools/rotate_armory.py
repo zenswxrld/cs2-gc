@@ -9,6 +9,13 @@ END = '''            _MakeNavButton(element);
         });'''
 INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_gc_gameplay.cfg.
     const m_localRotation = __SETTINGS__;
+    function _LocalOpenEntry(entry) {
+        // The stock InventoryUpdate re-activates whichever tab button is checked. Check this entry's button too,
+        // otherwise the next inventory update jumps back to an older tab.
+        const nav = $.GetContextPanel().FindChildInLayoutFile(entry.item_name + '-nav');
+        if (nav && nav.IsValid()) nav.checked = true;
+        _UpdateInspectGrid(entry);
+    }
     function _LocalCatalogueControls() {
         const root = $.GetContextPanel();
         // One stock-style page (4 / 3 / 4); the bar under the green line only holds the countdown.
@@ -206,6 +213,14 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
                 label.style.horizontalAlign = 'right'; label.style.verticalAlign = 'center';
             }
             label.text = text;
+            // Line the right edge up with "Get Another Armory Pass" instead of the far edge of the page.
+            const passes = root.FindChildInLayoutFile('id-xpshop-more-passes-btn');
+            if (passes && passes.IsValid() && bar.GetPositionWithinWindow && passes.GetPositionWithinWindow) {
+                const barRight = bar.GetPositionWithinWindow().x + bar.actuallayoutwidth;
+                const passRight = passes.GetPositionWithinWindow().x + passes.actuallayoutwidth;
+                const gap = (barRight - passRight) / (bar.actualuiscale_x || 1);
+                if (gap > 0 && passes.actuallayoutwidth > 0) label.style.marginRight = Math.round(gap) + 'px';
+            }
         }
         if (m_localRotationCycle !== -1 && m_localRotationCycle !== cycle) {
             _DeleteInspectGrid();
@@ -268,7 +283,7 @@ def patch_previews(source):
 
     source = source.replace('shuffledArray[iScrollingTile];', 'shuffledArray[iScrollingTile % shuffledArray.length];')
     # Rebind callbacks when stock UI reuses panels after a catalogue refresh.
-    source = source.replace("        elTile.FindChildInLayoutFile('id-new-item-tag')", "        elTile.SetPanelEvent('onactivate', () => _UpdateInspectGrid(ShopEntry));\n        elTile.FindChildInLayoutFile('id-new-item-tag')", 1)
+    source = source.replace("        elTile.FindChildInLayoutFile('id-new-item-tag')", "        elTile.SetPanelEvent('onactivate', () => _LocalOpenEntry(ShopEntry));\n        elTile.FindChildInLayoutFile('id-new-item-tag')", 1)
     nav_end = "    function _CancelTimeoutForRewardItem() {"
     nav_binding = "        elBtn.SetPanelEvent('onactivate', () => _UpdateInspectGrid(ShopEntry));\n"
     previous = "        }\n    }\n" + nav_end
@@ -287,7 +302,7 @@ def patch_previews(source):
     source = source.replace(end, "            _MakeNavButton(element);" + icons + "\n        });", 1)
     route = '''
             const currentTile = m_elContentPanel.FindChildInLayoutFile(element.item_name);
-            if (currentTile) currentTile.SetPanelEvent('onactivate', () => _UpdateInspectGrid(element));
+            if (currentTile) currentTile.SetPanelEvent('onactivate', () => _LocalOpenEntry(element));
             const currentNav = $.GetContextPanel().FindChildInLayoutFile(element.item_name + '-nav');
             if (currentNav) currentNav.SetPanelEvent('onactivate', () => _UpdateInspectGrid(element));
 '''

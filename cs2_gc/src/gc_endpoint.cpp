@@ -3,6 +3,52 @@
 
 namespace cs2_gc
 {
+namespace
+{
+// Observed in a capture of the real GC for build 25947352: sent by the GC right after the
+// Welcome without being asked.
+constexpr std::uint32_t PostWelcome[] = {
+    gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_GC2ClientGlobalStats,
+    gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate,
+};
+
+struct ReplayRule
+{
+    std::uint32_t request;
+    std::uint32_t reply;
+};
+
+// Request/reply pairs from the same capture. The rank update is included because the game
+// repeats its request every ten seconds until it gets an answer.
+constexpr ReplayRule ReplayRules[] = {
+    {gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RequestRecurringMissionSchedule,
+     gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema},
+    {gc_msg::EGCItemMsg::k_EMsgGCStoreGetUserData, gc_msg::EGCItemMsg::k_EMsgGCStoreGetUserDataResponse},
+    {gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_GetEventFavorites_Request,
+     gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_GetEventFavorites_Response},
+    {gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate,
+     gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate},
+};
+}
+
+void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store)
+{
+    {
+        std::lock_guard lock(m_mutex);
+        m_replay = store;
+    }
+    if (!store)
+        return;
+    for (const ReplayRule &rule : ReplayRules)
+    {
+        if (!store->Find(rule.reply))
+            continue;
+        SetHandler(rule.request, [store, reply = rule.reply](const FrameView &, LocalGameCoordinator &gc) {
+            gc.Reply(reply, *store->Find(reply));
+        });
+    }
+}
+
 LocalGameCoordinator::LocalGameCoordinator(GcEndpointConfig config)
     : m_config(std::move(config))
 {
@@ -58,6 +104,18 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
         ++m_ignored; // malformed hello: no welcome rather than a welcome built from garbage
         return;
     }
+    if (m_replay)
+    {
+        if (const auto *welcome = m_replay->Find(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome))
+        {
+            Reply(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, *welcome);
+            for (std::uint32_t id : PostWelcome)
+                if (const auto *body = m_replay->Find(id))
+                    Reply(id, *body);
+            return;
+        }
+    }
+
     ClientWelcome welcome;
     welcome.version = m_config.welcomeVersion;
     welcome.outOfDateCaches.push_back({m_config.owner, m_config.cacheVersion, m_config.cacheTypes});

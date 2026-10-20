@@ -1,6 +1,7 @@
 #include "cs2_gc/gc_summary.h"
 #include "cs2_gc/gc_handshake.h"
 #include "cs2_gc/gc_msg_ids.h"
+#include "cs2_gc/protobuf.h"
 #include <map>
 
 namespace cs2_gc
@@ -79,6 +80,41 @@ std::string SummarizeSoMessage(std::uint32_t messageId, std::span<const std::uin
             }
         std::string out = Render(what, stats, options);
         out += "    caches: out of date=" + std::to_string(welcome->outOfDateCaches.size()) + "\n";
+
+        // Everything except the caches (version, game data, location, currency, ...), which the
+        // cache summary above does not show.
+        PbWriter others;
+        PbReader reader(body);
+        PbField f;
+        while (reader.Next(f))
+        {
+            if (f.number == 3)
+                continue;
+            switch (f.wire)
+            {
+            case 0: others.Varint(f.number, f.value); break;
+            case 1: others.Fixed64(f.number, f.value); break;
+            case 5: others.Fixed32(f.number, static_cast<std::uint32_t>(f.value)); break;
+            default: others.Bytes(f.number, f.bytes); break;
+            }
+        }
+        DumpOptions otherOptions = options;
+        otherOptions.maxBytes = 8 * 1024;
+        const std::string dump = DumpProtobuf(others.bytes(), otherOptions);
+        out += "  other welcome fields:\n";
+        for (std::size_t start = 0; start < dump.size();)
+        {
+            const std::size_t end = dump.find('\n', start);
+            out += "    " + dump.substr(start, end == std::string::npos ? end : end - start + 1);
+            if (end == std::string::npos)
+            {
+                out += '\n';
+                break;
+            }
+            start = end + 1;
+        }
+        if (dump.empty())
+            out += "    <none>\n";
         return out;
     }
     if (messageId == m::ESOMsg::k_ESOMsg_CacheSubscribed)

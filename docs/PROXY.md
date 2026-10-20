@@ -80,6 +80,19 @@ object type IDs the game uses, instead of guessing them.
   read from the local Steam session and redacted wherever they appear, but read the log
   before sharing it.
 - Nothing is changed in what the game sends or receives.
+- The first reply of each message type is also saved, as raw bytes, in a `cs2_gc_replay` folder
+  next to the DLL (one `<id>.bin` per message, at most 64, 1 MB each). These files hold your
+  account data. They are for local mode below and must not be shared, uploaded or committed.
+  Delete the folder to forget them.
+
+### Replay in local mode
+
+When `cs2_gc_replay` exists, local mode (no `-cs2gc_capture`) answers the game with the recorded
+Welcome and the other messages the real GC sent unprompted after it, and answers the requests the
+capture showed being answered (recurring missions, store data, event favorites, rank update) with
+their recorded replies. Message types with no recording behave as before. It reproduces the account
+the recordings came from; it is a way to test whether a faithful Welcome is enough, not the final
+inventory.
 
 ## Config (`cs2_gc.cfg`, optional)
 

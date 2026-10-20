@@ -2,8 +2,10 @@
 
 #include "cs2_gc/gc_handshake.h"
 #include "cs2_gc/message_queue.h"
+#include "cs2_gc/replay.h"
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 
@@ -44,12 +46,19 @@ public:
     void SetHandler(std::uint32_t type, Handler handler); // plain ID; replaces any earlier one
     void SetOwner(const SoOwner &owner);                  // used by later welcomes
 
+    // Answers from recorded real-GC bodies. A recorded Welcome replaces the synthetic one and
+    // is followed by the other messages the real GC sent unprompted after it; a request that
+    // the capture showed being answered gets the recorded reply. Message types with no
+    // recording are left exactly as they were. The recorded bodies belong to one account.
+    void EnableReplay(std::shared_ptr<const ReplayStore> store);
+
     std::size_t IgnoredMessages() const { return m_ignored; }
 
 private:
     void OnClientHello(const FrameView &frame);
 
     GcEndpointConfig m_config;
+    std::shared_ptr<const ReplayStore> m_replay;
     MessageQueue m_toGame;
     std::mutex m_mutex;
     std::unordered_map<std::uint32_t, Handler> m_handlers;

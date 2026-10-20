@@ -23,6 +23,7 @@
 #include "cs2_gc/gc_summary.h"
 #include "cs2_gc/protobuf_dump.h"
 #include "cs2_gc/proxy_support.h"
+#include "cs2_gc/replay.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -36,6 +37,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <map>
 #include <cstring>
 #include <utility>
@@ -211,6 +213,8 @@ public:
 
     bool IsMessageAvailable(std::uint32_t *size) override { return m_gc.IsMessageAvailable(size); }
 
+    void EnableReplay(std::shared_ptr<const ReplayStore> store) { m_gc.EnableReplay(std::move(store)); }
+
     GCResult RetrieveMessage(std::uint32_t *type, void *destination, std::uint32_t capacity,
                              std::uint32_t *size) override
     {
@@ -231,8 +235,9 @@ private:
 class CaptureCoordinator final : public SteamGameCoordinatorInterface
 {
 public:
-    CaptureCoordinator(SteamGameCoordinatorInterface *real, Logger &log, std::function<void()> identity)
-        : m_real(real), m_log(log), m_identity(std::move(identity))
+    CaptureCoordinator(SteamGameCoordinatorInterface *real, Logger &log, std::function<void()> identity,
+                       std::filesystem::path replayDirectory)
+        : m_real(real), m_log(log), m_identity(std::move(identity)), m_replayDirectory(std::move(replayDirectory))
     {
     }
 
@@ -253,15 +258,31 @@ public:
         if (result == GCResult::OK && type && size && destination)
         {
             m_identity();
-            LogFrame(m_log, "<< REAL GC->GAME", *type, {static_cast<const std::uint8_t *>(destination), *size});
+            const std::span<const std::uint8_t> bytes{static_cast<const std::uint8_t *>(destination), *size};
+            LogFrame(m_log, "<< REAL GC->GAME", *type, bytes);
+            Record(*type, bytes);
         }
         return result;
     }
 
 private:
+    // Keeps the first body of each message type so local mode can replay it. The files hold
+    // account data and stay on this machine.
+    void Record(std::uint32_t type, std::span<const std::uint8_t> bytes)
+    {
+        FrameView frame;
+        if (ReadProtobufFrame(type, bytes, frame) != FrameError::None)
+            return;
+        const std::uint32_t id = type & ~ProtobufMask;
+        if (ReplayStore::SaveIfMissing(m_replayDirectory, id, frame.body))
+            m_log.Write("saved a replay recording for message " + std::to_string(id) + " (" +
+                        std::to_string(frame.body.size()) + " bytes)");
+    }
+
     SteamGameCoordinatorInterface *m_real;
     Logger &m_log;
     std::function<void()> m_identity;
+    std::filesystem::path m_replayDirectory;
 };
 
 struct State
@@ -331,7 +352,8 @@ void *GcInterfaceFor(State &state, void *realObject)
     if (!wrapper)
     {
         wrapper = new CaptureCoordinator(static_cast<SteamGameCoordinatorInterface *>(realObject), *state.log,
-                                         [] { ResolveIdentity(); });
+                                         [] { ResolveIdentity(); },
+                                         std::filesystem::path(state.directory + L"cs2_gc_replay"));
         state.log->Write("capture: wrapping Valve's real SteamGameCoordinator001");
     }
     return wrapper;
@@ -472,6 +494,16 @@ State &Init()
         if (s.mode == ProxyMode::Local)
         {
             s.coordinator = new ProxyCoordinator(endpoint, *s.log, std::move(provider));
+            auto replay = std::make_shared<ReplayStore>(
+                ReplayStore::LoadDirectory(std::filesystem::path(s.directory + L"cs2_gc_replay")));
+            if (replay->Size())
+            {
+                s.coordinator->EnableReplay(replay);
+                s.log->Write("replay: " + std::to_string(replay->Size()) + " recorded message bodies loaded from "
+                             "cs2_gc_replay; they belong to the account they were captured from");
+            }
+            else
+                s.log->Write("replay: no recordings in cs2_gc_replay, using the synthetic welcome");
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=local. Targets Steam build " +
                          std::string(TargetSteamBuildId) + "; the GC is local and nothing is sent to Valve.");
         }

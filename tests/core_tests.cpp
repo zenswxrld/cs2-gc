@@ -6,6 +6,7 @@
 #include "cs2_gc/gc_summary.h"
 #include "cs2_gc/protobuf.h"
 #include "cs2_gc/protobuf_dump.h"
+#include "cs2_gc/replay.h"
 #include "cs2_gc/proxy_support.h"
 #include "cs2_gc/message_queue.h"
 #include "cs2_gc/progression.h"
@@ -779,6 +780,122 @@ void SoSummaries()
           "unrelated or undecodable messages produce no summary");
 }
 
+void Replay()
+{
+    const auto dir = std::filesystem::temp_directory_path() / "cs2_gc_replay_test";
+    std::filesystem::remove_all(dir);
+
+    Check(ReplayStore::LoadDirectory(dir).Size() == 0, "missing directory loads empty");
+    Check(ReplayStore::SaveIfMissing(dir, 4004, Bytes({1, 2, 3})), "first save");
+    Check(!ReplayStore::SaveIfMissing(dir, 4004, Bytes({9, 9})), "an existing recording is never replaced");
+    Check(ReplayStore::SaveIfMissing(dir, 9194, Bytes({})), "empty body is a valid recording");
+    Check(!ReplayStore::SaveIfMissing(dir, 0, Bytes({1})) &&
+              !ReplayStore::SaveIfMissing(dir, 5, std::vector<std::uint8_t>(ReplayStore::MaxBodyBytes + 1)), "bad id and oversize body refused");
+    Check(!std::filesystem::exists(dir / "4004.bin.tmp"), "no temporary file left behind");
+
+    // Hand-made junk next to real recordings is ignored.
+    std::ofstream(dir / "notes.txt") << "x";
+    std::ofstream(dir / "abc.bin") << "x";
+    std::ofstream(dir / "12x.bin") << "x";
+    std::ofstream(dir / "4294967296.bin") << "x";
+    std::ofstream(dir / "0.bin") << "x";
+    std::ofstream(dir / ".bin") << "x";
+    const ReplayStore loaded = ReplayStore::LoadDirectory(dir);
+    Check(loaded.Size() == 2 && *loaded.Find(4004) == Bytes({1, 2, 3}) && loaded.Find(9194)->empty() && !loaded.Find(1), "load ignores junk");
+
+    // The number of recordings is bounded.
+    std::filesystem::remove_all(dir);
+    for (std::uint32_t id = 1; id <= ReplayStore::MaxFiles; ++id)
+        Check(ReplayStore::SaveIfMissing(dir, id, Bytes({1})), "fill to the limit");
+    Check(!ReplayStore::SaveIfMissing(dir, 1000, Bytes({1})) && ReplayStore::LoadDirectory(dir).Size() == ReplayStore::MaxFiles, "recording count capped");
+    std::filesystem::remove_all(dir);
+
+    // Endpoint behaviour with recordings.
+    namespace m = gc_msg;
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(m::EGCBaseClientMsg::k_EMsgGCClientWelcome, Bytes({0x08, 0x2A}));
+    store->Set(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_GC2ClientGlobalStats, Bytes({0x70, 0x01}));
+    store->Set(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate, Bytes({0x0A, 0x00}));
+    store->Set(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema, Bytes({0x0A, 0x01, 0x77}));
+
+    LocalGameCoordinator gc(GcEndpointConfig{});
+    gc.EnableReplay(store);
+    const auto send = [&](std::uint32_t type, const std::vector<std::uint8_t> &body) {
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(type, {}, body, frame);
+        return gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    const auto next = [&](std::uint32_t &type) {
+        std::uint32_t size = 0;
+        std::vector<std::uint8_t> out;
+        if (!gc.IsMessageAvailable(&size))
+            return out;
+        std::vector<std::uint8_t> buffer(size);
+        std::uint32_t got = 0;
+        gc.RetrieveMessage(&type, buffer.data(), size, &got);
+        FrameView frame;
+        ReadProtobufFrame(type, buffer, frame);
+        return std::vector<std::uint8_t>(frame.body.begin(), frame.body.end());
+    };
+
+    ClientHello hello;
+    hello.version = 1;
+    Check(send(m::EGCBaseClientMsg::k_EMsgGCClientHello, EncodeClientHello(hello)) == GCResult::OK, "hello");
+    std::uint32_t type = 0;
+    Check(next(type) == Bytes({0x08, 0x2A}) && type == (m::EGCBaseClientMsg::k_EMsgGCClientWelcome | ProtobufMask), "recorded welcome replayed verbatim");
+    Check(next(type) == Bytes({0x70, 0x01}) && type == (m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_GC2ClientGlobalStats | ProtobufMask), "post-welcome stats");
+    Check(next(type) == Bytes({0x0A, 0x00}) && type == (m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate | ProtobufMask), "post-welcome rank update");
+    std::uint32_t size = 0;
+    Check(!gc.IsMessageAvailable(&size), "nothing else queued");
+
+    Check(send(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RequestRecurringMissionSchedule, {}) == GCResult::OK &&
+              next(type) == Bytes({0x0A, 0x01, 0x77}) &&
+              type == (m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema | ProtobufMask), "recorded reply to a request");
+    Check(send(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate, {}) == GCResult::OK && next(type) == Bytes({0x0A, 0x00}),
+          "rank request answered");
+    // No recording for the store pair, so that request stays ignored, as before replay existed.
+    const std::size_t ignoredBefore = gc.IgnoredMessages();
+    Check(send(m::EGCItemMsg::k_EMsgGCStoreGetUserData, {}) == GCResult::OK && !gc.IsMessageAvailable(&size) &&
+              gc.IgnoredMessages() == ignoredBefore + 1, "request without a recorded reply is unchanged");
+
+    // Without a recorded welcome the synthetic one is still used and nothing extra is sent.
+    LocalGameCoordinator plain(GcEndpointConfig{});
+    plain.EnableReplay(std::make_shared<ReplayStore>());
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(m::EGCBaseClientMsg::k_EMsgGCClientHello, {}, EncodeClientHello(hello), frame);
+    plain.SendMessage(m::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    std::uint32_t plainType = 0, plainSize = 0, plainGot = 0;
+    Check(plain.IsMessageAvailable(&plainSize), "synthetic welcome still sent");
+    std::vector<std::uint8_t> plainBuffer(plainSize);
+    plain.RetrieveMessage(&plainType, plainBuffer.data(), plainSize, &plainGot);
+    FrameView plainFrame;
+    ReadProtobufFrame(plainType, plainBuffer, plainFrame);
+    Check(DecodeClientWelcome(plainFrame.body) && !plain.IsMessageAvailable(&plainSize), "synthetic welcome decodes, nothing follows");
+    plain.EnableReplay(nullptr); // clearing is allowed
+}
+
+void WelcomeOtherFields()
+{
+    const auto has = [](const std::string &text, const char *part) { return text.find(part) != std::string::npos; };
+    PbWriter gameData;
+    gameData.Varint(5, 77);
+    PbWriter welcomeBody;
+    welcomeBody.Varint(1, 3);
+    welcomeBody.Bytes(2, gameData.bytes());
+    PbWriter cacheOwner;
+    cacheOwner.Varint(1, 1);
+    cacheOwner.Varint(2, 555);
+    PbWriter cache;
+    cache.Fixed64(3, 9);
+    cache.Message(4, cacheOwner);
+    welcomeBody.Message(3, cache);
+    welcomeBody.String(10, "https://example.invalid/balance");
+    const std::string summary = SummarizeSoMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcomeBody.bytes(), DumpOptions{});
+    Check(has(summary, "other welcome fields:") && has(summary, "1: varint 3") && has(summary, "5: varint 77") &&
+              has(summary, "10: text \"https://example.invalid/balance\""), "non-cache welcome fields are shown");
+    Check(!has(summary, "3: message"), "the cache itself is not repeated in the other fields");
+}
+
 int main()
 {
     try
@@ -798,6 +915,8 @@ int main()
         ProtobufDump(); std::cout << "PASS protobuf dump and SteamID redaction\n";
         ProxySupport(); std::cout << "PASS launch guard and proxy config parsing\n";
         SoSummaries(); std::cout << "PASS object message decoders, summaries and account redaction\n";
+        Replay(); std::cout << "PASS replay store and recorded-reply endpoint\n";
+        WelcomeOtherFields(); std::cout << "PASS welcome summary shows non-cache fields\n";
         return 0;
     }
     catch (const std::exception &error)

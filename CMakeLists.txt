@@ -19,6 +19,7 @@ add_library(cs2_gc_core STATIC
     cs2_gc/src/gc_summary.cpp
     cs2_gc/src/protobuf.cpp
     cs2_gc/src/protobuf_dump.cpp
+    cs2_gc/src/replay.cpp
     cs2_gc/src/proxy_support.cpp
     cs2_gc/src/inventory.cpp
     cs2_gc/src/keyvalues.cpp

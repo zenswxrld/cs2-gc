@@ -3,6 +3,7 @@
 #include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/protobuf.h"
 #include <utility>
+#include <ctime>
 
 namespace cs2_gc
 {
@@ -15,6 +16,10 @@ constexpr std::uint32_t NotificationNameItem = 1006;
 constexpr std::uint32_t NotificationUnlockCrate = 1007;
 constexpr std::uint32_t NotificationApplySticker = 1086;
 constexpr std::uint32_t NotificationApplyKeychain = 1091;
+constexpr std::uint32_t NotificationCasketTooFull = 1011;
+constexpr std::uint32_t NotificationCasketContents = 1012;
+constexpr std::uint32_t NotificationCasketAdded = 1013;
+constexpr std::uint32_t NotificationCasketRemoved = 1014;
 constexpr std::uint32_t NotificationXpShopUseTicket = 9221;
 
 std::vector<std::uint8_t> EncodeCustomizationNotification(std::uint32_t request, std::uint64_t itemId)
@@ -337,6 +342,65 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                                                             CustomItemIdBase + opened->item.id));
                    if (afterChange)
                        afterChange();
+               });
+
+    // Storage units. The items stay in the cache; one inside a unit just carries the unit's id in two
+    // attributes and the game shows it there. Every outcome is a notification naming the unit.
+    const auto storage = [inventory, afterChange](bool deposit) {
+        return [inventory, afterChange, deposit](const FrameView &frame, LocalGameCoordinator &gc) {
+            const auto request = DecodeCasketRequest(frame.body);
+            if (!request)
+            {
+                ++gc.m_ignored;
+                return;
+            }
+            const auto now = static_cast<std::uint32_t>(std::time(nullptr));
+            const auto change = deposit ? inventory->StoreItem(request->casketItemId, request->itemId, now)
+                                        : inventory->TakeItem(request->casketItemId, request->itemId, now);
+            if (change.result == LiveInventory::StorageResult::Invalid)
+            {
+                ++gc.m_ignored;
+                return;
+            }
+            if (change.result == LiveInventory::StorageResult::Full)
+            {
+                gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                         EncodeCustomizationNotification(NotificationCasketTooFull, request->casketItemId));
+                return;
+            }
+            const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+            for (const auto &[object, position] : {std::pair{&change.item, change.itemPosition},
+                                                   std::pair{&change.casket, change.casketPosition}})
+            {
+                SoSingleObject updated;
+                updated.typeId = static_cast<std::int32_t>(ItemTypeId);
+                updated.data = BuildEconItem(*object, accountId, CustomItemIdBase + object->id, position);
+                updated.version = ++gc.m_soVersion;
+                updated.owner = gc.m_config.owner;
+                gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+            }
+            gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                     EncodeCustomizationNotification(deposit ? NotificationCasketAdded : NotificationCasketRemoved,
+                                                     request->casketItemId));
+            if (afterChange)
+                afterChange();
+        };
+    };
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCCasketItemAdd, storage(true));
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCCasketItemExtract, storage(false));
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCCasketItemLoadContents,
+               [inventory](const FrameView &frame, LocalGameCoordinator &gc) {
+                   const auto request = DecodeCasketRequest(frame.body);
+                   const InventoryItem *casket = request && request->casketItemId > CustomItemIdBase
+                                                     ? inventory->Items().Find(request->casketItemId - CustomItemIdBase)
+                                                     : nullptr;
+                   if (!casket || casket->defIndex != DefinitionStorageUnit)
+                   {
+                       ++gc.m_ignored;
+                       return;
+                   }
+                   gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                            EncodeCustomizationNotification(NotificationCasketContents, request->casketItemId));
                });
 
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCNameItem,

@@ -161,6 +161,14 @@ in this session's view of the inventory: nothing is stored on Valve's side.
   id and x, y, z offsets in fields 8 to 10. The weapon gets attributes 299 (id) and 300 to 302 (offsets) and the
   game gets the ApplyKeychain notification (1091). One charm per weapon. Armory Pass activation sends the
   XpShopUseTicket notification (9221).
+- **Storage units** (item 1201): the game's add, extract and load-contents messages (1092, 1093, 1094, each
+  naming the unit and the item) are answered locally. A stored item stays in the inventory and carries the
+  unit's id in attributes 272 and 273, which is how the game places it inside the unit; the unit carries an item
+  count (270) and a modification date (271). Deposit and extract send an update of the item and of the unit and
+  then a notification naming the unit (1013 added, 1014 removed, 1011 full, 1012 contents). A unit holds 1000
+  items. The contents are saved in `cs2_gc_inventory.txt`. Unconfirmed in the game.
+- **Collectible pin capsules** open without a key into one pin (their loot lists name plain items). Patch packs,
+  the X-Ray package and music kit boxes still do not open.
 - **Naming items** (`NameItem` 1006: item and name) sets the custom name attribute (111) and notifies; the name
   is saved in `cs2_gc_inventory.txt`. The name tag item is not consumed (the game sent no tag id).
 - **Armory Pass.** The pass is item 1354 (`XpShopTicket1`), bought in the Store like any item. The Armory page then

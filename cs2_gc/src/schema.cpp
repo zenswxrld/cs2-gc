@@ -103,6 +103,8 @@ CrateKind Classify(const KvNode &item, std::uint32_t keyDefIndex, const ItemMap 
         return CrateKind::Capsule;
     if (ChainContains(item, "graffiti_box", prefabs))
         return CrateKind::GraffitiBox;
+    if (keyDefIndex == 0 && item.Value("name").starts_with("crate_pins_"))
+        return CrateKind::Pins;
     return keyDefIndex != 0 ? CrateKind::Case : CrateKind::Other;
 }
 
@@ -361,7 +363,16 @@ std::optional<std::uint32_t> Schema::ItemDefIndex(std::string_view name) const
 std::optional<LootItem> Schema::ResolveLootItem(std::string_view entry) const
 {
     if (!entry.starts_with('['))
-        return std::nullopt;
+    {
+        // A plain item name, as the collectible pin capsules list them.
+        const auto plain = m_itemsByName.find(std::string{entry});
+        if (plain == m_itemsByName.end())
+            return std::nullopt;
+        LootItem item;
+        item.kind = LootKind::Plain;
+        item.weaponDefIndex = plain->second;
+        return item;
+    }
     const std::size_t close = entry.find(']');
     if (close == std::string_view::npos)
         return std::nullopt;

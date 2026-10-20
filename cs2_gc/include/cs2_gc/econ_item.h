@@ -25,6 +25,14 @@ inline constexpr std::uint32_t AttributeStickerSlotBase = 113;
 inline constexpr std::uint32_t AttributeStickerOffsetBase = 278;
 // An attached charm: id 299 (an integer), offsets x, y, z at 300, 301, 302 (floats).
 inline constexpr std::uint32_t AttributeKeychainOffsetBase = 300;
+// Storage units: the unit (definition 1201) carries an item count (270) and a modification date (271);
+// an item inside one carries the unit's id as two integers, low half at 272 and high half at 273.
+inline constexpr std::uint32_t DefinitionStorageUnit = 1201;
+inline constexpr std::uint32_t AttributeCasketItemsCount = 270;
+inline constexpr std::uint32_t AttributeCasketModificationDate = 271;
+inline constexpr std::uint32_t AttributeCasketIdLow = 272;
+inline constexpr std::uint32_t AttributeCasketIdHigh = 273;
+inline constexpr std::uint32_t MaxStorageUnitItems = 1000;
 inline constexpr std::uint32_t AttributeCustomName = 111; // "custom name attr", a string
 inline constexpr std::uint32_t DefinitionSticker = 1209;
 inline constexpr std::uint32_t DefinitionKeychain = 1355;

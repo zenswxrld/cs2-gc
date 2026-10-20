@@ -327,6 +327,23 @@ std::optional<OpenCrateRequest> DecodeOpenCrateRequest(std::span<const std::uint
     return request;
 }
 
+std::optional<CasketRequest> DecodeCasketRequest(std::span<const std::uint8_t> body)
+{
+    CasketRequest request;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+        if (f.number == 1 || f.number == 2)
+        {
+            if (f.wire != 0)
+                return std::nullopt;
+            (f.number == 1 ? request.casketItemId : request.itemId) = f.value;
+        }
+    if (reader.Failed() || request.casketItemId == 0)
+        return std::nullopt;
+    return request;
+}
+
 std::optional<NameItemRequest> DecodeNameItemRequest(std::span<const std::uint8_t> body)
 {
     NameItemRequest request;

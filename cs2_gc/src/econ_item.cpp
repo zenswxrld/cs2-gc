@@ -146,6 +146,18 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
         if (sticker.offsetY != 0.0f)
             AddFloatAttribute(out, offset + 1, sticker.offsetY);
     }
+    if (item.defIndex == DefinitionStorageUnit)
+    {
+        AddIntegerAttribute(out, AttributeCasketItemsCount, item.casketCount);
+        AddIntegerAttribute(out, AttributeCasketModificationDate,
+                            item.casketModified ? item.casketModified : 1700000000u);
+    }
+    if (item.storedIn)
+    {
+        const std::uint64_t casketId = CustomItemIdBase + item.storedIn;
+        AddIntegerAttribute(out, AttributeCasketIdLow, static_cast<std::uint32_t>(casketId & 0xFFFFFFFFull));
+        AddIntegerAttribute(out, AttributeCasketIdHigh, static_cast<std::uint32_t>(casketId >> 32));
+    }
     if (item.charm)
     {
         AddIntegerAttribute(out, AttributeKeychain, item.charm->kit);

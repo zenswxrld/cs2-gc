@@ -96,6 +96,8 @@ std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view
     case LootKind::Keychain:
         item.keychain = drop.keychainIndex;
         break;
+    case LootKind::Plain:
+        break;
     }
     return item;
 }
@@ -107,7 +109,8 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
 
     const InventoryItem *crateItem = inventory.Find(crateId);
     const CrateInfo *crate = crateItem ? schema.FindCrate(crateItem->defIndex) : nullptr;
-    const bool keyless = crate && (crate->kind == CrateKind::Capsule || crate->kind == CrateKind::GraffitiBox);
+    const bool keyless = crate && (crate->kind == CrateKind::Capsule || crate->kind == CrateKind::GraffitiBox ||
+                                   crate->kind == CrateKind::Pins);
     if (!crate || (crate->kind != CrateKind::Case && !keyless))
     {
         result.error = OpenError::NoSuchCrate;

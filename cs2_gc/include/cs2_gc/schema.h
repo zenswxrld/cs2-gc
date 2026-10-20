@@ -10,7 +10,7 @@
 
 namespace cs2_gc
 {
-enum class CrateKind { Case, Capsule, GraffitiBox, Other };
+enum class CrateKind { Case, Capsule, GraffitiBox, Pins, Other }; // Pins: collectible pin capsules, keyless
 
 struct CrateInfo
 {
@@ -30,7 +30,7 @@ struct LootTier
     std::vector<std::string> items;  // "[paintkit]weapon_class" style entries, unexpanded
 };
 
-enum class LootKind { Skin, Sticker, Keychain };
+enum class LootKind { Skin, Sticker, Keychain, Plain }; // Plain: an item named as it is in the schema
 
 // One resolved "[name]class" loot entry: "[finish]weapon_x" is a skin, "[kit]sticker" a sticker and
 // "[charm]keychain" a charm.

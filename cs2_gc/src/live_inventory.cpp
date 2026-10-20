@@ -32,6 +32,68 @@ std::optional<std::uint32_t> LiveInventory::DefinitionOf(std::uint64_t itemId) c
     return item ? std::optional<std::uint32_t>{item->defIndex} : std::nullopt;
 }
 
+std::uint32_t LiveInventory::PositionOf(std::uint64_t ourId) const
+{
+    std::uint32_t index = 0;
+    for (const InventoryItem &item : m_inventory.Items())
+    {
+        if (item.id == ourId)
+            break;
+        ++index;
+    }
+    return ItemPositionBase + index;
+}
+
+LiveInventory::StorageChange LiveInventory::StoreItem(std::uint64_t casketItemId, std::uint64_t itemId,
+                                                      std::uint32_t now)
+{
+    StorageChange change;
+    if (casketItemId <= CustomItemIdBase || itemId <= CustomItemIdBase || casketItemId == itemId)
+        return change;
+    InventoryItem *casket = m_inventory.Find(casketItemId - CustomItemIdBase);
+    InventoryItem *item = m_inventory.Find(itemId - CustomItemIdBase);
+    if (!casket || !item || casket->defIndex != DefinitionStorageUnit || item->defIndex == DefinitionStorageUnit ||
+        item->storedIn != 0)
+        return change;
+    if (casket->casketCount >= MaxStorageUnitItems)
+    {
+        change.result = StorageResult::Full;
+        change.casket = *casket;
+        return change;
+    }
+    item->storedIn = casket->id;
+    ++casket->casketCount;
+    casket->casketModified = now;
+    change.result = StorageResult::Ok;
+    change.item = *item;
+    change.casket = *casket;
+    change.itemPosition = PositionOf(item->id);
+    change.casketPosition = PositionOf(casket->id);
+    return change;
+}
+
+LiveInventory::StorageChange LiveInventory::TakeItem(std::uint64_t casketItemId, std::uint64_t itemId,
+                                                     std::uint32_t now)
+{
+    StorageChange change;
+    if (casketItemId <= CustomItemIdBase || itemId <= CustomItemIdBase)
+        return change;
+    InventoryItem *casket = m_inventory.Find(casketItemId - CustomItemIdBase);
+    InventoryItem *item = m_inventory.Find(itemId - CustomItemIdBase);
+    if (!casket || !item || casket->defIndex != DefinitionStorageUnit || item->storedIn != casket->id ||
+        casket->casketCount == 0)
+        return change;
+    item->storedIn = 0;
+    --casket->casketCount;
+    casket->casketModified = now;
+    change.result = StorageResult::Ok;
+    change.item = *item;
+    change.casket = *casket;
+    change.itemPosition = PositionOf(item->id);
+    change.casketPosition = PositionOf(casket->id);
+    return change;
+}
+
 std::optional<LiveInventory::Opened> LiveInventory::Open(const Schema &schema, std::uint64_t crateItemId,
                                                          std::uint64_t keyItemId, const RandomSource &random)
 {

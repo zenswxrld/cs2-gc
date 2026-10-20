@@ -76,7 +76,23 @@ public:
     };
     std::optional<Renamed> Rename(std::uint64_t itemId, const std::string &name);
 
+    enum class StorageResult { Ok, Invalid, Full };
+    struct StorageChange
+    {
+        StorageResult result{StorageResult::Invalid};
+        InventoryItem item;               // the item moved
+        InventoryItem casket;             // the storage unit, with its new count
+        std::uint32_t itemPosition{};
+        std::uint32_t casketPosition{};
+    };
+
+    // Puts one of our items into one of our storage units, or takes it out again (a unit holds
+    // MaxStorageUnitItems). Both ids as the game sees them. Invalid leaves everything unchanged.
+    StorageChange StoreItem(std::uint64_t casketItemId, std::uint64_t itemId, std::uint32_t now);
+    StorageChange TakeItem(std::uint64_t casketItemId, std::uint64_t itemId, std::uint32_t now);
+
 private:
+    std::uint32_t PositionOf(std::uint64_t ourId) const;
     struct Slot
     {
         std::uint32_t classId{};

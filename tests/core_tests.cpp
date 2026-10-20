@@ -2293,10 +2293,149 @@ void CharmsAndCoupons()
     Check(!gc.IsMessageAvailable(&size) && live->Items().Items().size() == 2, "a weapon takes one charm");
 }
 
+void StorageUnits()
+{
+    namespace m = gc_msg;
+    const auto schema = Schema::Load(ArmoryFixture);
+    const auto shared = std::shared_ptr<const Schema>(&*schema, [](const Schema *) {});
+    Inventory inventory;
+    InventoryItem unit;
+    unit.defIndex = DefinitionStorageUnit;
+    inventory.Add(unit);
+    InventoryItem skin;
+    skin.defIndex = 7;
+    skin.paintKitIndex = 282;
+    inventory.Add(skin);
+    InventoryItem unit2;
+    unit2.defIndex = DefinitionStorageUnit;
+    inventory.Add(unit2);
+    auto live = std::make_shared<LiveInventory>(inventory);
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    std::mt19937_64 engine(1);
+    int saves = 0;
+    gc.EnableContainers(live, shared, [&] { return engine(); }, [&saves] { ++saves; });
+
+    struct Out { std::uint32_t type{}; std::vector<std::uint8_t> body; };
+    const auto drain = [&]() {
+        std::vector<Out> out;
+        std::uint32_t size = 0;
+        while (gc.IsMessageAvailable(&size))
+        {
+            std::uint32_t got = 0, type = 0;
+            std::vector<std::uint8_t> buffer(size);
+            gc.RetrieveMessage(&type, buffer.data(), size, &got);
+            FrameView view;
+            ReadProtobufFrame(type, buffer, view);
+            out.push_back({type & ~ProtobufMask, std::vector<std::uint8_t>(view.body.begin(), view.body.end())});
+        }
+        return out;
+    };
+    const auto send = [&](std::uint32_t type, std::uint64_t casket, std::uint64_t item) {
+        PbWriter body;
+        body.Varint(1, casket);
+        if (item)
+            body.Varint(2, item);
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(type, {}, body.bytes(), frame);
+        gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    const auto notificationRequest = [](const Out &out) {
+        std::uint64_t request = 0;
+        PbReader reader(out.body);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 2)
+                request = f.value;
+        return request;
+    };
+    const auto attributes = [](std::span<const std::uint8_t> econ) {
+        std::map<std::uint64_t, std::uint32_t> found;
+        PbReader reader(econ);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 12 && f.wire == 2)
+            {
+                PbReader inner(f.bytes);
+                PbField g;
+                std::uint64_t id = 0;
+                std::uint32_t value = 0;
+                while (inner.Next(g))
+                {
+                    if (g.number == 1)
+                        id = g.value;
+                    if (g.number == 3 && g.bytes.size() == 4)
+                        value = g.bytes[0] | g.bytes[1] << 8 | g.bytes[2] << 16 | static_cast<std::uint32_t>(g.bytes[3]) << 24;
+                }
+                found[id] = value;
+            }
+        return found;
+    };
+    const std::uint64_t unitId = CustomItemIdBase + 1, skinId = CustomItemIdBase + 2, unit2Id = CustomItemIdBase + 3;
+
+    // The unit always carries a count and a date, even when empty.
+    const auto emptyUnit = attributes(BuildEconItem(live->Items().Items()[0], 555, unitId, ItemPositionBase));
+    Check(emptyUnit.count(AttributeCasketItemsCount) && emptyUnit.at(AttributeCasketItemsCount) == 0 &&
+              emptyUnit.count(AttributeCasketModificationDate),
+          "an empty unit has a count and a date");
+
+    send(m::EGCItemMsg::k_EMsgGCCasketItemAdd, unitId, skinId);
+    const auto added = drain();
+    Check(added.size() == 3 && added[0].type == m::ESOMsg::k_ESOMsg_Update && added[1].type == m::ESOMsg::k_ESOMsg_Update &&
+              added[2].type == m::EGCItemMsg::k_EMsgGCItemCustomizationNotification &&
+              notificationRequest(added[2]) == 1013,
+          "a deposit updates the item and the unit, then notifies");
+    const auto skinObject = DecodeSoSingleObject(added[0].body);
+    const auto unitObject = DecodeSoSingleObject(added[1].body);
+    const auto stored = attributes(skinObject->data);
+    Check(stored.at(AttributeCasketIdLow) == static_cast<std::uint32_t>(unitId & 0xFFFFFFFFull) &&
+              stored.at(AttributeCasketIdHigh) == static_cast<std::uint32_t>(unitId >> 32),
+          "the stored item names its unit in two attributes");
+    Check(attributes(unitObject->data).at(AttributeCasketItemsCount) == 1 && saves == 1, "the unit now counts one item");
+
+    send(m::EGCItemMsg::k_EMsgGCCasketItemLoadContents, unitId, 0);
+    const auto contents = drain();
+    Check(contents.size() == 1 && notificationRequest(contents[0]) == 1012, "loading contents notifies");
+
+    send(m::EGCItemMsg::k_EMsgGCCasketItemAdd, unit2Id, skinId); // already stored
+    send(m::EGCItemMsg::k_EMsgGCCasketItemAdd, unitId, unit2Id);  // a unit inside a unit
+    send(m::EGCItemMsg::k_EMsgGCCasketItemAdd, skinId, unitId);   // not a unit
+    send(m::EGCItemMsg::k_EMsgGCCasketItemAdd, unitId, 424242);   // not ours
+    send(m::EGCItemMsg::k_EMsgGCCasketItemExtract, unit2Id, skinId); // out of the wrong unit
+    Check(drain().empty() && saves == 1, "invalid storage requests change nothing");
+
+    const auto restored = Inventory::FromText(live->Items().ToText());
+    Check(restored && restored->Items()[1].storedIn == 1 && restored->Items()[0].casketCount == 1,
+          "contents survive a save and load");
+
+    send(m::EGCItemMsg::k_EMsgGCCasketItemExtract, unitId, skinId);
+    const auto removed = drain();
+    Check(removed.size() == 3 && notificationRequest(removed[2]) == 1014 && saves == 2, "extracting notifies");
+    const auto loose = attributes(DecodeSoSingleObject(removed[0].body)->data);
+    Check(!loose.count(AttributeCasketIdLow) && live->Items().Items()[0].casketCount == 0, "the item is loose again");
+
+    // Capacity: a unit holds MaxStorageUnitItems.
+    Inventory crowded;
+    crowded.Add(unit);
+    for (std::uint32_t i = 0; i < MaxStorageUnitItems + 1; ++i)
+        crowded.Add(skin);
+    LiveInventory full(crowded);
+    std::uint32_t okCount = 0;
+    LiveInventory::StorageResult last{};
+    for (std::uint32_t i = 0; i < MaxStorageUnitItems + 1; ++i)
+    {
+        last = full.StoreItem(CustomItemIdBase + 1, CustomItemIdBase + 2 + i, 1).result;
+        okCount += last == LiveInventory::StorageResult::Ok;
+    }
+    Check(okCount == MaxStorageUnitItems && last == LiveInventory::StorageResult::Full, "a unit holds 1000 items");
+}
+
 int main()
 {
     try
     {
+        StorageUnits(); std::cout << "PASS storage units\n";
         CharmsAndCoupons(); std::cout << "PASS charms\n";
         ContainersAndNaming(); std::cout << "PASS containers and naming\n";
         ArmoryPassActivation(); std::cout << "PASS armory pass activation\n";

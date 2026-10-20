@@ -122,6 +122,12 @@ struct OpenCrateRequest // CMsgOpenCrate: the body of k_EMsgGCOpenCrate
     std::uint64_t crateItemId{}; // subject_item_id
 };
 
+struct CasketRequest // CMsgCasketItem: the body of the storage unit messages
+{
+    std::uint64_t casketItemId{};
+    std::uint64_t itemId{}; // zero when loading contents
+};
+
 struct NameItemRequest // k_EMsgGCNameItem, fields as seen in a capture: 1 name tag item (0 here), 2 item, 4 name
 {
     std::uint64_t tagItemId{};
@@ -141,6 +147,7 @@ std::optional<StorePurchaseRequest> DecodeStorePurchaseRequest(std::span<const s
 std::optional<std::uint64_t> DecodeTxnId(std::span<const std::uint8_t> body); // Finalize / Cancel: field 1
 std::optional<std::uint64_t> DecodeUseItemRequest(std::span<const std::uint8_t> body); // CMsgUseItem.item_id
 std::optional<OpenCrateRequest> DecodeOpenCrateRequest(std::span<const std::uint8_t> body);
+std::optional<CasketRequest> DecodeCasketRequest(std::span<const std::uint8_t> body);
 std::optional<NameItemRequest> DecodeNameItemRequest(std::span<const std::uint8_t> body);
 std::optional<RedeemRequest> DecodeRedeemRequest(std::span<const std::uint8_t> body);
 std::vector<std::uint8_t> EncodeSoSingleObject(const SoSingleObject &object);

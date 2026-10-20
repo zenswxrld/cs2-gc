@@ -88,6 +88,10 @@ std::string Inventory::ToText() const
             << "\t\t\t\"keychain\"\t\"" << item.keychain << "\"\n";
         if (!item.customName.empty())
             out << "\t\t\t\"custom_name\"\t\"" << item.customName << "\"\n";
+        if (item.storedIn)
+            out << "\t\t\t\"stored_in\"\t\"" << item.storedIn << "\"\n";
+        if (item.casketCount || item.casketModified)
+            out << "\t\t\t\"casket\"\t\"" << item.casketCount << ' ' << item.casketModified << "\"\n";
         if (item.charm)
             out << "\t\t\t\"charm\"\t\"" << item.charm->kit << ' ' << FloatText(item.charm->offsetX) << ' '
                 << FloatText(item.charm->offsetY) << ' ' << FloatText(item.charm->offsetZ) << "\"\n";
@@ -141,6 +145,20 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             if (node->block || !ParseSticker(node->value, sticker))
                 return std::nullopt;
             item.stickers.push_back(sticker);
+        }
+        if (const KvNode *stored = entry.Find("stored_in"))
+        {
+            if (stored->block || !ParseNumber(stored->value, item.storedIn) || item.storedIn == 0)
+                return std::nullopt;
+        }
+        if (const KvNode *casket = entry.Find("casket"))
+        {
+            const auto space = casket->value.find(' ');
+            if (casket->block || space == std::string::npos ||
+                !ParseNumber(std::string_view(casket->value).substr(0, space), item.casketCount) ||
+                !ParseNumber(std::string_view(casket->value).substr(space + 1), item.casketModified) ||
+                item.casketCount > 1000)
+                return std::nullopt;
         }
         if (const KvNode *charm = entry.Find("charm"))
         {

@@ -26,6 +26,11 @@ struct OpenResult
     InventoryItem item; // the new item, already added to the inventory on success
 };
 
+// The item a resolved loot entry stands for: the skin (with its wear, seed and StatTrak roll), the
+// sticker, the charm or the plain item, with the given rarity (zero leaves it to the client).
+InventoryItem MakeLootItem(const LootItem &drop, std::uint32_t rarity, const RandomSource &random,
+                           std::uint32_t statTrakPerMille = 100);
+
 // Drop odds in parts per 10000, by rarity value. Rarity 99 (the rare special
 // tier) is left out because its loot lists are not resolved yet; the remaining
 // tiers are renormalised.

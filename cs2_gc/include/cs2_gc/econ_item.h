@@ -25,6 +25,8 @@ inline constexpr std::uint32_t AttributeStickerSlotBase = 113;
 inline constexpr std::uint32_t AttributeStickerOffsetBase = 278;
 // An attached charm: id 299 (an integer), offsets x, y, z at 300, 301, 302 (floats).
 inline constexpr std::uint32_t AttributeKeychainOffsetBase = 300;
+// "keychain slot 0 sticker": the sticker kit inside a sealed Sticker Slab charm.
+inline constexpr std::uint32_t AttributeKeychainSticker = 321;
 // Storage units: the unit (definition 1201) carries an item count (270) and a modification date (271);
 // an item inside one carries the unit's id as two integers, low half at 272 and high half at 273.
 inline constexpr std::uint32_t DefinitionStorageUnit = 1201;

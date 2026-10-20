@@ -1,5 +1,6 @@
 #include "cs2_gc/live_inventory.h"
 #include "cs2_gc/econ_item.h"
+#include <algorithm>
 
 namespace cs2_gc
 {
@@ -30,6 +31,55 @@ std::optional<std::uint32_t> LiveInventory::DefinitionOf(std::uint64_t itemId) c
         return std::nullopt;
     const InventoryItem *item = m_inventory.Find(itemId - CustomItemIdBase);
     return item ? std::optional<std::uint32_t>{item->defIndex} : std::nullopt;
+}
+
+std::optional<LiveInventory::Scraped> LiveInventory::ScrapeSticker(std::uint64_t itemId, std::uint32_t slot)
+{
+    if (itemId <= CustomItemIdBase)
+        return std::nullopt;
+    InventoryItem *item = m_inventory.Find(itemId - CustomItemIdBase);
+    if (!item)
+        return std::nullopt;
+    const auto sticker = std::find_if(item->stickers.begin(), item->stickers.end(),
+                                      [slot](const AppliedSticker &s) { return s.slot == slot; });
+    if (sticker == item->stickers.end())
+        return std::nullopt;
+    Scraped scraped;
+    sticker->wear += 1.0f / 9.0f;
+    if (sticker->wear > 1.0f)
+    {
+        item->stickers.erase(sticker);
+        scraped.removed = true;
+    }
+    scraped.item = *item;
+    scraped.position = PositionOf(item->id);
+    return scraped;
+}
+
+std::optional<LiveInventory::Sealed> LiveInventory::SealSticker(const Schema &schema, std::uint64_t stickerItemId,
+                                                                std::uint64_t slabItemId)
+{
+    if (stickerItemId <= CustomItemIdBase || slabItemId <= CustomItemIdBase || stickerItemId == slabItemId)
+        return std::nullopt;
+    const InventoryItem *sticker = m_inventory.Find(stickerItemId - CustomItemIdBase);
+    const InventoryItem *slab = m_inventory.Find(slabItemId - CustomItemIdBase);
+    if (!sticker || !slab || sticker->defIndex != DefinitionSticker || sticker->stickerKit == 0)
+        return std::nullopt;
+    const auto keychain = schema.SlabKeychainIndex(slab->defIndex);
+    if (!keychain)
+        return std::nullopt;
+
+    Sealed sealed;
+    sealed.sticker = *sticker;
+    sealed.slab = *slab;
+    sealed.charm.defIndex = DefinitionKeychain;
+    sealed.charm.keychain = *keychain;
+    sealed.charm.slabSticker = sticker->stickerKit;
+    sealed.charm.rarity = schema.ItemRarity(slab->defIndex);
+    m_inventory.Remove(sealed.sticker.id);
+    m_inventory.Remove(sealed.slab.id);
+    sealed.charm.id = m_inventory.Add(sealed.charm);
+    return sealed;
 }
 
 std::uint32_t LiveInventory::PositionOf(std::uint64_t ourId) const
@@ -168,7 +218,8 @@ std::optional<LiveInventory::StickerApplied> LiveInventory::ApplySticker(const A
     {
         if (target->charm)
             return std::nullopt;
-        target->charm = AppliedKeychain{sticker->keychain, request.offsetX, request.offsetY, request.offsetZ};
+        target->charm = AppliedKeychain{sticker->keychain, request.offsetX, request.offsetY, request.offsetZ,
+                                        sticker->slabSticker};
     }
     else
     {

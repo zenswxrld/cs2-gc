@@ -32,6 +32,33 @@ std::uint64_t Below(const RandomSource &random, std::uint64_t bound)
 }
 }
 
+InventoryItem MakeLootItem(const LootItem &drop, std::uint32_t rarity, const RandomSource &random,
+                           std::uint32_t statTrakPerMille)
+{
+    InventoryItem item;
+    item.defIndex = drop.weaponDefIndex;
+    item.rarity = rarity;
+    switch (drop.kind)
+    {
+    case LootKind::Skin:
+        item.paintKitIndex = drop.paintKitIndex;
+        item.wear = drop.wearMin + static_cast<float>(Below(random, 1u << 24)) / static_cast<float>(1u << 24) *
+                                       (drop.wearMax - drop.wearMin);
+        item.seed = static_cast<std::uint32_t>(Below(random, 1000)) + 1;
+        item.statTrak = Below(random, 1000) < statTrakPerMille;
+        break;
+    case LootKind::Sticker:
+        item.stickerKit = drop.stickerKitIndex;
+        break;
+    case LootKind::Keychain:
+        item.keychain = drop.keychainIndex;
+        break;
+    case LootKind::Plain:
+        break;
+    }
+    return item;
+}
+
 std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view lootListName,
                                           const RandomSource &random, const CaseOdds &odds)
 {
@@ -78,28 +105,7 @@ std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view
     }
 
     const LootItem &drop = chosen->items[Below(random, chosen->items.size())];
-    InventoryItem item;
-    item.defIndex = drop.weaponDefIndex;
-    item.rarity = chosen->rarity;
-    switch (drop.kind)
-    {
-    case LootKind::Skin:
-        item.paintKitIndex = drop.paintKitIndex;
-        item.wear = drop.wearMin + static_cast<float>(Below(random, 1u << 24)) / static_cast<float>(1u << 24) *
-                                       (drop.wearMax - drop.wearMin);
-        item.seed = static_cast<std::uint32_t>(Below(random, 1000)) + 1;
-        item.statTrak = Below(random, 1000) < odds.statTrakPerMille;
-        break;
-    case LootKind::Sticker:
-        item.stickerKit = drop.stickerKitIndex;
-        break;
-    case LootKind::Keychain:
-        item.keychain = drop.keychainIndex;
-        break;
-    case LootKind::Plain:
-        break;
-    }
-    return item;
+    return MakeLootItem(drop, chosen->rarity, random, odds.statTrakPerMille);
 }
 
 OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t crateId,

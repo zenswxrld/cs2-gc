@@ -130,6 +130,8 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
         AddIntegerAttribute(out, AttributeStickerKit, item.stickerKit);
     if (item.keychain)
         AddIntegerAttribute(out, AttributeKeychain, item.keychain);
+    if (item.slabSticker)
+        AddIntegerAttribute(out, AttributeKeychainSticker, item.slabSticker);
     for (const AppliedSticker &sticker : item.stickers)
     {
         const std::uint32_t base = AttributeStickerSlotBase + 4 * sticker.slot;
@@ -167,6 +169,8 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
             AddFloatAttribute(out, AttributeKeychainOffsetBase + 1, item.charm->offsetY);
         if (item.charm->offsetZ != 0.0f)
             AddFloatAttribute(out, AttributeKeychainOffsetBase + 2, item.charm->offsetZ);
+        if (item.charm->slabSticker)
+            AddIntegerAttribute(out, AttributeKeychainSticker, item.charm->slabSticker);
     }
     if (!item.customName.empty())
     {

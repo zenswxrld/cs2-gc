@@ -2431,10 +2431,174 @@ void StorageUnits()
     Check(okCount == MaxStorageUnitItems && last == LiveInventory::StorageResult::Full, "a unit holds 1000 items");
 }
 
+constexpr const char *SlabFixture = R"("items_game"
+{
+    "items"
+    {
+        "1209" { "name" "sticker" }
+        "1355" { "name" "keychain" }
+        "7" { "name" "weapon_rifle" }
+        "4000" { "name" "sticker_display_case" "attributes" { "display case keychain id" "37" }
+                 "capabilities" { "can_wrap_sticker" "1" } }
+        "20001" { "name" "coupon - stk_a" "loot_list_name" "coupon loot list - stk_a" }
+        "20002" { "name" "coupon - a_capsule" "loot_list_name" "coupon loot list - a_capsule" }
+    }
+    "sticker_kits" { "300" { "name" "stk_a" } }
+    "keychain_definitions" { "37" { "name" "kc_sticker_display_case" } }
+    "client_loot_lists"
+    {
+        "coupon loot list - stk_a" { "public_list_contents" "1" "[stk_a]sticker" "1" }
+        "coupon loot list - a_capsule" { "public_list_contents" "1" "weapon_rifle" "1" }
+    }
+})";
+
+void SlabsScrapesAndCoupons()
+{
+    namespace m = gc_msg;
+    const auto schema = Schema::Load(SlabFixture);
+    Check(schema.has_value(), "slab fixture loads");
+    Check(schema->SlabKeychainIndex(4000) == 37u && !schema->SlabKeychainIndex(7) && !schema->SlabKeychainIndex(1209),
+          "only the slab names a display-case keychain");
+    Check(schema->CouponEntries(20001) == std::vector<std::string>{"[stk_a]sticker"} && schema->CouponEntries(7).empty(),
+          "coupon entries are read from the schema");
+    const auto shared = std::shared_ptr<const Schema>(&*schema, [](const Schema *) {});
+
+    Inventory inventory;
+    InventoryItem weapon;
+    weapon.defIndex = 7;
+    weapon.paintKitIndex = 282;
+    AppliedSticker onWeapon;
+    onWeapon.slot = 3;
+    onWeapon.kit = 300;
+    onWeapon.wear = 0.5f;
+    weapon.stickers.push_back(onWeapon);
+    inventory.Add(weapon);
+    InventoryItem sticker;
+    sticker.defIndex = DefinitionSticker;
+    sticker.stickerKit = 300;
+    inventory.Add(sticker);
+    InventoryItem slab;
+    slab.defIndex = 4000;
+    inventory.Add(slab);
+    auto live = std::make_shared<LiveInventory>(inventory);
+
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    int saves = 0;
+    std::mt19937_64 engine(1);
+    gc.EnableLiveInventory(live, [&saves] { ++saves; });
+    gc.EnableContainers(live, shared, [&] { return engine(); }, [&saves] { ++saves; });
+    gc.EnableStorePurchases(live, [&](std::uint32_t def) { return schema->HasItem(def); }, [&saves] { ++saves; });
+
+    struct Out { std::uint32_t type{}; std::vector<std::uint8_t> body; };
+    const auto drain = [&]() {
+        std::vector<Out> out;
+        std::uint32_t size = 0;
+        while (gc.IsMessageAvailable(&size))
+        {
+            std::uint32_t got = 0, type = 0;
+            std::vector<std::uint8_t> buffer(size);
+            gc.RetrieveMessage(&type, buffer.data(), size, &got);
+            FrameView view;
+            ReadProtobufFrame(type, buffer, view);
+            out.push_back({type & ~ProtobufMask, std::vector<std::uint8_t>(view.body.begin(), view.body.end())});
+        }
+        return out;
+    };
+    const auto request = [&](std::uint32_t type, const PbWriter &body) {
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(type, {}, body.bytes(), frame);
+        gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    const auto noticeRequest = [](const Out &out) {
+        std::uint64_t value = 0;
+        PbReader reader(out.body);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 2)
+                value = f.value;
+        return value;
+    };
+    const std::uint64_t weaponId = CustomItemIdBase + 1, stickerId = CustomItemIdBase + 2, slabId = CustomItemIdBase + 3;
+
+    // Scrapes: each adds a ninth of wear; past 1 the sticker goes and the game is told.
+    PbWriter scrape;
+    scrape.Varint(2, weaponId);
+    scrape.Varint(3, 3);
+    request(m::EGCItemMsg::k_EMsgGCApplySticker, scrape);
+    auto out = drain();
+    Check(out.size() == 1 && out[0].type == m::ESOMsg::k_ESOMsg_Update &&
+              std::abs(live->Items().Items()[0].stickers[0].wear - (0.5f + 1.0f / 9.0f)) < 1e-5f,
+          "a scrape raises the wear and sends one update");
+    for (int i = 0; i < 4; ++i)
+        request(m::EGCItemMsg::k_EMsgGCApplySticker, scrape);
+    out = drain();
+    Check(out.size() == 5 && live->Items().Items()[0].stickers.empty() &&
+              out.back().type == m::EGCItemMsg::k_EMsgGCItemCustomizationNotification && noticeRequest(out.back()) == 1053,
+          "the last scrape removes the sticker and sends RemoveSticker");
+    request(m::EGCItemMsg::k_EMsgGCApplySticker, scrape);
+    Check(drain().empty(), "nothing is left to scrape");
+
+    // Sealing a sticker in a slab: both go, one charm of keychain 37 holding the sticker comes.
+    PbWriter seal;
+    seal.Varint(1, stickerId);
+    seal.Varint(2, slabId);
+    request(m::EGCItemMsg::k_EMsgGCApplySticker, seal);
+    out = drain();
+    Check(out.size() == 4 && out[0].type == m::ESOMsg::k_ESOMsg_Destroy && out[1].type == m::ESOMsg::k_ESOMsg_Destroy &&
+              out[2].type == m::ESOMsg::k_ESOMsg_Create && out[3].type == m::EGCItemMsg::k_EMsgGCItemCustomizationNotification &&
+              noticeRequest(out[3]) == 1055,
+          "sealing destroys sticker and slab, creates a charm and sends EncapsulateSticker");
+    Check(live->Items().Items().size() == 2 && live->Items().Items()[1].defIndex == DefinitionKeychain &&
+              live->Items().Items()[1].keychain == 37 && live->Items().Items()[1].slabSticker == 300,
+          "the charm is keychain 37 with the sticker kit inside");
+    const auto sealedRoundTrip = Inventory::FromText(live->Items().ToText());
+    Check(sealedRoundTrip && sealedRoundTrip->Items()[1].slabSticker == 300, "a sealed slab survives a save and load");
+
+    // Attaching the sealed slab to a weapon carries the sticker along.
+    PbWriter attach;
+    attach.Varint(1, CustomItemIdBase + 4);
+    attach.Varint(2, weaponId);
+    attach.Fixed32(8, std::bit_cast<std::uint32_t>(1.0f));
+    request(m::EGCItemMsg::k_EMsgGCApplySticker, attach);
+    drain();
+    Check(live->Items().Items()[0].charm && live->Items().Items()[0].charm->kit == 37 &&
+              live->Items().Items()[0].charm->slabSticker == 300,
+          "an attached slab keeps its sticker");
+
+    // Buying: a coupon for one sticker is the sticker; a coupon for a container stays an envelope.
+    for (const std::uint32_t def : {20001u, 20002u})
+    {
+        PbWriter line;
+        line.Varint(1, def);
+        line.Varint(2, 1);
+        PbWriter init;
+        init.Varint(3, 21);
+        init.Message(4, line);
+        request(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, init);
+        const auto reply = drain();
+        std::uint64_t txn = 0;
+        PbReader reader(reply.at(0).body);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 2)
+                txn = f.value;
+        PbWriter finalize;
+        finalize.Varint(1, txn);
+        request(m::EGCItemMsg::k_EMsgGCStorePurchaseFinalize, finalize);
+        drain();
+    }
+    const auto &items = live->Items().Items();
+    Check(items.size() == 3 && items[1].defIndex == DefinitionSticker && items[1].stickerKit == 300 && items[2].defIndex == 20002,
+          "a single-sticker coupon grants the sticker, a container coupon stays a coupon");
+}
+
 int main()
 {
     try
     {
+        SlabsScrapesAndCoupons(); std::cout << "PASS slabs, scrapes and coupons\n";
         StorageUnits(); std::cout << "PASS storage units\n";
         CharmsAndCoupons(); std::cout << "PASS charms\n";
         ContainersAndNaming(); std::cout << "PASS containers and naming\n";

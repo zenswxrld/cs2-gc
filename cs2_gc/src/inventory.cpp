@@ -88,13 +88,16 @@ std::string Inventory::ToText() const
             << "\t\t\t\"keychain\"\t\"" << item.keychain << "\"\n";
         if (!item.customName.empty())
             out << "\t\t\t\"custom_name\"\t\"" << item.customName << "\"\n";
+        if (item.slabSticker)
+            out << "\t\t\t\"slab_sticker\"\t\"" << item.slabSticker << "\"\n";
         if (item.storedIn)
             out << "\t\t\t\"stored_in\"\t\"" << item.storedIn << "\"\n";
         if (item.casketCount || item.casketModified)
             out << "\t\t\t\"casket\"\t\"" << item.casketCount << ' ' << item.casketModified << "\"\n";
         if (item.charm)
             out << "\t\t\t\"charm\"\t\"" << item.charm->kit << ' ' << FloatText(item.charm->offsetX) << ' '
-                << FloatText(item.charm->offsetY) << ' ' << FloatText(item.charm->offsetZ) << "\"\n";
+                << FloatText(item.charm->offsetY) << ' ' << FloatText(item.charm->offsetZ) << ' '
+                << item.charm->slabSticker << "\"\n";
         for (const AppliedSticker &sticker : item.stickers)
             out << "\t\t\t\"sticker_" << sticker.slot << "\"\t\"" << sticker.kit << ' ' << FloatText(sticker.wear)
                 << ' ' << FloatText(sticker.scale) << ' ' << FloatText(sticker.rotation) << ' '
@@ -146,6 +149,11 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
                 return std::nullopt;
             item.stickers.push_back(sticker);
         }
+        if (const KvNode *slab = entry.Find("slab_sticker"))
+        {
+            if (slab->block || !ParseNumber(slab->value, item.slabSticker) || item.slabSticker == 0)
+                return std::nullopt;
+        }
         if (const KvNode *stored = entry.Find("stored_in"))
         {
             if (stored->block || !ParseNumber(stored->value, item.storedIn) || item.storedIn == 0)
@@ -174,7 +182,9 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             bool ok = !charm->block && ParseNumber(next(), applied.kit) && applied.kit != 0;
             for (float *offset : offsets)
                 ok = ok && ParseNumber(next(), *offset) && std::isfinite(*offset);
-            if (!ok || !text.empty())
+            if (ok && !text.empty()) // the sticker inside a sealed slab; files from before it existed lack it
+                ok = ParseNumber(next(), applied.slabSticker) && text.empty();
+            if (!ok)
                 return std::nullopt;
             item.charm = applied;
         }

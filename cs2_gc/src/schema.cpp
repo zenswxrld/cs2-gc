@@ -335,23 +335,46 @@ std::uint32_t Schema::ItemRarity(std::uint32_t defIndex) const
     return rarity == m_rarities.end() ? 0 : rarity->second;
 }
 
+std::vector<std::string> Schema::CouponEntries(std::uint32_t defIndex) const
+{
+    std::vector<std::string> entries;
+    const auto item = m_itemsByIndex.find(defIndex);
+    if (item == m_itemsByIndex.end())
+        return entries;
+    const std::string_view listName = item->second->Value("loot_list_name");
+    if (!listName.starts_with("coupon loot list"))
+        return entries;
+    const auto list = m_lootLists.find(std::string{listName});
+    if (list == m_lootLists.end())
+        return entries;
+    for (const KvNode &entry : list->second->children)
+        if (!entry.block && entry.key != "public_list_contents")
+            entries.push_back(entry.key);
+    return entries;
+}
+
 std::vector<std::uint32_t> Schema::CouponContents(std::uint32_t defIndex) const
 {
     std::vector<std::uint32_t> contents;
+    for (const std::string &entry : CouponEntries(defIndex))
+        if (const auto definition = ItemDefIndex(entry))
+            contents.push_back(*definition);
+    return contents;
+}
+
+std::optional<std::uint32_t> Schema::SlabKeychainIndex(std::uint32_t defIndex) const
+{
     const auto item = m_itemsByIndex.find(defIndex);
     if (item == m_itemsByIndex.end())
-        return contents;
-    const std::string_view listName = item->second->Value("loot_list_name");
-    if (!listName.starts_with("coupon loot list"))
-        return contents;
-    const auto list = m_lootLists.find(std::string{listName});
-    if (list == m_lootLists.end())
-        return contents;
-    for (const KvNode &entry : list->second->children)
-        if (!entry.block && entry.key != "public_list_contents")
-            if (const auto definition = ItemDefIndex(entry.key))
-                contents.push_back(*definition);
-    return contents;
+        return std::nullopt;
+    const KvNode *capabilities = item->second->Find("capabilities");
+    const KvNode *attributes = item->second->Find("attributes");
+    if (!capabilities || !attributes || capabilities->Value("can_wrap_sticker") != "1")
+        return std::nullopt;
+    std::uint32_t keychain = 0;
+    if (!ParseU32(attributes->Value("display case keychain id"), keychain) || keychain == 0)
+        return std::nullopt;
+    return keychain;
 }
 
 std::optional<std::uint32_t> Schema::ItemDefIndex(std::string_view name) const

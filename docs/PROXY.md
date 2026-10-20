@@ -169,6 +169,16 @@ in this session's view of the inventory: nothing is stored on Valve's side.
   items. The contents are saved in `cs2_gc_inventory.txt`. Unconfirmed in the game.
 - **Collectible pin capsules** open without a key into one pin (their loot lists name plain items). Patch packs,
   the X-Ray package and music kit boxes still do not open.
+- **Store purchases of coupons.** The Store sells coupon items (definitions 20xxx). A coupon for a single sticker or
+  charm is bought as that sticker or charm; a coupon for a container stays an envelope to unlock (as in the CS:GO
+  fork). Music kit coupons (92 of them) are still bought as envelopes until music kits are supported.
+- **Sticker Slabs** (item 4000: the schema gives it `can_wrap_sticker` and a "display case keychain id" of 37). Sealing
+  a sticker sends the same `ApplySticker` message with the slab as the target. The proxy destroys both and creates
+  one charm of keychain 37 holding the sticker (attributes 299 and 321) and sends EncapsulateSticker (1055).
+  This is a best guess at what the real GC does, not confirmed; an earlier build treated the slab as a weapon
+  and the game crashed. An attached slab keeps its sticker.
+- **Scraping stickers**: an `ApplySticker` with no sticker item raises that slot's wear by a ninth; past 1 the
+  sticker is removed and RemoveSticker (1053) is sent (the CS:GO fork's rule).
 - **Naming items** (`NameItem` 1006: item and name) sets the custom name attribute (111) and notifies; the name
   is saved in `cs2_gc_inventory.txt`. The name tag item is not consumed (the game sent no tag id).
 - **Armory Pass.** The pass is item 1354 (`XpShopTicket1`), bought in the Store like any item. The Armory page then

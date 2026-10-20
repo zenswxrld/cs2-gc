@@ -91,6 +91,29 @@ public:
     StorageChange StoreItem(std::uint64_t casketItemId, std::uint64_t itemId, std::uint32_t now);
     StorageChange TakeItem(std::uint64_t casketItemId, std::uint64_t itemId, std::uint32_t now);
 
+    struct Scraped
+    {
+        InventoryItem item;        // the weapon after the scrape
+        std::uint32_t position{};
+        bool removed{};            // the sticker wore away completely
+    };
+
+    // Scrapes the sticker in one slot of one of our items: its wear rises by a ninth, and past 1 it is
+    // removed. Nothing if the item is not ours or has no sticker in that slot.
+    std::optional<Scraped> ScrapeSticker(std::uint64_t itemId, std::uint32_t slot);
+
+    struct Sealed
+    {
+        InventoryItem charm;    // the new charm: the slab with the sticker in it
+        InventoryItem sticker;  // consumed
+        InventoryItem slab;     // consumed
+    };
+
+    // Seals a sticker in a Sticker Slab: both items go and one charm of the slab's keychain, holding the
+    // sticker, takes their place. Nothing changes unless the first id is one of our stickers and the
+    // second one of our slabs (an item the schema gives `can_wrap_sticker`).
+    std::optional<Sealed> SealSticker(const Schema &schema, std::uint64_t stickerItemId, std::uint64_t slabItemId);
+
 private:
     std::uint32_t PositionOf(std::uint64_t ourId) const;
     struct Slot

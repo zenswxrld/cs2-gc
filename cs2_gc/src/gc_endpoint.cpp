@@ -16,6 +16,8 @@ constexpr std::uint32_t NotificationNameItem = 1006;
 constexpr std::uint32_t NotificationUnlockCrate = 1007;
 constexpr std::uint32_t NotificationApplySticker = 1086;
 constexpr std::uint32_t NotificationApplyKeychain = 1091;
+constexpr std::uint32_t NotificationRemoveSticker = 1053;
+constexpr std::uint32_t NotificationEncapsulateSticker = 1055;
 constexpr std::uint32_t NotificationCasketTooFull = 1011;
 constexpr std::uint32_t NotificationCasketContents = 1012;
 constexpr std::uint32_t NotificationCasketAdded = 1013;
@@ -276,12 +278,24 @@ void LocalGameCoordinator::EnableStorePurchases(std::shared_ptr<LiveInventory> i
                    }
                    const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
                    std::vector<std::uint64_t> itemIds;
+                   std::shared_ptr<const Schema> schema;
+                   {
+                       std::lock_guard lock(gc.m_txnMutex);
+                       schema = gc.m_schema;
+                   }
                    // The creates go out before the response so the ids in it already resolve in the cache.
                    for (const auto &line : txn->lines)
                        for (std::uint32_t i = 0; i < line.quantity; ++i)
                        {
                            InventoryItem item;
                            item.defIndex = line.defIndex;
+                           // The Store sells coupons. One for a single sticker or charm is that item; one for a
+                           // container (or anything the schema cannot resolve yet) stays an envelope to unlock.
+                           if (schema)
+                               if (const auto entries = schema->CouponEntries(line.defIndex); entries.size() == 1)
+                                   if (const auto loot = schema->ResolveLootItem(entries[0]);
+                                       loot && (loot->kind == LootKind::Sticker || loot->kind == LootKind::Keychain))
+                                       item = MakeLootItem(*loot, 0, [] { return std::uint64_t{0}; });
                            item = inventory->AddItem(item);
                            SoSingleObject created;
                            created.typeId = static_cast<std::int32_t>(ItemTypeId);
@@ -308,6 +322,10 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
 {
     if (!inventory || !schema)
         return;
+    {
+        std::lock_guard lock(m_txnMutex);
+        m_schema = schema;
+    }
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCOpenCrate,
                [inventory, schema, random, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
                    const auto request = DecodeOpenCrateRequest(frame.body);
@@ -472,6 +490,65 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCApplySticker,
                [inventory, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
                    const auto request = DecodeApplyStickerRequest(frame.body);
+                   std::shared_ptr<const Schema> schema;
+                   {
+                       std::lock_guard lock(gc.m_txnMutex);
+                       schema = gc.m_schema;
+                   }
+                   // No sticker item means a scrape of the one in that slot.
+                   if (request && request->stickerItemId == 0)
+                   {
+                       const auto scraped = inventory->ScrapeSticker(request->targetItemId, request->slot);
+                       if (!scraped)
+                       {
+                           ++gc.m_ignored;
+                           return;
+                       }
+                       const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                       SoSingleObject updated;
+                       updated.typeId = static_cast<std::int32_t>(ItemTypeId);
+                       updated.data = BuildEconItem(scraped->item, accountId, CustomItemIdBase + scraped->item.id,
+                                                    scraped->position);
+                       updated.version = ++gc.m_soVersion;
+                       updated.owner = gc.m_config.owner;
+                       gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+                       if (scraped->removed)
+                           gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                                    EncodeCustomizationNotification(NotificationRemoveSticker,
+                                                                    CustomItemIdBase + scraped->item.id));
+                       if (afterChange)
+                           afterChange();
+                       return;
+                   }
+                   // The same message seals a sticker in a Sticker Slab: the target is the slab, not a weapon.
+                   if (request && schema)
+                       if (const auto sealed = inventory->SealSticker(*schema, request->stickerItemId, request->targetItemId))
+                       {
+                           const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                           const auto destroy = [&](const InventoryItem &item) {
+                               SoSingleObject object;
+                               object.typeId = static_cast<std::int32_t>(ItemTypeId);
+                               object.data = BuildEconItem(item, accountId, CustomItemIdBase + item.id, ItemPositionBase);
+                               object.version = ++gc.m_soVersion;
+                               object.owner = gc.m_config.owner;
+                               gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(object));
+                           };
+                           destroy(sealed->sticker);
+                           destroy(sealed->slab);
+                           SoSingleObject created;
+                           created.typeId = static_cast<std::int32_t>(ItemTypeId);
+                           created.data = BuildEconItem(sealed->charm, accountId, CustomItemIdBase + sealed->charm.id,
+                                                        InventoryUnacknowledgedBit | PickupPurchased);
+                           created.version = ++gc.m_soVersion;
+                           created.owner = gc.m_config.owner;
+                           gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
+                           gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                                    EncodeCustomizationNotification(NotificationEncapsulateSticker,
+                                                                    CustomItemIdBase + sealed->charm.id));
+                           if (afterChange)
+                               afterChange();
+                           return;
+                       }
                    const auto applied = request ? inventory->ApplySticker(*request) : std::nullopt;
                    if (!applied)
                    {

@@ -129,6 +129,7 @@ private:
         std::vector<StorePurchaseRequest::Line> lines;
     };
     std::mutex m_txnMutex;
+    std::shared_ptr<const Schema> m_schema; // set by EnableContainers; the sticker handler uses it for slabs
     std::vector<std::uint8_t> m_xpShop; // the current Armory pass object (credits and activated passes)
     std::optional<Transaction> m_txn;
     std::optional<std::uint64_t> m_pendingAuthorization;

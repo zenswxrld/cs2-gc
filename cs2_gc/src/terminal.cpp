@@ -7,7 +7,7 @@ namespace cs2_gc
 {
 std::optional<InventoryItem> LiveInventory::TerminalOffer(const Schema &schema, std::uint64_t gameId) const
 {
-    if (gameId <= CustomItemIdBase)
+    if (!m_inventory.Gameplay().terminals_enabled || gameId <= CustomItemIdBase)
         return std::nullopt;
     const auto *terminal = m_inventory.Find(gameId - CustomItemIdBase);
     const auto *crate = terminal ? schema.FindCrate(terminal->defIndex) : nullptr;

@@ -33,6 +33,7 @@ public:
     std::optional<InventoryItem> TerminalOffer(const Schema &schema, std::uint64_t gameId) const;
     std::optional<TerminalChange> AcceptTerminal(const Schema &schema, std::uint64_t gameId);
     void SetArmoryCredits(std::uint32_t credits) { m_inventory.SetArmoryCredits(credits); }
+    void SetArmoryPity(const std::string &collection, std::uint32_t misses) { m_inventory.SetArmoryPity(collection, misses); }
     std::optional<std::vector<InventoryItem>> GrantMatchRewards(const Schema &schema, std::uint64_t completed,
                                                                const RandomSource &random)
     {
@@ -49,6 +50,23 @@ public:
         return drops;
     }
     bool ApplyEarnedXp(std::uint64_t cumulativeXp) { return m_inventory.ApplyEarnedXp(cumulativeXp); }
+    std::optional<std::vector<InventoryItem>> GrantLevelRewards(const Schema &schema, const RandomSource &random)
+    {
+        if (m_inventory.LevelRewardTotal() >= m_inventory.Progress().level - 1) return std::nullopt;
+        if (!m_inventory.Gameplay().level_drops_enabled)
+        {
+            m_inventory.MarkLevelRewarded();
+            return std::vector<InventoryItem>{};
+        }
+        auto config = m_inventory.Gameplay();
+        config.match_drops_enabled = 1; // level rewards are independent of the match-drop switch
+        config.match_drop_count = config.level_drop_count;
+        auto drops = RollMatchDrops(schema, random, config);
+        if (!drops) return std::nullopt;
+        for (auto &item : *drops) item = AddItem(item);
+        m_inventory.MarkLevelRewarded();
+        return drops;
+    }
 
     // Activates one more Armory Pass, starting at `xp`; false when MaxXpTracks are already active.
     bool AddXpTrack(std::uint32_t xp);

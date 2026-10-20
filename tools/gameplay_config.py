@@ -12,11 +12,17 @@ DEFAULTS = {
     'armory_rotation_enforce': 0,
     'armory_howl_enabled': 1, 'armory_howl_star_price': 40,
     'premier_enabled': 1, 'premier_placement_wins': 10, 'premier_start_rating': 1000,
+    'premier_scoreboard': 1, 'premier_bot_badges': 1,
+    'level_drops_enabled': 1, 'level_drop_count': 3,
+    'skip_container_confirmation': 1,
+    'hide_rent_button': 1,
+    'armory_pity_enabled': 1, 'armory_pity_soft_at': 10, 'armory_pity_hard_at': 100,
+    'armory_top_per_10000': 64,
     'premier_win_rating': 300, 'premier_loss_rating': 100, 'premier_max_rating': 35000,
 }
 LIMITS = {key: (0, 1) for key in DEFAULTS}
 LIMITS.update({key: (0, 1000000) for key in ('kill_xp', 'headshot_xp', 'mvp_xp', 'match_complete_xp')})
-LIMITS.update(armory_howl_star_price=(1, 1000000), premier_placement_wins=(1, 100), premier_start_rating=(0, 99999), premier_win_rating=(0, 10000),
+LIMITS.update(armory_pity_soft_at=(2, 99), armory_pity_hard_at=(3, 100), armory_top_per_10000=(0, 10000), level_drop_count=(1, 20), armory_howl_star_price=(1, 1000000), premier_placement_wins=(1, 100), premier_start_rating=(0, 99999), premier_win_rating=(0, 10000),
               premier_loss_rating=(0, 10000), premier_max_rating=(1, 99999), armory_rotation_seconds=(10, 86400), armory_rotation_slots=(1, 60), armory_xp_per_star=(1, 100000), match_drop_count=(1, 20), match_case_percent=(0, 100),
               match_skin_min_rarity=(3, 6), pity_soft_at=(2, 99), pity_hard_at=(3, 100),
               case_gold_per_10000=(0, 10000), terminal_top_per_10000=(0, 10000),
@@ -41,6 +47,8 @@ def parse(text):
         raise ValueError('premier_start_rating must not exceed premier_max_rating')
     if result['pity_soft_at'] >= result['pity_hard_at']:
         raise ValueError('pity_soft_at must be less than pity_hard_at')
+    if result['armory_pity_soft_at'] >= result['armory_pity_hard_at']:
+        raise ValueError('armory_pity_soft_at must be less than armory_pity_hard_at')
     return result
 
 

@@ -41,6 +41,7 @@ struct CaseOdds
 {
     std::uint32_t milSpec{7992}, restricted{1598}, classified{320}, covert{64};
     std::uint32_t statTrakPerMille{100};
+    std::uint32_t fifthTier{}, sixthTier{}; // Armory collections can contain more tiers than standard cases
 };
 
 // Rolls one item from a client loot list (a case's, or an Armory collection, sticker or charm pack's).

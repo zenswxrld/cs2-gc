@@ -47,6 +47,10 @@ remain outside this port's scope.
 
 ## Limited-time Howl offer
 
+Use the existing native **Limited Edition Item** slot, rotating Howl alongside
+usual limited skins. Keep the requested 15-minute timer. No separate Howl store
+or category. The user supplied a screenshot of the existing limited pistol tile.
+
 Add the schema's existing M4A4 Howl as an optional timed offer, default 40 stars,
 normal/non-StatTrak with valid schema wear. It participates in the 15-minute
 rotation and must be rejected outside its active window. Preserve Contraband
@@ -57,6 +61,12 @@ an index**. Native display plus a verified local redeem bridge remain required.
 Do not describe this as already visible or buyable on the current client page.
 
 ## Current test-build boundary
+
+Build 04 prepares a narrowly scoped native mixed-StatTrak recipe override from
+existing schema data and mounts a dedicated search path, with backup and clean
+removal. It needs one restart and live selection/crafting verification. Build 03
+starts/stops rewards automatically with CS2. Star persistence is user-confirmed;
+build-03 XP/star earning and three match drops are confirmed by latest logs. Build04 also connects native Premier cache/badges, prepares container UI overrides, repairs terminal reload/Store data, and adds per-level drops plus Armory pity; new UI paths require live testing.
 
 Build 02 adds configurable mixed StatTrak contracts, saved case/terminal pity,
 three guaranteed local match drops (independent 50% case / 50% blue+ skin by

@@ -21,6 +21,12 @@ struct GameplayConfig
     std::uint32_t armory_rotation_enabled{1}, armory_rotation_seconds{900}, armory_rotation_slots{6};
     // Local Premier model is owned by the GSI bridge until native UI/server integration is verified.
     std::uint32_t premier_enabled{1}, premier_placement_wins{10}, premier_start_rating{1000};
+    std::uint32_t premier_scoreboard{1}, premier_bot_badges{1};
+    std::uint32_t level_drops_enabled{1}, level_drop_count{3};
+    std::uint32_t skip_container_confirmation{1};
+    std::uint32_t hide_rent_button{1};
+    std::uint32_t armory_pity_enabled{1}, armory_pity_soft_at{10}, armory_pity_hard_at{100};
+    std::uint32_t armory_top_per_10000{64};
     std::uint32_t premier_win_rating{300}, premier_loss_rating{100}, premier_max_rating{35000};
     std::uint32_t armory_howl_enabled{1}, armory_howl_star_price{40};
     std::uint32_t armory_rotation_enforce{0}; // enable after matching Panorama override is mounted

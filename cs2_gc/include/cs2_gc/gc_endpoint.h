@@ -60,6 +60,9 @@ public:
     // the capture showed being answered gets the recorded reply. Message types with no
     // recording are left exactly as they were. The recorded bodies belong to one account.
     void EnableReplay(std::shared_ptr<const ReplayStore> store);
+    // Enable after replay so local Premier overrides the recorded account's rank.
+    void EnableLocalPremier(const LocalPremier &rank);
+    bool SetLocalPremier(const LocalPremier &rank);
     // Separate bot-server endpoint; never share its queue with the game client's GC.
     void EnableServerInventory(std::shared_ptr<LiveInventory> inventory);
     void RefreshServerInventory();
@@ -90,6 +93,7 @@ public:
     // Consume cumulative XP from the local GSI bridge, idempotently, on the game's callback thread.
     bool ApplyEarnedXp(std::uint64_t cumulativeXp, const std::function<void()> &afterChange);
     bool ApplyMatchRewards(std::uint64_t completed, const std::function<void()> &afterChange);
+    bool ApplyLevelRewards(const std::function<void()> &afterChange);
     // Local helper fallback when the native terminal checkout sends no purchase request.
     bool AcceptLocalTerminal(std::uint64_t gameId, const std::function<void()> &afterChange);
 
@@ -120,6 +124,8 @@ public:
 
 private:
     void OnClientHello(const FrameView &frame);
+    void ReplyLocalPremier(); // caller holds m_mutex
+    void NotifyRewardDrops(const std::vector<InventoryItem> &drops); // caller holds m_mutex
     std::optional<std::uint64_t> AcceptTerminalLocked(std::uint64_t gameId);
 
     GcEndpointConfig m_config;
@@ -132,6 +138,7 @@ private:
     ItemProvider m_itemProvider;
     bool m_dropRecordedItems{};
     std::optional<std::uint32_t> m_armoryCredits;
+    std::optional<LocalPremier> m_premier;
     std::shared_ptr<LiveInventory> m_live;
     std::shared_ptr<Armory> m_armory;
     bool m_serverReady{};

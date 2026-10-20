@@ -7,6 +7,7 @@
 #include <set>
 #include <sstream>
 #include <limits>
+#include <iomanip>
 
 namespace cs2_gc
 {
@@ -120,6 +121,7 @@ std::string Inventory::ToText() const
     out << "\"inventory\"\n{\n\t\"next_id\"\t\"" << m_nextId << "\"\n";
     out << "\t\"case_pity\"\t\"" << m_casePity << "\"\n";
     out << "\t\"match_reward_total\" \"" << m_matchRewardTotal << "\"\n";
+    out << "\t\"level_reward_total\" \"" << m_levelRewardTotal << "\"\n";
     out << "\t\"track_xp_per_star\" \"" << m_trackXpPerStar << "\"\n";
     if (!m_terminalPity.empty())
     {
@@ -130,6 +132,13 @@ std::string Inventory::ToText() const
     }
     if (m_armoryCredits)
         out << "\t\"armory_credits\"\t\"" << *m_armoryCredits << "\"\n";
+    if (!m_armoryPity.empty())
+    {
+        out << "\t\"armory_pity\" {\n";
+        for (const auto &[collection, misses] : m_armoryPity)
+            out << "\t\t" << std::quoted(collection) << " \"" << misses << "\"\n";
+        out << "\t}\n";
+    }
     out << "\t\"progression\" { \"level\" \"" << m_progress.level << "\" \"xp\" \"" << m_progress.xp
         << "\" \"reward_total\" \"" << m_progress.rewardTotal << "\" }\n";
     if (!m_xpTracks.empty())
@@ -217,6 +226,17 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
         }
     }
 
+    if (const auto *pities = root->Find("armory_pity"))
+    {
+        if (!pities->block) return std::nullopt;
+        for (const auto &entry : pities->children)
+        {
+            std::uint32_t misses = 0;
+            if (entry.block || entry.key.empty() || entry.key.size() > 256 ||
+                !ParseNumber(entry.value, misses) || misses > 99 ||
+                !inventory.m_armoryPity.emplace(entry.key, misses).second) return std::nullopt;
+        }
+    }
     if (const KvNode *progress = root->Find("progression"))
     {
         if (!progress->block || !ParseNumber(progress->Value("level"), inventory.m_progress.level) ||
@@ -226,6 +246,12 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             !ParseNumber(progress->Value("reward_total"), inventory.m_progress.rewardTotal))
             return std::nullopt;
     }
+    // Older saves start tracking from their current level; no invented historical drops.
+    inventory.m_levelRewardTotal = inventory.m_progress.level - 1;
+    if (const auto *levels = root->Find("level_reward_total"))
+        if (levels->block || !ParseNumber(levels->value, inventory.m_levelRewardTotal) ||
+            inventory.m_levelRewardTotal >= inventory.m_progress.level)
+            return std::nullopt;
 
     if (const KvNode *credits = root->Find("armory_credits"))
     {

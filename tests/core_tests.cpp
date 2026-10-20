@@ -1621,9 +1621,30 @@ void ArmoryRedeems()
     int uncommon = 0;
     constexpr int Rolls = 20000;
     LiveInventory scratch{Inventory{}};
+    GameplayConfig baseOdds;
+    baseOdds.armory_pity_enabled = 0; baseOdds.armory_top_per_10000 = 0;
+    Inventory baseInventory; baseInventory.SetGameplay(baseOdds);
+    scratch = LiveInventory(baseInventory);
     for (int i = 0; i < Rolls; ++i)
         uncommon += rich.Redeem(request("lootlist:set_test", 4), scratch, random).item.paintKitIndex == 10;
     Check(std::abs(uncommon / double(Rolls) - 7992.0 / (7992 + 1598)) < 0.015, "collection odds: lowest tier is the common one");
+    Inventory pityInventory;
+    pityInventory.SetArmoryPity("set_test", 99);
+    pityInventory.SetArmoryPity("unrelated_collection", 7);
+    LiveInventory pityLive(pityInventory);
+    Armory pityArmory(*schema, 11, 8);
+    auto guaranteed = pityArmory.Redeem(request("lootlist:set_test", 4), pityLive, [] { return 9999ull; });
+    Check(guaranteed.status == Armory::Status::Ok && guaranteed.item.paintKitIndex == 11 &&
+              pityLive.Items().ArmoryPity("set_test") == 0 && pityLive.Items().ArmoryPity("unrelated_collection") == 7,
+          "100th Armory collection roll guarantees its highest tier and resets only its own saved counter");
+    const auto failedBefore = pityLive.Items().ToText();
+    const auto failed = pityArmory.Redeem(request("lootlist:set_test", 5), pityLive, [] { return 9999ull; });
+    Check(failed.status == Armory::Status::CostMismatch && failedBefore == pityLive.Items().ToText(),
+          "failed Armory buys do not consume stars or advance collection pity");
+    const auto miss = pityArmory.Redeem(request("lootlist:set_test", 4), pityLive, [] { return 9999ull; });
+    const auto savedPity = Inventory::FromText(pityLive.Items().ToText());
+    Check(miss.status == Armory::Status::Ok && savedPity && savedPity->ArmoryPity("set_test") == 1 &&
+              savedPity->ArmoryPity("unrelated_collection") == 7, "Armory pity survives restart independently for each collection");
 }
 
 void ArmoryEndpoint()
@@ -3002,6 +3023,38 @@ void TradeUps()
           "the response carries recipe 1, result OK and one item");
     Check(live->Items().Items().size() == 1 && saves == 1, "the contract is saved");
 
+    // The shared native recipe must work even when the first selected item is StatTrak.
+    for (const bool trackedFirst : {false, true})
+    {
+        auto mixedLive = std::make_shared<LiveInventory>(Inventory{});
+        PbWriter mixedCraft;
+        mixedCraft.Varint(1, 0); // An existing normal recipe; zero is a valid ID.
+        for (int i = 0; i < 10; ++i)
+        {
+            const bool tracked = trackedFirst ? i < 3 : i >= 7;
+            mixedCraft.Varint(2, CustomItemIdBase + mixedLive->AddItem(skin(10, .2f, tracked)).id);
+        }
+        LocalGameCoordinator mixedGc(config);
+        int mixedSaves = 0;
+        mixedGc.EnableContainers(mixedLive, shared, [] { return std::uint64_t{0}; }, [&] { ++mixedSaves; });
+        WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCCraft, {}, mixedCraft.bytes(), frame);
+        mixedGc.SendMessage(m::EGCItemMsg::k_EMsgGCCraft | ProtobufMask, frame.data(),
+                            static_cast<std::uint32_t>(frame.size()));
+        Check(mixedLive->Items().Items().size() == 1 && mixedSaves == 1 &&
+                  mixedLive->Items().Items()[0].statTrak && mixedLive->Items().Items()[0].statTrakFromContract,
+              "normal native recipe accepts either first-item variant and retains the mixed StatTrak roll");
+        std::vector<std::uint8_t> reply;
+        while (mixedGc.IsMessageAvailable(&size))
+        {
+            std::uint32_t got = 0, type = 0;
+            std::vector<std::uint8_t> buffer(size);
+            mixedGc.RetrieveMessage(&type, buffer.data(), size, &got);
+            if (type == m::EGCItemMsg::k_EMsgGCCraftResponse) reply = buffer;
+        }
+        Check(reply.size() == 50 && reply[34] == 0 && reply[35] == 0 && reply[36] == 0 && reply[40] == 1,
+              "shared recipe zero receives a successful native Craft response with its original recipe ID");
+    }
+
     // A refused contract still gets a (failed) struct response and changes nothing.
     PbWriter shortCraft;
     shortCraft.Varint(1, 1);
@@ -3272,6 +3325,20 @@ void Terminals()
     auto offer = live->TerminalOffer(*schema, CustomItemIdBase + 1);
     Check(replies.size() == 3 && offer && offer->storedIn == 1 && offer->purchasePrice == 0u &&
               live->Items().Find(1)->terminalRemaining == 1u, "first offer stays inside the terminal until accepted");
+    PbWriter loadOffer;
+    loadOffer.Varint(2, CustomItemIdBase + 1);
+    loadOffer.Varint(4, 1);
+    const auto beforeLoad = live->Items().ToText();
+    const auto savesBeforeLoad = saves;
+    request(gc_msg::EGCItemMsg::k_EMsgGCVolatileItemLoadContents, loadOffer);
+    replies = drain();
+    Check(replies.size() == 3 && replies[0].first == 22 && replies[1].first == 22 && replies[2].first == 1090 &&
+              beforeLoad == live->Items().ToText() && saves == savesBeforeLoad,
+          "native 2536 reload sends saved terminal/offer and notification without reroll or save");
+    PbWriter staleLoad;
+    staleLoad.Varint(2, CustomItemIdBase + 1); staleLoad.Varint(4, 9);
+    request(gc_msg::EGCItemMsg::k_EMsgGCVolatileItemLoadContents, staleLoad);
+    Check(drain().empty() && beforeLoad == live->Items().ToText(), "stale native terminal reload is refused without mutation");
     request(gc_msg::EGCItemMsg::k_EMsgGCOpenCrate, next);
     Check(drain().empty() && live->TerminalOffer(*schema, CustomItemIdBase + 1)->id == offer->id,
           "repeating a stale offer request cannot reroll it");
@@ -3467,16 +3534,84 @@ void ConfiguredRewardsAndPity()
     }
     Check(types == std::vector<std::uint32_t>{21, 9137, 21, 9137, 21, 9137} && saves == 1,
           "native match drop notifications follow each created item and save once");
+    Inventory levelInventory;
+    GameplayConfig levelConfig;
+    levelConfig.match_drops_enabled = 0;
+    levelInventory.SetGameplay(levelConfig);
+    LiveInventory levels(levelInventory);
+    Check(!levels.GrantLevelRewards(*schema, [&] { return engine(); }), "starting level 1 has no free level reward");
+    levels.ApplyEarnedXp(2 * ProfileLevelXp);
+    Check(levels.Items().Progress().level == 3 && levels.GrantLevelRewards(*schema, [&] { return engine(); })->size() == 3,
+          "level 2 grants three rewards even with match drops disabled");
+    auto pending = Inventory::FromText(levels.Items().ToText());
+    Check(pending && pending->LevelRewardTotal() == 1, "level reward cursor persists alongside its granted items");
+    pending->SetGameplay(levelConfig);
+    LiveInventory resumed(*pending);
+    Check(resumed.GrantLevelRewards(*schema, [&] { return engine(); })->size() == 3 &&
+              !resumed.GrantLevelRewards(*schema, [&] { return engine(); }) && resumed.Items().Items().size() == 6,
+          "a second earned level survives restart and pays once without any weekly timer");
+    resumed.ApplyEarnedXp(2 * ProfileLevelXp);
+    Check(!resumed.GrantLevelRewards(*schema, [&] { return engine(); }), "replaying XP does not duplicate level drops");
     const std::string token(32, 'a');
     Check(DecodeLocalTradeUpRequest(token + " 1 2 3 4 5").has_value() &&
           !DecodeLocalTradeUpRequest(token + " 1 2 3 4") && !DecodeLocalTradeUpRequest(token + " 1 2 3 4 5 ") &&
           !DecodeLocalTradeUpRequest(token + " 1 2 3 4 18446744073709551616"), "helper request count, trailing data and overflow validated");
 }
 
+void NativePremier()
+{
+    const auto fields = [](std::span<const std::uint8_t> body) {
+        std::map<std::uint32_t, std::uint64_t> result;
+        PbReader reader(body); PbField field;
+        while (reader.Next(field)) if (field.wire == 0) result[field.number] = field.value;
+        Check(!reader.Failed(), "Premier protobuf parses");
+        return result;
+    };
+    for (const auto wins : {0u, 1u, 9u, 10u})
+    {
+        const auto rank = fields(EncodePremierRank({4000, wins, 10}, 555));
+        Check(rank.at(1) == 555 && rank.at(2) == (wins >= 10 ? 4000 : 0) && rank.at(3) == wins && rank.at(6) == 11,
+              "native Premier type11 publishes exact placement wins while hiding rating until ten wins");
+    }
+    PbWriter wingman; wingman.Varint(2, 5); wingman.Varint(6, 7);
+    PbWriter stale; stale.Bytes(1, EncodePremierRank({9000, 99, 10}, 999)); stale.Message(1, wingman); stale.Varint(30, 42);
+    const auto changed = WithPremierRankUpdate(stale.bytes(), {1300, 1, 10}, 555);
+    Check(changed.has_value(), "recorded rank update patches");
+    PbReader reader(*changed); PbField field;
+    int premierCount = 0, wingmanCount = 0;
+    while (reader.Next(field)) if (field.number == 1) {
+        const auto rank = fields(field.bytes);
+        if (rank.at(6) == 11) { ++premierCount; Check(rank.at(3) == 1 && rank.at(2) == 0 && rank.at(1) == 555, "recorded Premier replaced"); }
+        if (rank.at(6) == 7) ++wingmanCount;
+    }
+    Check(premierCount == 1 && wingmanCount == 1, "other native rank types retained without duplicate Premier entries");
+    PbWriter oldProfile; oldProfile.Bytes(20, EncodePremierRank({9000, 99, 10}, 999)); oldProfile.Message(20, wingman);
+    const LocalPremier current{1300, 1, 10};
+    const auto profile = WithLocalProfile(oldProfile.bytes(), {}, &current, 555);
+    Check(profile.has_value(), "welcome/profile placement count patches");
+    PbReader profileReader(*profile); premierCount = 0;
+    while (profileReader.Next(field)) if (field.number == 20) {
+        const auto rank = fields(field.bytes);
+        if (rank.at(6) == 11) { ++premierCount; Check(rank.at(3) == 1, "XP profile update cannot restore stale placement wins"); }
+    }
+    Check(premierCount == 1, "one local Premier ranking in profile");
+    GcEndpointConfig config; config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    gc.EnableLocalPremier({1000, 0, 10});
+    Check(gc.SetLocalPremier(current) && !gc.SetLocalPremier(current) && !gc.SetLocalPremier({100000, 1, 10}),
+          "native rank cache updates only on valid changes");
+    std::uint32_t size = 0, type = 0, got = 0;
+    Check(gc.IsMessageAvailable(&size), "saved placement change queues a native rank event");
+    std::vector<std::uint8_t> bytes(size); gc.RetrieveMessage(&type, bytes.data(), size, &got);
+    Check((type & ~ProtobufMask) == gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate,
+          "native rank event uses the captured 9194 message");
+}
+
 int main()
 {
     try
     {
+        NativePremier(); std::cout << "PASS native Premier placement/rating cache\n";
         HowlAndArmoryRotation(); std::cout << "PASS limited Howl and Armory rotation policy\n";
         ConfiguredRewardsAndPity(); std::cout << "PASS configured match rewards, pity and local transport\n";
         ArmoryPassCapAndPersistence(); std::cout << "PASS armory pass cap and persistence\n";

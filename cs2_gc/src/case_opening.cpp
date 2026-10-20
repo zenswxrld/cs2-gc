@@ -6,7 +6,7 @@ namespace cs2_gc
 {
 namespace
 {
-// Odds by tier position from the bottom: 0 -> milSpec, ... 3 -> covert; anything beyond has none.
+// Odds by tier position from the bottom; Armory collections can supply fifth/sixth tiers.
 std::uint32_t WeightForRank(std::size_t rank, const CaseOdds &odds)
 {
     switch (rank)
@@ -15,6 +15,8 @@ std::uint32_t WeightForRank(std::size_t rank, const CaseOdds &odds)
     case 1: return odds.restricted;
     case 2: return odds.classified;
     case 3: return odds.covert;
+    case 4: return odds.fifthTier;
+    case 5: return odds.sixthTier;
     default: return 0;
     }
 }

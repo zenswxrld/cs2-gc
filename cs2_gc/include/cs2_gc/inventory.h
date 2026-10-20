@@ -85,6 +85,8 @@ public:
     bool ApplyEarnedXp(std::uint64_t cumulativeXp);
     std::uint64_t MatchRewardTotal() const { return m_matchRewardTotal; }
     void MarkMatchRewarded() { ++m_matchRewardTotal; }
+    std::uint32_t LevelRewardTotal() const { return m_levelRewardTotal; }
+    void MarkLevelRewarded() { ++m_levelRewardTotal; }
     std::uint32_t CasePity() const { return m_casePity; }
     void SetCasePity(std::uint32_t failures) { m_casePity = failures; }
     std::uint32_t TerminalPity(std::uint32_t defIndex) const
@@ -93,6 +95,12 @@ public:
         return found == m_terminalPity.end() ? 0 : found->second;
     }
     void SetTerminalPity(std::uint32_t defIndex, std::uint32_t failures) { m_terminalPity[defIndex] = failures; }
+    std::uint32_t ArmoryPity(const std::string &collection) const
+    {
+        const auto found = m_armoryPity.find(collection);
+        return found == m_armoryPity.end() ? 0 : found->second;
+    }
+    void SetArmoryPity(const std::string &collection, std::uint32_t failures) { m_armoryPity[collection] = failures; }
 
     // KeyValues text, so the file stays hand-editable. FromText is strict: any
     // malformed, duplicate or out-of-range entry rejects the whole file rather
@@ -113,8 +121,10 @@ private:
     std::optional<std::uint32_t> m_armoryCredits;
     LocalProgress m_progress;
     std::uint64_t m_matchRewardTotal{};
+    std::uint32_t m_levelRewardTotal{}; // profile levels already rewarded, excluding starting level 1
     std::uint32_t m_casePity{};
     std::map<std::uint32_t, std::uint32_t> m_terminalPity;
+    std::map<std::string, std::uint32_t> m_armoryPity;
     std::uint64_t m_nextId{1};
 };
 }

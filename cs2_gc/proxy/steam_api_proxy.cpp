@@ -221,9 +221,35 @@ public:
     bool IsMessageAvailable(std::uint32_t *size) override { return m_gc.IsMessageAvailable(size); }
 
     void EnableReplay(std::shared_ptr<const ReplayStore> store) { m_gc.EnableReplay(std::move(store)); }
+    void EnableNativeStore(const std::filesystem::path &path, const ReplayStore &replay)
+    {
+        const auto id = gc_msg::EGCItemMsg::k_EMsgGCStoreGetUserDataResponse;
+        const auto *recorded = replay.Find(id);
+        if (!recorded) return;
+        m_gc.SetHandler(gc_msg::EGCItemMsg::k_EMsgGCStoreGetUserData,
+            [path, fallback = *recorded, id](const FrameView &frame, LocalGameCoordinator &gc) {
+                std::vector<std::uint8_t> body;
+                std::error_code error;
+                const auto size = std::filesystem::file_size(path, error);
+                if (!error && size <= MaxMessageBytes)
+                {
+                    std::ifstream input(path, std::ios::binary);
+                    body.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+                    if (input.bad() || body.size() != size) body.clear();
+                }
+                bool hasSheet = false;
+                PbReader reader(body); PbField field;
+                while (reader.Next(field))
+                    if (field.number == 8 && field.wire == 2 && field.bytes.size() >= 17 &&
+                        std::memcmp(field.bytes.data(), "LZMA", 4) == 0) hasSheet = true;
+                if (reader.Failed() || !hasSheet) body = fallback;
+                gc.Reply(id, body, ReplyHeaderFor(frame));
+            });
+    }
     void SetItemProvider(LocalGameCoordinator::ItemProvider provider) { m_gc.SetItemProvider(std::move(provider)); }
     void SetDropRecordedItems(bool drop) { m_gc.SetDropRecordedItems(drop); }
     void SetArmoryCredits(std::optional<std::uint32_t> credits) { m_gc.SetArmoryCredits(credits); }
+    void EnableLocalPremier(const LocalPremier &rank) { m_gc.EnableLocalPremier(rank); }
     void EnableProgression(std::filesystem::path rewardPath, std::function<void()> afterReward)
     {
         m_rewardPath = std::move(rewardPath);
@@ -256,6 +282,16 @@ public:
         }
         PollTradeUpRequest();
         PollTerminalRequest();
+        m_gc.ApplyLevelRewards(m_afterReward);
+        {
+            std::ifstream premier(m_rewardPath.parent_path() / "cs2_gc_premier.txt");
+            std::uint64_t rating = 0, wins = 0, placements = 0;
+            std::string extra;
+            if ((premier >> rating >> wins >> placements) && !(premier >> extra) && premier.eof() &&
+                rating <= 99999 && wins <= UINT32_MAX && placements >= 1 && placements <= 100)
+                m_gc.SetLocalPremier({static_cast<std::uint32_t>(rating), static_cast<std::uint32_t>(wins),
+                                      static_cast<std::uint32_t>(placements)});
+        }
     }
     void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange)
     {
@@ -745,6 +781,7 @@ State &Init()
             }
             else
                 s.log->Write("replay: no recordings in cs2_gc_replay, using the synthetic welcome");
+            s.coordinator->EnableNativeStore(std::filesystem::path(s.directory + L"cs2_gc_store_2501.bin"), *replay);
 
             // One live inventory serves the welcome, equipping and the Armory. It starts from
             // cs2_gc_inventory.txt (same text format the core saves in, so it can be edited by hand).
@@ -772,6 +809,9 @@ State &Init()
             }
             else s.log->Write("gameplay: no cs2_gc_gameplay.cfg; using documented defaults");
             s.autoRewards = loaded->Gameplay().rewards_auto_start != 0;
+            if (loaded->Gameplay().premier_enabled)
+                s.coordinator->EnableLocalPremier({loaded->Gameplay().premier_start_rating, 0,
+                                                   loaded->Gameplay().premier_placement_wins});
             auto live = std::make_shared<LiveInventory>(std::move(*loaded));
             s.serverCoordinator->EnableServerInventory(live);
             Logger *saveLog = s.log;
@@ -895,7 +935,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: codex-20261020-03");
+        s.log->Write("test build: codex-20261020-04");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");

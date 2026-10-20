@@ -72,7 +72,7 @@ def write_field(number, wire, value):
     tag = write_varint(number << 3 | wire)
     if wire == 0:
         return tag + write_varint(value)
-    if wire == 5:
+    if wire in (1, 5):
         return tag + value
     return tag + write_varint(len(value)) + value
 

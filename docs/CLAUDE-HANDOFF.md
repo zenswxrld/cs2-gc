@@ -1,3 +1,102 @@
+# Build 04 additions after live build-03 test
+
+Supersedes older pending claims below. User supplied new logs: helper earned1314XP,
+completed1match, Premierplacement1/10; proxy saved three match drops and five pass
+tracks1315, stars26->41. Profile XP bar visible; EOM drops/XP/skill panels still absent.
+Native Terminal2536 request (subjectfield2/counterfield4) was unanswered. User wants
+native Buy and trade-ups, no batch workflows; preferences for test console commands
+recorded but no console command registration is implemented. ZIP omits those batch
+purchase/trade-up launchers. Original helper transports remain diagnostic source.
+
+Native Premier: helper atomically publishes cs2_gc_premier.txt (rating wins placements).
+Proxy polls one-second; LocalGameCoordinator replaces captured type11 in9194 and
+profilefield20 (welcome and XP updates), preventing old captured zero wins restoring.
+Ranktype11 is confirmed in the actual supplied9194 capture. Native scoreboard patch
+uses existing RatingEmblem.SetXuid plus FriendsListAPI.GetFriendCompetitiveRank/Wins
+(...,'Premier') from the pinned playercard source. Zero rating now renders unranked;
+cache key includes wins so placements update even with zero rank. Other humans/modes,
+queued matchmaking/demos retain original branch. Bot badges optionally mirror local
+badge; not independent earned careers. Native presentation still needs live validation.
+
+native_resources.py reads installed VPK v1/v2 entries with preload/chunk/CRC checks,
+reads header12/version4 plaintext script DATA, patches only validated source anchors,
+reserializes block offsets preserving other metadata and omitting stale SrMa debugmap.
+Format grounded in ValveResourceFormat Resource.cs/Panorama.cs and ValvePak Package.Read.cs;
+no guessed engine offsets, no game assets shipped. Unsupported layout logs/skips.
+Shared installer uses separate owned folders, gameinfo backups, external-edit protection
+and config-driven unmount. Scoreboard and rental-bar overrides require one restart.
+Rental patch: skip second Open-to-Keep dialog; hide RentBtn only on local normal path;
+X-Ray restrictions and real inventory remain unchanged. Both configurable.
+
+Terminal: 2536 handler replies saved terminal/offer SO updates + notification1012;
+checks current counter, no reroll/save/pity mutation. native_store.py copies the local
+2501 price sheet, adds missing explicit volatile-container names from real schema,
+preserves original protobuf fields/currencies/banner and emits cs2_gc_store_2501.bin.
+Proxy reads that generated reply at Store requests with recorded fallback. Original
+replay unchanged. Intended to unblock native StoreItemPurchase(def(container)); end-to-end
+native Buy remains live test, do not label proven fixed. Actual schema resolves both
+crate_community_36 and crate_community_37. Local checkout still free.
+
+Per-level rewards: independent saved level_reward_total cursor (starting level1 excluded),
+three items/level by default using same50/50 case/blue+ weapon pool. One pending level/poll;
+queued gains survive restart; cursor+items save together. No weekly clock/cooldown, no new
+weekly care-package picker. Old saves initialise from current level, no retroactive grants.
+Profile cap40 unchanged; match drops stay separate and independent of level switch.
+
+Armory random loot-list pity: map by collection name saved with inventory, soft10/hard100,
+top-tier base floor64/10000 without reducing higher existing odds, reset on top-tierhit.
+Collections with fifth/sixth tiers get weights13/3 so upper rarities are reachable too.
+Lower tiers retain relative weights. Plain/fixed/limited Howl purchases don't advance pity;
+failed buys leave all state intact. New options in example cfg. New pity starts at0.
+
+Howl scope clarified: use existing native Limited Edition Item slot alongside usual
+limited skins and 15-minute refresh; no separate Howl category. Native rotation/timer/
+Howl redeem bridge still pending. Automatic bot difficulty and EOM panel integration
+also remain pending. Do not mislabel source generators/backend policies as installed UI.
+
+---
+
+# Current follow-up: build 04, native mixed StatTrak recipes
+
+User explicitly rejected the mixed_tradeup.cmd workaround and wants the native
+CS2 screen. native_tradeups.py now parses the supplied full schema with token
+spans, broadens exactly six existing normal recipe qualities from
+unique,tournament to unique,strange,tournament, and disables the six duplicate
+StatTrak recipes. This routes either first-item variant through a shared recipe.
+Input counts, rarity, output definitions and all other schema bytes are retained.
+
+The background rewards helper generates game/cs2_gc_native/scripts/items/items_game.txt
+from the original beside the DLL, then prepends its owned Game search path in
+installed game/csgo/gameinfo.gi. Original schema is untouched; first gameinfo edit
+is backed up. Manifest/hash ownership prevents overwriting an unrelated addon or
+external edits. Setting mixed_stattrak_tradeups=0 removes only the owned mount.
+Both enabling/disabling need one full CS2 restart after helper preparation.
+Setup failures log and leave rewards running. Add native_tradeups.py to the ZIP.
+AGENTS.md records the user's narrowly scoped exception; no custom cases, paint
+kits, item changes or broad schema rewriting are authorised.
+
+Inspected build25966348 schema has normal recipes0..5 and StatTrak10..15;
+normal input qualities are unique,tournament (not just unique). crafting.js
+uses the native recipe inventory filter and InventoryAPI craft readiness; merely
+changing the button would not solve filtering. Source reference is SteamTracking
+GameTracking-CS2 commit5ab573fa8afb5b8db98869d79ed79399fca6e747. Recipe patch is
+idempotent against the actual supplied schema. Actual pinned gameinfo search-path
+mount/unmount is exactly reversible. New tests cover those invariants, backups,
+other addons and external edits; endpoint tests cover mixed inputs, both first
+selection variants, using normal recipe0 and receiving a valid native response.
+
+Native engine loading/selection is NOT live-confirmed. Test normal-first and
+StatTrak-first plus mixed five-Coverts after one restart; inspect both logs.
+No Panorama compilation is needed for this recipe-only approach. Refresh the
+extracted original schema after game updates to avoid mounting stale item data.
+
+User confirmed stars persist after restart on build03. They are now testing
+XP/stars/drops and will send logs after the match. Earnings/drop results remain
+pending. Premier is still only the saved local model/manual difficulty cfg;
+native Premier panels and automatic bot difficulty have not been implemented.
+
+---
+
 # Current follow-up: build 03, automatic background rewards
 
 User wants to stop manually launching/leaving a rewards window open. Source now

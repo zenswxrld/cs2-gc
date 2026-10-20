@@ -55,6 +55,8 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
 
     // Everything that can fail happens before anything changes.
     std::optional<InventoryItem> item;
+    std::optional<std::string> rolledCollection;
+    bool topReward = false;
     if (isHowl)
     {
         if (const auto howl = m_schema.ResolveLootItem(HowlEntry))
@@ -64,7 +66,54 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
     {
         CaseOdds collectionOdds = odds;
         collectionOdds.statTrakPerMille = 0;
-        item = RollLootList(m_schema, std::string_view(goods->itemName).substr(LootListPrefix.size()), random, collectionOdds);
+        collectionOdds.fifthTier = 13;
+        collectionOdds.sixthTier = 3;
+        const std::string name = goods->itemName.substr(LootListPrefix.size());
+        auto tiers = m_schema.LootTiers(name);
+        std::erase_if(tiers, [](const auto &tier) { return tier.rarity == 0; });
+        std::stable_sort(tiers.begin(), tiers.end(), [](const auto &a, const auto &b) { return a.rarity < b.rarity; });
+        const std::uint32_t weights[] = {collectionOdds.milSpec, collectionOdds.restricted, collectionOdds.classified,
+                                        collectionOdds.covert, collectionOdds.fifthTier, collectionOdds.sixthTier};
+        std::uint64_t total = 0, topWeight = 0;
+        std::uint32_t highest = 0;
+        std::vector<LootItem> top;
+        bool lower = false;
+        for (std::size_t index = 0; index < tiers.size() && index < std::size(weights); ++index)
+        {
+            std::vector<LootItem> resolved;
+            for (const auto &entry : tiers[index].items)
+                if (auto outcome = m_schema.ResolveLootItem(entry)) resolved.push_back(*outcome);
+            if (resolved.empty() || !weights[index]) continue;
+            total += weights[index];
+            if (tiers[index].rarity > highest)
+            {
+                lower = highest != 0;
+                highest = tiers[index].rarity; top = std::move(resolved); topWeight = weights[index];
+            }
+            else if (tiers[index].rarity == highest)
+            {
+                top.insert(top.end(), resolved.begin(), resolved.end()); topWeight += weights[index];
+            }
+        }
+        if (total && !top.empty())
+        {
+            auto pity = config;
+            pity.pity_enabled = config.armory_pity_enabled;
+            pity.pity_soft_at = config.armory_pity_soft_at; pity.pity_hard_at = config.armory_pity_hard_at;
+            const auto base = std::max(config.armory_top_per_10000, static_cast<std::uint32_t>(topWeight * 10000 / total));
+            const auto chance = lower ? PityChance(inventory.Items().ArmoryPity(name), base, pity) : 10000u;
+            const auto below = [&](std::uint64_t bound) {
+                const auto limit = UINT64_MAX - UINT64_MAX % bound;
+                for (;;) { const auto value = random(); if (value < limit) return value % bound; }
+            };
+            if (below(10000) < chance)
+            {
+                item = MakeLootItem(top[below(top.size())], highest, random, 0);
+                topReward = true;
+            }
+            else item = RollLootList(m_schema, name, random, collectionOdds, highest);
+            rolledCollection = name;
+        }
     }
     else if (const auto definition = m_schema.ItemDefIndex(goods->itemName))
     {
@@ -82,6 +131,8 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
     m_balance -= goods->points;
     inventory.SetArmoryCredits(m_balance);
     result.item = inventory.AddItem(*item);
+    if (rolledCollection)
+        inventory.SetArmoryPity(*rolledCollection, topReward ? 0u : std::min(inventory.Items().ArmoryPity(*rolledCollection) + 1, 99u));
     return result;
 }
 }

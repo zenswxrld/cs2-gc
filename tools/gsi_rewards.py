@@ -8,6 +8,8 @@ import argparse
 import hmac
 import json
 import os
+import lzma
+import struct
 from pathlib import Path
 import secrets
 import time
@@ -15,6 +17,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gameplay_config import load as load_gameplay
 import premier_rating
+from native_tradeups import prepare as prepare_native_tradeups
+from native_scoreboard import prepare as prepare_native_scoreboard
+from native_store import prepare as prepare_native_store
+from skip_container_confirm import prepare as prepare_container_confirm
 from rewards_runtime import InstanceLock, ParentProcess, serve_until_parent_exits
 import contextlib
 import traceback
@@ -72,6 +78,10 @@ class Rewards:
         atomic_text(self.path, json.dumps(self.state, separators=(',', ':')) + '\n')
         atomic_text(self.directory / 'cs2_gc_rewards.txt', str(self.state['total']) + '\n')
         atomic_text(self.directory / 'cs2_gc_matches.txt', str(self.state['matches']) + '\n')
+        if self.config['premier_enabled']:
+            rank = self.state['premier']
+            atomic_text(self.directory / 'cs2_gc_premier.txt',
+                        f"{rank['rating']} {rank['wins']} {self.config['premier_placement_wins']}\n")
 
     def accept(self, packet):
         if not isinstance(packet, dict):
@@ -232,6 +242,24 @@ def run_with_parent(args, parent):
             if not config_path.exists() or config_path.read_text(encoding='utf-8') != content:
                 atomic_text(config_path, content)
                 print('GSI config installed/updated. If this is the first setup, restart CS2 once to load it.', flush=True)
+        try:
+            native_status = prepare_native_tradeups(args.proxy_dir, bool(rewards.config['mixed_stattrak_tradeups']))
+            print('Native trade-up UI: ' + native_status, flush=True)
+        except (OSError, ValueError, KeyError) as error:
+            # A changed schema or missing game file must not stop earned XP/stars.
+            print('Native trade-up UI setup skipped: ' + str(error), flush=True)
+        try:
+            print('Native Premier scoreboard: ' + prepare_native_scoreboard(args.proxy_dir, rewards.config), flush=True)
+        except (OSError, ValueError, KeyError) as error:
+            print('Native Premier scoreboard setup skipped: ' + str(error), flush=True)
+        try:
+            print('Native terminal Store: ' + prepare_native_store(args.proxy_dir, rewards.config), flush=True)
+        except (OSError, ValueError, KeyError, EOFError, lzma.LZMAError, struct.error) as error:
+            print('Native terminal Store setup skipped: ' + str(error), flush=True)
+        try:
+            print('Native container confirmation: ' + prepare_container_confirm(args.proxy_dir, rewards.config), flush=True)
+        except (OSError, ValueError, KeyError) as error:
+            print('Native container confirmation setup skipped: ' + str(error), flush=True)
         server.RequestHandlerClass = handler_for(rewards)
         if args.cfg_dir and rewards.config['premier_enabled']:
             difficulty_path = args.cfg_dir / 'cs2_gc_premier_bots.cfg'

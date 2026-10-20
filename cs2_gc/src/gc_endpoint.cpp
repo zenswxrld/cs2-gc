@@ -82,6 +82,39 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
     }
 }
 
+void LocalGameCoordinator::ReplyLocalPremier()
+{
+    if (!m_premier || !m_config.owner.id) return;
+    const auto id = gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate;
+    std::span<const std::uint8_t> recorded;
+    if (m_replay)
+        if (const auto *body = m_replay->Find(id)) recorded = *body;
+    auto body = WithPremierRankUpdate(recorded, *m_premier, static_cast<std::uint32_t>(m_config.owner.id));
+    if (!body) body = WithPremierRankUpdate({}, *m_premier, static_cast<std::uint32_t>(m_config.owner.id));
+    Reply(id, *body);
+}
+
+void LocalGameCoordinator::EnableLocalPremier(const LocalPremier &rank)
+{
+    {
+        std::lock_guard lock(m_mutex);
+        m_premier = rank;
+    }
+    SetHandler(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate,
+               [](const FrameView &, LocalGameCoordinator &gc) { gc.ReplyLocalPremier(); });
+}
+
+bool LocalGameCoordinator::SetLocalPremier(const LocalPremier &rank)
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_premier || *m_premier == rank || rank.rating > 99999 || rank.placementWins < 1 || rank.placementWins > 100)
+        return false;
+    m_premier = rank;
+    ReplyLocalPremier();
+    if (m_config.diagnostic) m_config.diagnostic("Premier: local rating/placement update queued for native rank cache");
+    return true;
+}
+
 void LocalGameCoordinator::EnableServerInventory(std::shared_ptr<LiveInventory> inventory)
 {
     m_live = std::move(inventory);
@@ -160,7 +193,8 @@ bool LocalGameCoordinator::ApplyEarnedXp(std::uint64_t cumulativeXp, const std::
                 if (field.number == 6 && field.wire == 2)
                     base.assign(field.bytes.begin(), field.bytes.end());
         }
-    if (const auto profile = WithLocalProfile(base, inventory.Progress()))
+    if (const auto profile = WithLocalProfile(base, inventory.Progress(), m_premier ? &*m_premier : nullptr,
+                                             static_cast<std::uint32_t>(m_config.owner.id)))
         Reply(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, *profile);
     if (m_config.diagnostic)
         m_config.diagnostic("progression: earned XP applied; profile, passes and stars saved");
@@ -573,6 +607,35 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                             EncodeCustomizationNotification(NotificationCasketContents, request->casketItemId));
                });
 
+    // The native laptop now sends 2536 (CMsgOpenCrate-shaped) when reopening an
+    // offer. It must receive the current objects and casket_contents notification,
+    // without treating this read as a decline or rolling a new offer.
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCVolatileItemLoadContents,
+               [inventory, schema](const FrameView &frame, LocalGameCoordinator &gc) {
+                   const auto request = DecodeOpenCrateRequest(frame.body);
+                   const auto offer = request ? inventory->TerminalOffer(*schema, request->crateItemId) : std::nullopt;
+                   const auto *terminal = offer ? inventory->Items().Find(request->crateItemId - CustomItemIdBase) : nullptr;
+                   if (!terminal || !inventory->Items().Gameplay().terminals_enabled ||
+                       (request->pointsRemaining && request->pointsRemaining != terminal->terminalRemaining))
+                   {
+                       ++gc.m_ignored;
+                       return;
+                   }
+                   const auto account = static_cast<std::uint32_t>(gc.m_config.owner.id);
+                   for (const auto &item : {*terminal, *offer})
+                   {
+                       SoSingleObject object;
+                       object.typeId = static_cast<std::int32_t>(ItemTypeId);
+                       object.owner = gc.m_config.owner;
+                       object.version = ++gc.m_soVersion;
+                       object.data = BuildEconItem(item, account, CustomItemIdBase + item.id, ItemPositionBase);
+                       gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(object));
+                   }
+                   gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                            EncodeCustomizationNotification(NotificationCasketContents, request->crateItemId));
+                   if (gc.m_config.diagnostic) gc.m_config.diagnostic("terminal: native laptop loaded the saved offer without rerolling");
+               });
+
     // Trade-up contracts. The request is a protobuf (recipe, ten item ids); the response is still the old
     // struct: recipe index (int16), result (uint32), item count (uint16), then the new item's id.
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCCraft,
@@ -956,7 +1019,8 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
         {
             std::vector<std::uint8_t> patched = *welcome;
             if (m_live)
-                if (auto profile = WithWelcomeProfile(patched, m_live->Items().Progress()))
+                if (auto profile = WithWelcomeProfile(patched, m_live->Items().Progress(), m_premier ? &*m_premier : nullptr,
+                                                       static_cast<std::uint32_t>(m_config.owner.id)))
                     patched = std::move(*profile);
             if (m_itemProvider || m_dropRecordedItems)
             {
@@ -1001,8 +1065,15 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
             const std::span<const std::uint8_t> body = patched;
             Reply(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, body);
             for (std::uint32_t id : PostWelcome)
+            {
+                if (m_premier && id == gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate)
+                {
+                    ReplyLocalPremier();
+                    continue;
+                }
                 if (const auto *body = m_replay->Find(id))
                     Reply(id, *body);
+            }
             return;
         }
     }
@@ -1011,6 +1082,7 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
     welcome.version = m_config.welcomeVersion;
     welcome.outOfDateCaches.push_back({m_config.owner, m_config.cacheVersion, m_config.cacheTypes});
     Reply(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, EncodeClientWelcome(welcome));
+    ReplyLocalPremier();
 }
 }
 
@@ -1050,8 +1122,28 @@ bool LocalGameCoordinator::ApplyMatchRewards(std::uint64_t completed, const std:
     if (!m_live || !m_schema || !m_rewardRandom) return false;
     const auto drops = m_live->GrantMatchRewards(*m_schema, completed, m_rewardRandom);
     if (!drops) return false;
+    NotifyRewardDrops(*drops);
+    if (afterChange) afterChange();
+    if (m_config.diagnostic) m_config.diagnostic("match rewards: " + std::to_string(drops->size()) + " drops granted and saved");
+    return true;
+}
+
+bool LocalGameCoordinator::ApplyLevelRewards(const std::function<void()> &afterChange)
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_live || !m_schema || !m_rewardRandom) return false;
+    const auto drops = m_live->GrantLevelRewards(*m_schema, m_rewardRandom);
+    if (!drops) return false;
+    NotifyRewardDrops(*drops);
+    if (afterChange) afterChange();
+    if (m_config.diagnostic) m_config.diagnostic("level rewards: " + std::to_string(drops->size()) + " drops granted and saved; no weekly cooldown");
+    return true;
+}
+
+void LocalGameCoordinator::NotifyRewardDrops(const std::vector<InventoryItem> &drops)
+{
     const auto account = static_cast<std::uint32_t>(m_config.owner.id);
-    for (const auto &item : *drops)
+    for (const auto &item : drops)
     {
         const auto id = CustomItemIdBase + item.id;
         SoSingleObject object;
@@ -1068,8 +1160,5 @@ bool LocalGameCoordinator::ApplyMatchRewards(std::uint64_t completed, const std:
         PbWriter notification; notification.Message(6, preview);
         Reply(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, notification.bytes());
     }
-    if (afterChange) afterChange();
-    if (m_config.diagnostic) m_config.diagnostic("match rewards: " + std::to_string(drops->size()) + " drops granted and saved");
-    return true;
 }
 }

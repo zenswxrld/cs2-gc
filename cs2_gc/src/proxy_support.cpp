@@ -222,6 +222,13 @@ std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text)
         BOOL_OPTION(rewards_auto_start) BOOL_OPTION(xp_enabled) BOOL_OPTION(stars_enabled) BOOL_OPTION(match_drops_enabled)
         BOOL_OPTION(mixed_stattrak_tradeups) BOOL_OPTION(pity_enabled) BOOL_OPTION(terminals_enabled)
         BOOL_OPTION(terminal_helper_enabled) BOOL_OPTION(armory_rotation_enabled) BOOL_OPTION(armory_rotation_enforce) BOOL_OPTION(premier_enabled) BOOL_OPTION(armory_howl_enabled)
+        BOOL_OPTION(premier_scoreboard) BOOL_OPTION(premier_bot_badges)
+        BOOL_OPTION(level_drops_enabled) NUMBER_OPTION(level_drop_count, 1, 20)
+        BOOL_OPTION(skip_container_confirmation)
+        BOOL_OPTION(hide_rent_button)
+        BOOL_OPTION(armory_pity_enabled)
+        NUMBER_OPTION(armory_pity_soft_at, 2, 99) NUMBER_OPTION(armory_pity_hard_at, 3, 100)
+        NUMBER_OPTION(armory_top_per_10000, 0, 10000)
         NUMBER_OPTION(armory_howl_star_price, 1, 1000000)
         NUMBER_OPTION(premier_placement_wins, 1, 100) NUMBER_OPTION(premier_start_rating, 0, 99999)
         NUMBER_OPTION(premier_win_rating, 0, 10000) NUMBER_OPTION(premier_loss_rating, 0, 10000)
@@ -242,6 +249,7 @@ std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text)
         *target = number;
     }
     if (config.premier_start_rating > config.premier_max_rating) return std::nullopt;
+    if (config.armory_pity_soft_at >= config.armory_pity_hard_at) return std::nullopt;
     if (config.pity_soft_at >= config.pity_hard_at) return std::nullopt;
     return config;
 }

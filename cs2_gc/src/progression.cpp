@@ -59,23 +59,69 @@ void CopyField(PbWriter &out, const PbField &field)
     }
 }
 }
-std::optional<std::vector<std::uint8_t>> WithLocalProfile(std::span<const std::uint8_t> body,
-                                                       const LocalProgress &profile)
+std::vector<std::uint8_t> EncodePremierRank(const LocalPremier &rank, std::uint32_t accountId)
+{
+    PbWriter out;
+    out.Varint(1, accountId);
+    out.Varint(2, rank.wins >= rank.placementWins ? rank.rating : 0);
+    out.Varint(3, rank.wins);
+    out.Varint(6, 11);
+    return out.bytes();
+}
+std::optional<std::vector<std::uint8_t>> WithPremierRankUpdate(std::span<const std::uint8_t> body,
+                                                            const LocalPremier &rank, std::uint32_t accountId)
 {
     PbWriter out;
     PbReader reader(body);
     PbField field;
     while (reader.Next(field))
-        if (field.number != 17 && field.number != 18)
+    {
+        bool premier = false;
+        if (field.number == 1 && field.wire == 2)
+        {
+            PbReader ranking(field.bytes);
+            PbField value;
+            while (ranking.Next(value))
+                if (value.number == 6 && value.wire == 0 && value.value == 11) premier = true;
+            if (ranking.Failed()) return std::nullopt;
+        }
+        if (!premier) CopyField(out, field);
+    }
+    if (reader.Failed()) return std::nullopt;
+    out.Bytes(1, EncodePremierRank(rank, accountId));
+    return out.bytes();
+}
+std::optional<std::vector<std::uint8_t>> WithLocalProfile(std::span<const std::uint8_t> body,
+                                                       const LocalProgress &profile,
+                                                       const LocalPremier *premier, std::uint32_t accountId)
+{
+    PbWriter out;
+    PbReader reader(body);
+    PbField field;
+    while (reader.Next(field))
+    {
+        bool oldPremier = false;
+        if (premier && field.number == 20 && field.wire == 2)
+        {
+            PbReader ranking(field.bytes);
+            PbField rank;
+            while (ranking.Next(rank))
+                if (rank.number == 6 && rank.wire == 0 && rank.value == 11) oldPremier = true;
+            if (ranking.Failed()) return std::nullopt;
+        }
+        if (field.number != 17 && field.number != 18 && !oldPremier)
             CopyField(out, field);
+    }
     if (reader.Failed())
         return std::nullopt;
     out.Varint(17, profile.level);
     out.Varint(18, 327680000u + profile.xp);
+    if (premier) out.Bytes(20, EncodePremierRank(*premier, accountId));
     return out.bytes();
 }
 std::optional<std::vector<std::uint8_t>> WithWelcomeProfile(std::span<const std::uint8_t> body,
-                                                         const LocalProgress &profile)
+                                                         const LocalProgress &profile,
+                                                         const LocalPremier *premier, std::uint32_t accountId)
 {
     PbWriter out;
     PbReader reader(body);
@@ -85,7 +131,7 @@ std::optional<std::vector<std::uint8_t>> WithWelcomeProfile(std::span<const std:
     {
         if (field.number == 6 && field.wire == 2)
         {
-            const auto patched = WithLocalProfile(field.bytes, profile);
+            const auto patched = WithLocalProfile(field.bytes, profile, premier, accountId);
             if (!patched)
                 return std::nullopt;
             out.Bytes(6, *patched);
@@ -97,7 +143,7 @@ std::optional<std::vector<std::uint8_t>> WithWelcomeProfile(std::span<const std:
     if (reader.Failed())
         return std::nullopt;
     if (!found)
-        out.Bytes(6, *WithLocalProfile({}, profile));
+        out.Bytes(6, *WithLocalProfile({}, profile, premier, accountId));
     return out.bytes();
 }
 }

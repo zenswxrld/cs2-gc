@@ -134,3 +134,9 @@ Build 09's single-file VPK made CS2 stop at start-up with "FATAL ERROR ... cs2_g
 (unexpected)". That proved the engine does mount a pak01 VPK from our folders. Build 10 copies the installed game's own
 layout (data in pak01_000.vpk, archive MD5 section, 48-byte other-MD5 section). If CS2 still will not start, run
 `cs2_gc_remove_vpks.cmd`; to switch VPK overrides off, run `cs2_gc_disable_vpks.cmd` (writes cs2_gc_no_vpk.txt).
+
+### Build 11: placeholder first search path
+Build 10 still stopped with `cs2_gc_offers\pak01.vpk Failed to load file (unexpected)` on the second launch. The crash dump
+shows CS2 also looking for `cs2_gc_offers\pak01_flt.vpk`, and `cs2_gc_offers` was our first Game path, which is the
+engine's DEFAULT_WRITE_PATH. Build 11 keeps an empty `cs2_gc_first` folder as the first Game path so no VPK folder is the
+write path. Hypothesis only; if it still fails, use cs2_gc_disable_vpks.cmd and send the error text and a dump.

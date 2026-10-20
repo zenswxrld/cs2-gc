@@ -24,6 +24,7 @@ from native_scoreboard import prepare as prepare_native_scoreboard
 from native_store import prepare as prepare_native_store
 from skip_container_confirm import prepare as prepare_container_confirm
 from native_offer_numbers import prepare as prepare_offer_numbers
+from native_resources import ensure_first_game_path
 from rewards_runtime import InstanceLock, ParentProcess, serve_until_parent_exits
 import contextlib
 import traceback
@@ -285,6 +286,10 @@ def run_with_parent(args, parent):
             print('Native terminal offer numbers: ' + prepare_offer_numbers(args.proxy_dir, rewards.config), flush=True)
         except (OSError, ValueError, KeyError) as error:
             print('Native terminal offer numbers setup skipped: ' + str(error), flush=True)
+        try:
+            print('Native write-path placeholder: ' + ensure_first_game_path(args.proxy_dir), flush=True)
+        except (OSError, ValueError, KeyError) as error:
+            print('Native write-path placeholder setup skipped: ' + str(error), flush=True)
         server.RequestHandlerClass = handler_for(rewards)
         if args.cfg_dir and rewards.config['premier_enabled']:
             difficulty_path = args.cfg_dir / 'cs2_gc_premier_bots.cfg'

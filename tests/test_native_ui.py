@@ -256,3 +256,29 @@ limitJson = '{"limit":0}'; m_numOfferCounter = 2; assert.equal(_CurrentOfferNumb
 '''
         script = 'var m_numOfferCounter = 0;\n' + script
         subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
+
+
+class WritePath(unittest.TestCase):
+    def test_placeholder_is_the_first_game_path_and_stays_first(self):
+        import native_resources, native_tradeups, tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            game = Path(folder) / 'game'
+            (game / 'csgo').mkdir(parents=True); (game / 'bin/win64').mkdir(parents=True)
+            info = game / 'csgo/gameinfo.gi'
+            native_tradeups.atomic_write(info, GAMEINFO)
+            proxy = game / 'bin/win64'
+
+            def first_game():
+                search = native_tradeups.parse(native_tradeups.read_text(info)).one('GameInfo').one('FileSystem').one('SearchPaths')
+                return next(node.value for node in search.children if node.key == 'Game')
+
+            self.assertIn('RESTART', native_resources.ensure_first_game_path(proxy))
+            self.assertEqual(first_game(), 'cs2_gc_first')
+            self.assertTrue('installed' in native_resources.ensure_first_game_path(proxy))
+            # Another override mounted later goes above it; the next run moves the placeholder back to the top.
+            native_tradeups.atomic_write(info, native_tradeups.mount_gameinfo(
+                native_tradeups.read_text(info), True, 'cs2_gc_offers', 'cs2_gc offers'))
+            self.assertEqual(first_game(), 'cs2_gc_offers')
+            native_resources.ensure_first_game_path(proxy)
+            self.assertEqual(first_game(), 'cs2_gc_first')
+            self.assertIn('keep this addon', native_tradeups.read_text(info))

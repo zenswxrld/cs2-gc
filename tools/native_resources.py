@@ -170,3 +170,41 @@ def install_override(proxy_directory, *, enabled, folder, comment, owner, asset,
         atomic_write(info, mounted)
     return (f'prepared from {actual}; RESTART CS2 ONCE to load native UI override' if changed else
             f'installed: {actual}; live verification needed')
+
+
+WRITE_FOLDER = 'cs2_gc_first'
+WRITE_COMMENT = 'cs2_gc empty write-path placeholder'
+WRITE_OWNER = 'cs2-gc-write-path-v1'
+
+
+def ensure_first_game_path(proxy_directory):
+    """Keep an empty folder as the first Game search path.
+
+    The first Game path is the engine's DEFAULT_WRITE_PATH. A pak01 VPK in that folder made CS2 stop with
+    'Failed to load file (unexpected)', so the folders that hold VPKs must not be first.
+    """
+    from native_tradeups import parse
+    proxy = Path(proxy_directory).resolve()
+    game = proxy.parent.parent
+    info = game / 'csgo/gameinfo.gi'
+    mod = game / WRITE_FOLDER
+    manifest_path = mod / 'cs2_gc_write_manifest.json'
+    if not info.is_file(): return 'unavailable: installed gameinfo.gi not found'
+    if manifest_path.exists():
+        if json.loads(read_text(manifest_path)).get('owner') != WRITE_OWNER:
+            raise ValueError('Write-path folder is not owned by this feature')
+    elif mod.exists() and any(mod.iterdir()):
+        raise ValueError('Write-path folder contains unowned files')
+    current = read_text(info)
+    search = parse(current).one('GameInfo').one('FileSystem').one('SearchPaths')
+    first = next((node for node in search.children or [] if node.key == 'Game'), None)
+    if first is not None and first.value == WRITE_FOLDER:
+        return 'installed: ' + WRITE_FOLDER + ' is the first Game path'
+    atomic_write(manifest_path, json.dumps(dict(owner=WRITE_OWNER), indent=2) + '\n')
+    updated = mount_gameinfo(current, False, WRITE_FOLDER, WRITE_COMMENT)
+    updated = mount_gameinfo(updated, True, WRITE_FOLDER, WRITE_COMMENT)
+    backup = info.with_name(info.name + '.' + WRITE_FOLDER + '_backup')
+    if not backup.exists():
+        with backup.open('x', encoding='utf-8', newline='') as output: output.write(current)
+    atomic_write(info, updated)
+    return 'prepared; RESTART CS2 ONCE so the placeholder becomes the first Game path'

@@ -1,8 +1,10 @@
 #include "cs2_gc/armory_catalog.h"
+#include "cs2_gc/case_opening.h"
 #include "cs2_gc/message_queue.h"
 #include "cs2_gc/progression.h"
 #include "cs2_gc/schema.h"
 #include <array>
+#include <cmath>
 #include <atomic>
 #include <iostream>
 #include <limits>
@@ -249,6 +251,122 @@ void SchemaCrates()
     Check(schema->LootTiers("missing").empty(), "unknown list");
 }
 
+constexpr const char *OpeningFixture = R"("items_game"
+{
+    "rarities" { "rare" { "value" "3" } "mythical" { "value" "4" } "legendary" { "value" "5" } "ancient" { "value" "6" } }
+    "prefabs"
+    {
+        "weapon_case_base" { }
+        "weapon_case" { "prefab" "weapon_case_base" "associated_item" "50" }
+    }
+    "items"
+    {
+        "50" { "name" "key" }
+        "51" { "name" "other_key" }
+        "60" { "name" "the_case" "prefab" "weapon_case"
+               "attributes" { "set supply crate series" { "value" "1" } } }
+        "7" { "name" "weapon_ak47" }
+        "9" { "name" "weapon_awp" }
+    }
+    "paint_kits"
+    {
+        "100" { "name" "kit_a" "wear_remap_min" "0.10" "wear_remap_max" "0.20" }
+        "101" { "name" "kit_b" "wear_remap_min" "0.00" "wear_remap_max" "1.00" }
+        "102" { "name" "kit_bad" "wear_remap_min" "0.90" "wear_remap_max" "0.10" }
+    }
+    "revolving_loot_lists" { "1" "lootlist" }
+    "client_loot_lists"
+    {
+        "lootlist" { "box_rare" "1" "box_mythical" "1" "box_legendary" "1" "box_ancient" "1" }
+        "box_rare" { "[kit_a]weapon_ak47" "1" "[kit_b]weapon_awp" "1" "[kit_missing]weapon_awp" "1" }
+        "box_mythical" { "[kit_b]weapon_ak47" "1" }
+        "box_legendary" { "[kit_bad]weapon_ak47" "1" }
+        "box_ancient" { "[kit_a]weapon_awp" "1" }
+    }
+})";
+
+void CaseOpening()
+{
+    const auto schema = Schema::Load(OpeningFixture);
+    Check(schema.has_value(), "opening fixture loads");
+    Check(schema->ResolveLootItem("[kit_a]weapon_ak47").has_value(), "resolves");
+    Check(!schema->ResolveLootItem("[kit_missing]weapon_awp") && !schema->ResolveLootItem("[kit_a]weapon_nope") &&
+              !schema->ResolveLootItem("kit_a") && !schema->ResolveLootItem("[kit_bad]weapon_ak47"),
+          "unresolvable entries rejected");
+    const auto tiers = schema->LootTiers("lootlist");
+    Check(tiers.size() == 4 && tiers[0].rarity == 3 && tiers[3].rarity == 6, "tier rarity from suffix");
+
+    std::mt19937_64 engine(12345);
+    const RandomSource random = [&] { return engine(); };
+    const std::array<std::uint32_t, 4> expected{7992, 1598, 320, 64};
+
+    // Failures leave the inventory untouched.
+    Inventory inventory;
+    const auto crate = inventory.Add({0, 60});
+    const auto key = inventory.Add({0, 50});
+    const auto wrong = inventory.Add({0, 51});
+    const auto notCrate = inventory.Add({0, 7});
+    Check(OpenCase(inventory, *schema, 999, key, random).error == OpenError::NoSuchCrate, "unknown crate");
+    Check(OpenCase(inventory, *schema, notCrate, key, random).error == OpenError::NoSuchCrate, "not a crate");
+    Check(OpenCase(inventory, *schema, crate, 999, random).error == OpenError::NoSuchKey, "unknown key");
+    Check(OpenCase(inventory, *schema, crate, wrong, random).error == OpenError::WrongKey, "wrong key");
+    Check(inventory.Items().size() == 4, "failed opens change nothing");
+
+    // Statistical check on many opens, each with a fresh crate and key.
+    std::array<int, 4> counts{};
+    int statTrak = 0;
+    constexpr int Opens = 40000;
+    for (int i = 0; i < Opens; ++i)
+    {
+        Inventory inv;
+        const auto c = inv.Add({0, 60});
+        const auto k = inv.Add({0, 50});
+        const OpenResult result = OpenCase(inv, *schema, c, k, random);
+        Check(result.error == OpenError::None, "open succeeds");
+        Check(inv.Items().size() == 1 && !inv.Find(c) && !inv.Find(k) && inv.Find(result.item.id), "crate and key consumed, item granted");
+        const InventoryItem &item = result.item;
+        Check(item.seed >= 1 && item.seed <= 1000 && item.wear >= 0.0f && item.wear <= 1.0f, "seed and wear range");
+        if (item.defIndex == 7 && item.paintKitIndex == 100)
+        {
+            ++counts[0];
+            Check(item.wear >= 0.10f && item.wear <= 0.20f, "wear within kit range");
+        }
+        else if (item.paintKitIndex == 101 && item.defIndex == 9)
+            ++counts[0];
+        else if (item.defIndex == 7 && item.paintKitIndex == 101)
+            ++counts[1];
+        else if (item.defIndex == 9 && item.paintKitIndex == 100)
+            ++counts[3];
+        else
+            Check(false, "item not from the loot list");
+        statTrak += item.statTrak;
+    }
+    // The legendary tier only holds an invalid kit, so it is skipped and the others renormalise.
+    const double total = expected[0] + expected[1] + expected[3];
+    const double tolerance = 0.015;
+    Check(std::abs(counts[0] / double(Opens) - expected[0] / total) < tolerance, "mil-spec odds");
+    Check(std::abs(counts[1] / double(Opens) - expected[1] / total) < tolerance, "restricted odds");
+    Check(std::abs(counts[3] / double(Opens) - expected[3] / total) < tolerance, "covert odds");
+    Check(std::abs(statTrak / double(Opens) - 0.1) < tolerance, "StatTrak rate");
+
+    // A case whose loot list resolves to nothing fails cleanly without consuming anything.
+    const auto empty = Schema::Load(R"("items_game"
+    {
+        "rarities" { "rare" { "value" "3" } }
+        "prefabs" { "weapon_case_base" { } "weapon_case" { "prefab" "weapon_case_base" "associated_item" "50" } }
+        "items" { "50" { "name" "k" } "60" { "prefab" "weapon_case" "name" "c"
+                  "attributes" { "set supply crate series" { "value" "1" } } } }
+        "revolving_loot_lists" { "1" "ll" }
+        "client_loot_lists" { "ll" { "x_rare" "1" } "x_rare" { "[nokit]weapon_none" "1" } }
+    })");
+    Inventory inv;
+    const auto c = inv.Add({0, 60});
+    const auto k = inv.Add({0, 50});
+    Check(empty.has_value() && empty->FindCrate(60), "empty fixture loads");
+    Check(OpenCase(inv, *empty, c, k, random).error == OpenError::EmptyLootList && inv.Items().size() == 2,
+          "nothing consumed");
+}
+
 int main()
 {
     try
@@ -259,6 +377,7 @@ int main()
         Armory(); std::cout << "PASS Armory categories, search and pagination\n";
         KeyValuesParsing(); std::cout << "PASS KeyValues parser and malformed input\n";
         SchemaCrates(); std::cout << "PASS schema crates, keys and loot tiers\n";
+        CaseOpening(); std::cout << "PASS case opening odds and atomic consumption\n";
         return 0;
     }
     catch (const std::exception &error)

@@ -26,7 +26,19 @@ struct CrateInfo
 struct LootTier
 {
     std::string name;                // e.g. crate_community_35_rare
+    std::uint32_t rarity{};          // rarities value from the tier name suffix; zero if unknown
     std::vector<std::string> items;  // "[paintkit]weapon_class" style entries, unexpanded
+};
+
+// One resolved "[paintkit]weapon_class" loot entry.
+struct LootItem
+{
+    std::uint32_t weaponDefIndex{};
+    std::uint32_t paintKitIndex{};
+    std::string weaponClass;
+    std::string paintKitName;
+    float wearMin{0.0f};
+    float wearMax{1.0f};
 };
 
 // Read-only view over the target client's items_game.txt. Built from the real
@@ -49,6 +61,10 @@ public:
     // tiers are expanded; cycles and excessive depth are cut off.
     std::vector<LootTier> LootTiers(std::string_view lootListName) const;
 
+    // Fails (nothing returned) when the entry is not "[kit]class", or the weapon
+    // or paint kit is missing from the schema, so nothing is guessed.
+    std::optional<LootItem> ResolveLootItem(std::string_view entry) const;
+
 private:
     Schema() = default;
 
@@ -56,5 +72,8 @@ private:
     std::vector<CrateInfo> m_crates;
     std::unordered_map<std::string, const KvNode *> m_lootLists;
     std::unordered_map<std::uint32_t, std::size_t> m_crateIndex;
+    std::unordered_map<std::string, std::uint32_t> m_itemsByName;
+    std::unordered_map<std::string, const KvNode *> m_paintKits; // by name; key is the index
+    std::unordered_map<std::string, std::uint32_t> m_rarities;
 };
 }

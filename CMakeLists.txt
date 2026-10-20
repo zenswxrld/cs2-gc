@@ -28,6 +28,7 @@ add_library(cs2_gc_core STATIC
     cs2_gc/src/live_inventory.cpp
     cs2_gc/src/schema.cpp
     cs2_gc/src/trade_up.cpp
+    cs2_gc/src/terminal.cpp
     cs2_gc/src/wire.cpp
     cs2_gc/src/message_queue.cpp
     cs2_gc/src/progression.cpp)
@@ -46,6 +47,20 @@ if(BUILD_TESTING)
 
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_FOUND)
+        add_test(NAME cs2_native_ui COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_native_ui.py -v)
+        set_tests_properties(cs2_native_ui PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_armory_rotation COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_armory_rotation_catalog.py -v)
+        set_tests_properties(cs2_armory_rotation PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_native_tradeups COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_native_tradeups.py -v)
+        set_tests_properties(cs2_native_tradeups PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_rewards_runtime COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_rewards_runtime.py -v)
+        set_tests_properties(cs2_rewards_runtime PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_gameplay_options COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_gameplay_options.py -v)
+        set_tests_properties(cs2_gameplay_options PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_gsi_rewards COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_gsi_rewards.py -v)
+        set_tests_properties(cs2_gsi_rewards PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_test_item_grants COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_test_item_grants.py -v)
+        set_tests_properties(cs2_test_item_grants PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_client_inspection
             COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_inspect_cs2.py -v)
         set_tests_properties(cs2_client_inspection PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -67,6 +82,7 @@ endif()
 # Diagnostic stand-in steam_api64.dll (Windows only, off by default). Needs a .def generated
 # from the game's own steam_api64.dll with tools/make_proxy_def.py.
 option(CS2_GC_BUILD_PROXY "Build the diagnostic steam_api64.dll stand-in" OFF)
+option(CS2_GC_DEBUG_TOOLS "Enable test console controls and build the automatic debug launcher" OFF)
 if(CS2_GC_BUILD_PROXY)
     if(NOT WIN32)
         message(FATAL_ERROR "CS2_GC_BUILD_PROXY is Windows only")
@@ -75,9 +91,25 @@ if(CS2_GC_BUILD_PROXY)
     if(NOT EXISTS "${CS2_GC_PROXY_DEF}")
         message(FATAL_ERROR "Set CS2_GC_PROXY_DEF to the generated .def file")
     endif()
+    file(READ "${CS2_GC_PROXY_DEF}" PROXY_EXPORTS)
+    foreach(SERVER_EXPORT SteamGameServer_RunCallbacks SteamInternal_FindOrCreateGameServerInterface)
+        if(NOT PROXY_EXPORTS MATCHES "${SERVER_EXPORT}" OR PROXY_EXPORTS MATCHES "${SERVER_EXPORT}[ \t]*=")
+            message(FATAL_ERROR "Regenerate the proxy .def with tools/make_proxy_def.py: ${SERVER_EXPORT} must be intercepted for bot servers")
+        endif()
+    endforeach()
     add_library(cs2_gc_proxy SHARED cs2_gc/proxy/steam_api_proxy.cpp "${CS2_GC_PROXY_DEF}")
     set_target_properties(cs2_gc_proxy PROPERTIES OUTPUT_NAME steam_api64 PREFIX "")
     target_link_libraries(cs2_gc_proxy PRIVATE cs2_gc_core)
+    if(CS2_GC_DEBUG_TOOLS)
+        target_compile_definitions(cs2_gc_proxy PRIVATE CS2_GC_DEBUG_TOOLS=1)
+        add_executable(cs2_gc_debug WIN32 cs2_gc/proxy/debug_launcher.cpp)
+        target_link_libraries(cs2_gc_debug PRIVATE advapi32)
+        if(NOT MSVC)
+            target_link_options(cs2_gc_debug PRIVATE -static -municode)
+        endif()
+    endif()
+    add_custom_command(TARGET cs2_gc_proxy POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/data/gold_pools.txt $<TARGET_FILE_DIR:cs2_gc_proxy>/gold_pools.txt)
     if(NOT MSVC)
         target_link_options(cs2_gc_proxy PRIVATE -static)
     endif()

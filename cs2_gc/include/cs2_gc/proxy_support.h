@@ -10,6 +10,8 @@ namespace cs2_gc
 {
 // True when the command line has `argument` as a whole token (ASCII case-insensitive).
 // Tokens are separated by whitespace; double quotes group text, as on Windows.
+std::wstring QuoteWindowsArgument(std::wstring_view argument);
+
 bool CommandLineHasArgument(std::string_view commandLine, std::string_view argument);
 
 // Decodes the Steamworks flat-API wrapper `mov rax,[rcx]; jmp [rax+N]` and returns the

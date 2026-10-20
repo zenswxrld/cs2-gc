@@ -19,7 +19,9 @@ public:
     Armory(const Schema &schema, std::uint32_t campaignId, std::uint32_t credits);
 
     std::uint32_t Balance() const { return m_balance; }
+    void SetBalance(std::uint32_t credits) { m_balance = credits; }
     std::uint32_t CampaignId() const { return m_campaignId; }
+    void SetRotationOffset(std::uint32_t offset) { m_rotationOffset = offset; }
 
     enum class Status
     {
@@ -28,6 +30,7 @@ public:
         UnknownGoods,
         CostMismatch,    // the client's cost is not the schema's
         NotEnoughCredits,
+        NotInRotation,
         NothingToGrant,  // the goods resolve to no item
     };
 
@@ -37,12 +40,22 @@ public:
         InventoryItem item; // the granted item, already added to `inventory`, on success
     };
 
+    struct Rotation
+    {
+        std::uint64_t endsAt{};
+        std::vector<std::uint32_t> redeemIds;
+    };
+    // Existing CS2 Howl finish, a local offer identity derived from its schema loot-entry name.
+    static constexpr std::string_view HowlEntry = "[cu_m4a1_howling]weapon_m4a1";
+    std::optional<ArmoryRedeemable> HowlOffer(const GameplayConfig &config) const;
+    Rotation RotationAt(std::uint64_t unixSeconds, const GameplayConfig &config) const;
     Result Redeem(const RedeemRequest &request, LiveInventory &inventory, const RandomSource &random,
-                  const CaseOdds &odds = {});
+                  const CaseOdds &odds = {}, std::optional<std::uint64_t> unixSeconds = std::nullopt);
 
 private:
     const Schema &m_schema;
     std::uint32_t m_campaignId;
     std::uint32_t m_balance;
+    std::uint32_t m_rotationOffset{};
 };
 }

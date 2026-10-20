@@ -22,6 +22,7 @@ struct GcEndpointConfig
     SoOwner owner;
     std::uint64_t cacheVersion{};
     std::vector<SoObjectType> cacheTypes; // initial subscribed objects, if any
+    std::function<void(std::string_view)> diagnostic;
 };
 
 // An in-process stand-in for the GC with the same three calls as ISteamGameCoordinator
@@ -59,6 +60,12 @@ public:
     // the capture showed being answered gets the recorded reply. Message types with no
     // recording are left exactly as they were. The recorded bodies belong to one account.
     void EnableReplay(std::shared_ptr<const ReplayStore> store);
+    // Enable after replay so local Premier overrides the recorded account's rank.
+    void EnableLocalPremier(const LocalPremier &rank);
+    bool SetLocalPremier(const LocalPremier &rank);
+    // Separate bot-server endpoint; never share its queue with the game client's GC.
+    void EnableServerInventory(std::shared_ptr<LiveInventory> inventory);
+    void RefreshServerInventory();
 
     // Extra encoded items (CSOEconItem) to add to a replayed Welcome. Called at each Hello with
     // the cache owner's SteamID64. If the recorded Welcome cannot be patched it is sent as
@@ -83,6 +90,14 @@ public:
     // after each so the caller can save.
     void EnableContainers(std::shared_ptr<LiveInventory> inventory, std::shared_ptr<const Schema> schema,
                           RandomSource random, std::function<void()> afterChange);
+    // Consume cumulative XP from the local GSI bridge, idempotently, on the game's callback thread.
+    bool ApplyEarnedXp(std::uint64_t cumulativeXp, const std::function<void()> &afterChange);
+    bool ApplyConsoleControl(std::uint64_t cumulativeStars, std::uint32_t rotationOffset,
+                             const std::function<void()> &afterChange);
+    bool ApplyMatchRewards(std::uint64_t completed, const std::function<void()> &afterChange);
+    bool ApplyLevelRewards(const std::function<void()> &afterChange);
+    // Local helper fallback when the native terminal checkout sends no purchase request.
+    bool AcceptLocalTerminal(std::uint64_t gameId, const std::function<void()> &afterChange);
 
     // Sell items for free. A valid purchase (every line an item `canSell` accepts, a sane quantity)
     // is answered with a transaction id; the proxy then reports the authorisation through the
@@ -111,6 +126,9 @@ public:
 
 private:
     void OnClientHello(const FrameView &frame);
+    void ReplyLocalPremier(); // caller holds m_mutex
+    void NotifyRewardDrops(const std::vector<InventoryItem> &drops); // caller holds m_mutex
+    std::optional<std::uint64_t> AcceptTerminalLocked(std::uint64_t gameId);
 
     GcEndpointConfig m_config;
     std::shared_ptr<const ReplayStore> m_replay;
@@ -122,8 +140,11 @@ private:
     ItemProvider m_itemProvider;
     bool m_dropRecordedItems{};
     std::optional<std::uint32_t> m_armoryCredits;
+    std::optional<LocalPremier> m_premier;
     std::shared_ptr<LiveInventory> m_live;
     std::shared_ptr<Armory> m_armory;
+    bool m_serverReady{};
+    std::vector<std::vector<std::uint8_t>> m_serverItems;
     std::uint64_t m_soVersion{1};
 
     struct Transaction
@@ -132,6 +153,7 @@ private:
         std::vector<StorePurchaseRequest::Line> lines;
     };
     std::mutex m_txnMutex;
+    RandomSource m_rewardRandom;
     std::shared_ptr<const Schema> m_schema; // set by EnableContainers; the sticker handler uses it for slabs
     std::vector<std::uint8_t> m_xpShop; // the current Armory pass object (credits and activated passes)
     std::optional<Transaction> m_txn;

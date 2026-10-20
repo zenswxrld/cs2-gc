@@ -278,6 +278,12 @@ std::optional<StorePurchaseRequest> DecodeStorePurchaseRequest(std::span<const s
                 return std::nullopt;
             if (g.number == 2 && !U32(g, line.quantity))
                 return std::nullopt;
+            if (g.number == 5)
+            {
+                if (g.wire != 0)
+                    return std::nullopt;
+                line.supplementalData = g.value;
+            }
         }
         if (inner.Failed())
             return std::nullopt;
@@ -316,12 +322,24 @@ std::optional<OpenCrateRequest> DecodeOpenCrateRequest(std::span<const std::uint
     PbReader reader(body);
     PbField f;
     while (reader.Next(f))
+    {
         if (f.number == 1 || f.number == 2)
         {
             if (f.wire != 0)
                 return std::nullopt;
             (f.number == 1 ? request.keyItemId : request.crateItemId) = f.value;
         }
+        else if (f.number == 4 || f.number == 5)
+        {
+            std::uint32_t value = 0;
+            if (!U32(f, value))
+                return std::nullopt;
+            if (f.number == 4)
+                request.pointsRemaining = value;
+            else
+                request.volatileLimit = value;
+        }
+    }
     if (reader.Failed() || request.crateItemId == 0)
         return std::nullopt;
     return request;

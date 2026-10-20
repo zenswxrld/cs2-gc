@@ -92,7 +92,7 @@ def find_entry(sections, weapon, kit):
     return {
         "def_index": int(def_index),
         "paint_kit": int(kit_index),
-        "rarity": min(kit_rarity + weapon_rarity - 1, COVERT),
+        "rarity": kit_rarity if kit_rarity > COVERT else min(kit_rarity + weapon_rarity - 1, COVERT),
         "wear_min": float(kit_values.get("wear_remap_min", "0")),
         "wear_max": float(kit_values.get("wear_remap_max", "1")),
     }

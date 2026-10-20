@@ -12,13 +12,62 @@
 namespace cs2_gc
 {
 // The inventory as the game sees it during a session: the items plus which item is in which loadout
-// slot. Slots are kept in memory only.
+// slot. Slots save with the inventory and are restored for client/server welcomes.
 class LiveInventory
 {
 public:
     explicit LiveInventory(Inventory inventory);
 
     const Inventory &Items() const { return m_inventory; }
+    std::vector<std::vector<std::uint8_t>> EncodedServerItems(std::uint32_t accountId) const;
+    struct TerminalChange
+    {
+        InventoryItem terminal;
+        std::optional<InventoryItem> offer;
+        std::vector<InventoryItem> removed;
+        bool unsealed{};
+        bool exhausted{};
+    };
+    std::optional<TerminalChange> AdvanceTerminal(const Schema &schema, const OpenCrateRequest &request,
+                                                const RandomSource &random, std::uint32_t now);
+    std::optional<InventoryItem> TerminalOffer(const Schema &schema, std::uint64_t gameId) const;
+    std::optional<TerminalChange> AcceptTerminal(const Schema &schema, std::uint64_t gameId);
+    void SetArmoryCredits(std::uint32_t credits) { m_inventory.SetArmoryCredits(credits); }
+    bool ApplyConsoleStars(std::uint64_t cumulative) { return m_inventory.ApplyConsoleStars(cumulative); }
+    void SetArmoryPity(const std::string &collection, std::uint32_t misses) { m_inventory.SetArmoryPity(collection, misses); }
+    std::optional<std::vector<InventoryItem>> GrantMatchRewards(const Schema &schema, std::uint64_t completed,
+                                                               const RandomSource &random)
+    {
+        if (completed <= m_inventory.MatchRewardTotal()) return std::nullopt;
+        if (!m_inventory.Gameplay().match_drops_enabled)
+        {
+            m_inventory.MarkMatchRewarded();
+            return std::vector<InventoryItem>{};
+        }
+        auto drops = RollMatchDrops(schema, random, m_inventory.Gameplay());
+        if (!drops) return std::nullopt;
+        for (auto &item : *drops) item = AddItem(item);
+        m_inventory.MarkMatchRewarded();
+        return drops;
+    }
+    bool ApplyEarnedXp(std::uint64_t cumulativeXp) { return m_inventory.ApplyEarnedXp(cumulativeXp); }
+    std::optional<std::vector<InventoryItem>> GrantLevelRewards(const Schema &schema, const RandomSource &random)
+    {
+        if (m_inventory.LevelRewardTotal() >= m_inventory.Progress().level - 1) return std::nullopt;
+        if (!m_inventory.Gameplay().level_drops_enabled)
+        {
+            m_inventory.MarkLevelRewarded();
+            return std::vector<InventoryItem>{};
+        }
+        auto config = m_inventory.Gameplay();
+        config.match_drops_enabled = 1; // level rewards are independent of the match-drop switch
+        config.match_drop_count = config.level_drop_count;
+        auto drops = RollMatchDrops(schema, random, config);
+        if (!drops) return std::nullopt;
+        for (auto &item : *drops) item = AddItem(item);
+        m_inventory.MarkLevelRewarded();
+        return drops;
+    }
 
     // Activates one more Armory Pass, starting at `xp`; false when MaxXpTracks are already active.
     bool AddXpTrack(std::uint32_t xp);
@@ -129,6 +178,10 @@ public:
     // (as if it were a weapon), saved it, and the game crashed on it. Returns how many items were repaired.
     std::size_t RepairSlabs(const Schema &schema);
 
+    // Earlier Armory rolls incorrectly assigned hidden StatTrak to collection-only finishes.
+    // Clear those flags on known collection skins, preserving valid case finishes and unknown items.
+    std::size_t RepairCollectionStatTrak(const Schema &schema);
+
     struct Sealed
     {
         InventoryItem charm;    // the new charm: the slab with the sticker in it
@@ -143,15 +196,6 @@ public:
 
 private:
     std::uint32_t PositionOf(std::uint64_t ourId) const;
-    struct Slot
-    {
-        std::uint32_t classId{};
-        std::uint32_t slotId{};
-        std::uint64_t itemId{};
-        std::uint32_t itemDefinition{};
-    };
-
     Inventory m_inventory;
-    std::vector<Slot> m_slots;
 };
 }

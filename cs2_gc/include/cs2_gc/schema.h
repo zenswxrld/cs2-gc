@@ -6,11 +6,12 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace cs2_gc
 {
-enum class CrateKind { Case, Capsule, GraffitiBox, Pins, Other }; // Pins: collectible pin capsules, keyless
+enum class CrateKind { Case, Capsule, GraffitiBox, Pins, Terminal, Other }; // Pins: collectible pin capsules, keyless
 
 struct CrateInfo
 {
@@ -57,6 +58,7 @@ struct ArmoryRedeemable
     std::uint32_t points{};      // cost in Armory credits
     std::string itemName;        // an item name, or "lootlist:<client loot list>"
     std::uint32_t redeemId{};
+    std::string rotationSlot; // generated catalogue: case/capsule/charm/sticker/collection/limited
 };
 
 std::uint32_t Crc32(std::string_view text);
@@ -103,6 +105,15 @@ public:
     const std::vector<SkinRef> &CollectionSkins(const std::string &collection) const;
     std::size_t CollectionCount() const { return m_collectionSkins.size(); }
 
+    // A finish offered by a keyed weapon case can have StatTrak; collection-only drops cannot.
+    bool CanBeStatTrak(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
+    // Supplement server-only rare pools with a versioned catalogue, validating every definition/finish.
+    bool LoadGoldPools(std::string_view text);
+    std::vector<SkinRef> GoldOutcomes(const std::string &collection, bool statTrak) const;
+    std::vector<SkinRef> CrateGoldOutcomes(std::uint32_t defIndex) const;
+    bool IsKnife(std::uint32_t defIndex) const;
+    std::vector<SkinRef> MatchRewardSkins() const;
+
     // A skin as a loot entry (finish name and wear range) so a trade-up can mint it. Nothing if the
     // weapon or finish is unknown.
     std::optional<LootItem> SkinAsLootItem(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
@@ -130,7 +141,7 @@ public:
     std::optional<std::uint32_t> ItemDefIndex(std::string_view name) const;
 
     // Rarity value of a paint-kit weapon as the game shows it: the finish's rarity plus the
-    // weapon's base rarity minus one, capped at 6 (Covert). Checked against the target build:
+    // weapon's base rarity minus one, capped at 6 (Covert), except explicit Contraband finish rarity is retained. Checked against the target build:
     // AK-47 (base 2) with a rarity-4 finish is Classified (5), with a rarity-5 finish Covert (6).
     // Nothing if the weapon, finish or either rarity is missing from the schema.
     std::optional<std::uint32_t> SkinRarity(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
@@ -155,6 +166,8 @@ private:
     std::vector<const KvNode *> m_itemSets;
     std::unordered_map<std::string, std::vector<SkinRef>> m_collectionSkins;
     std::unordered_map<std::uint64_t, std::vector<std::string>> m_skinCollections; // weapon << 32 | kit
+    std::unordered_set<std::uint64_t> m_statTrakSkins;
+    std::unordered_map<std::string, std::vector<SkinRef>> m_goldPools;
     std::unordered_map<std::uint32_t, std::string> m_weaponNames;                  // definition -> class name
 };
 }

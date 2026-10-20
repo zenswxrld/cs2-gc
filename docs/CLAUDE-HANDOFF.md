@@ -424,3 +424,36 @@ Full build-25966348 schema loaded successfully, all supplementary rare pools val
   is now drops-only and hides itself when nothing dropped. Not verified live.
   `bot_prefix ""` added to the launcher cfg and premier bots cfg to try to drop "[BOT]" (cvar exists in
   server.dll; whether it is the source of the tag is unverified).
+
+### Knife recolours + Black Market Case (Claude, in progress - not built yet)
+
+User explicitly wants (20 Oct 2026): OfflineCS-style knife recolours (CSOffline `examples/make_recolors.py`,
+646 `rk_` kits), existing abstract finishes on knives (Twilight Galaxy = am_aqua_flecks, Gold Brick =
+am_gold_brick, Blue Phosphor = am_m4a1s_bluesmoke, ...) plus recolours of those, and one gold-only
+"Black Market Case" (CSOffline icon `examples/case_icons/crate_csgogc_black_market.png`) in the Armory limited
+slot. This needs an AGENTS.md exception (custom paint kits / one case) - add it when implementing.
+
+Verified on the user's own files (cs2_gc_extracted_3):
+- CS2 paint kits in items_game have no colours. A kit either has `composite_material_path` or, for legacy kits,
+  uses `weapons/paints/legacy/<name>.vcompmat`. That vcompmat_c (RED2+DATA, KV3 v5 LZ4) only includes
+  `_shared_paint_generic.vcompmat` and points `CONTAINER_SOURCE_TYPE_SPECIFIC_MATERIAL` at
+  `materials/models/weapons/customization/paints/vmats/<name>.vmat`.
+- That vmat_c (RERL, RED2, DATA, INSG) holds `m_vectorParams` g_vColor0..g_vColor3 as 0..1 float4 - the same
+  four colours CSOffline changed (0..255 there). Style is `F_PAINT_STYLE` in m_intParams.
+- New tools/kv3.py reads KV3 v5 (none/LZ4) and writes it uncompressed, plus resource containers. Round trip
+  verified on all six user samples (not committed: proprietary). tests/test_kv3.py is synthetic.
+Plan: native_finishes.py at prepare time reads base vcompmat_c/vmat_c from the installed VPK, writes
+`rk_<base>_<theme>` copies (vmat: new m_materialName + recoloured g_vColor*, vcompmat: new specific material
+path) into a cs2_gc_finishes VPK folder; adds paint_kits (+paint_kits_rarity) entries with
+composite_material_path in the native_tradeups items_game override (run before patch_catalogue so the GC, which
+loads the mounted native schema, sees them); names via a resource/csgo_english.txt copy with added
+`PaintKit_rk_*_Tag` tokens; Black Market crate cloned from an existing case with its own revolving loot list
+(unusual tier only) and an Armory limited row. Open questions to test live with a small batch first:
+(1) do missing default_generated inventory icons render/fall back, (2) does a VPK resource/csgo_english.txt
+override load, (3) the case icon needs a vtex_c (sample: user's default_generated vtex_c, DATA v1 512x384 fmt 28,
+image data appended after the resource; VRF Texture.cs has the layout).
+
+User's next list after this: career/achievements + collections tab (not in Armory), souvenir packages, bot
+difficulty by rank, bot clan tags/chat/skins, music kit StatTrak/MVP, viewmodel settings + in-game give
+command (no default RCON exposure). Still open: random bot names did not apply (need cs2_gc_prepare.log),
+"[BOT]" tag (17i tries `bot_prefix ""`), confirm 17i stock XP/rating panels live.

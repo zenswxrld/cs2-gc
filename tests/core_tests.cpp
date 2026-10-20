@@ -4,6 +4,8 @@
 #include "cs2_gc/progression.h"
 #include "cs2_gc/schema.h"
 #include <array>
+#include <filesystem>
+#include <fstream>
 #include <cmath>
 #include <atomic>
 #include <iostream>
@@ -367,6 +369,55 @@ void CaseOpening()
           "nothing consumed");
 }
 
+void InventoryPersistence()
+{
+    Inventory inventory;
+    inventory.Add({0, 7, 100, 0.123456789f, 42, true});
+    const auto doomed = inventory.Add({0, 9, 0, 0.0f, 1, false});
+    inventory.Add({0, 4001, 0, 1.0f, 1000, false});
+    inventory.Remove(doomed); // ids must not be reused after a removal
+
+    const auto restored = Inventory::FromText(inventory.ToText());
+    Check(restored && restored->Items().size() == 2, "round trip count");
+    Check(restored->Items()[0].wear == inventory.Items()[0].wear && restored->Items()[0].statTrak &&
+              restored->Items()[0].seed == 42 && restored->Items()[1].defIndex == 4001, "round trip fields exact");
+    Inventory next = *restored;
+    Check(next.Add({0, 1, 0, 0.0f, 1, false}) == 4, "id counter survives, removed ids not reused");
+
+    // Strict rejection: nothing partial is ever loaded.
+    const auto bad = [&](const char *replace, const char *with) {
+        std::string text = inventory.ToText();
+        const std::size_t at = text.find(replace);
+        Check(at != std::string::npos, "test mutation applies");
+        text.replace(at, std::string_view(replace).size(), with);
+        return Inventory::FromText(text).has_value();
+    };
+    Check(!bad("\"wear\"\t\"0.12345679\"", "\"wear\"\t\"1.5\""), "wear above 1");
+    Check(!bad("\"wear\"\t\"0.12345679\"", "\"wear\"\t\"nan\""), "nan wear");
+    Check(!bad("\"seed\"\t\"42\"", "\"seed\"\t\"1001\""), "seed above 1000");
+    Check(!bad("\"stattrak\"\t\"1\"", "\"stattrak\"\t\"2\""), "stattrak flag");
+    Check(!bad("\"def_index\"\t\"7\"", "\"def_index\"\t\"0\""), "zero def index");
+    Check(!bad("\"def_index\"\t\"7\"", "\"def_index\"\t\"7x\""), "trailing junk");
+    Check(!bad("\"3\"\n", "\"1\"\n"), "duplicate id");
+    Check(!bad("\"next_id\"\t\"4\"", "\"next_id\"\t\"3\""), "id at or above next_id");
+    Check(!Inventory::FromText("\"inventory\" { }") && !Inventory::FromText("") && !Inventory::FromText("\"inventory\" {"),
+          "missing sections and truncation");
+    Check(Inventory::FromText(Inventory{}.ToText()).has_value(), "empty inventory round trips");
+
+    const auto dir = std::filesystem::temp_directory_path() / "cs2_gc_inventory_test";
+    std::filesystem::create_directories(dir);
+    const auto file = dir / "inventory.txt";
+    std::filesystem::remove(file);
+    Check(!Inventory::Load(file), "missing file");
+    Check(inventory.Save(file) && !std::filesystem::exists(dir / "inventory.txt.tmp"), "save, no temp left");
+    Check(Inventory::Load(file) && Inventory::Load(file)->Items().size() == 2, "load from disk");
+    Check(next.Save(file) && Inventory::Load(file)->Items().size() == 3, "overwrite existing");
+    Check(!inventory.Save(dir / "no_such_dir" / "inventory.txt"), "unwritable path reports failure");
+    std::ofstream(file, std::ios::trunc) << "\"inventory\" { \"next_id\" \"2\" ";
+    Check(!Inventory::Load(file), "corrupt file rejected");
+    std::filesystem::remove_all(dir);
+}
+
 int main()
 {
     try
@@ -378,6 +429,7 @@ int main()
         KeyValuesParsing(); std::cout << "PASS KeyValues parser and malformed input\n";
         SchemaCrates(); std::cout << "PASS schema crates, keys and loot tiers\n";
         CaseOpening(); std::cout << "PASS case opening odds and atomic consumption\n";
+        InventoryPersistence(); std::cout << "PASS inventory persistence and strict loading\n";
         return 0;
     }
     catch (const std::exception &error)

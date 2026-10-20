@@ -50,10 +50,32 @@ struct ClientWelcome // CMsgClientWelcome (subset)
     std::vector<SoCacheSubscribed> outOfDateCaches;
 };
 
+struct SoSingleObject // CMsgSOSingleObject: Create / Update / Destroy
+{
+    std::int32_t typeId{};
+    std::vector<std::uint8_t> data;
+    std::uint64_t version{};
+    SoOwner owner;
+};
+
+struct SoMultipleObjects // CMsgSOMultipleObjects: UpdateMultiple
+{
+    struct Object
+    {
+        std::int32_t typeId{};
+        std::vector<std::uint8_t> data;
+    };
+    std::vector<Object> objects;
+    std::uint64_t version{};
+    SoOwner owner;
+};
+
 // Decoders reject malformed input outright; unknown fields are skipped.
 std::optional<ClientHello> DecodeClientHello(std::span<const std::uint8_t> body);
 std::optional<SoCacheSubscribed> DecodeSoCacheSubscribed(std::span<const std::uint8_t> body);
 std::optional<ClientWelcome> DecodeClientWelcome(std::span<const std::uint8_t> body);
+std::optional<SoSingleObject> DecodeSoSingleObject(std::span<const std::uint8_t> body);
+std::optional<SoMultipleObjects> DecodeSoMultipleObjects(std::span<const std::uint8_t> body);
 
 std::vector<std::uint8_t> EncodeSoCacheSubscribed(const SoCacheSubscribed &cache);
 std::vector<std::uint8_t> EncodeClientWelcome(const ClientWelcome &welcome);

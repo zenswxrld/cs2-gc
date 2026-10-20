@@ -48,6 +48,19 @@ struct Dumper
     std::string out;
     std::size_t limit;
     bool truncated{};
+    const std::vector<std::uint64_t> *extra{};
+
+    bool Secret(std::uint64_t value) const
+    {
+        if (LooksLikeSteamId(value))
+            return true;
+        if (!extra || value < 100000)
+            return false;
+        for (std::uint64_t secret : *extra)
+            if (secret == value)
+                return true;
+        return false;
+    }
 
     bool Room(std::size_t more)
     {
@@ -73,17 +86,15 @@ struct Dumper
             switch (f.wire)
             {
             case 0:
-                Line(depth, name + (LooksLikeSteamId(f.value) ? "varint <steamid redacted>"
-                                                              : "varint " + std::to_string(f.value)));
+                Line(depth, name + (Secret(f.value) ? "varint <id redacted>" : "varint " + std::to_string(f.value)));
                 break;
             case 1:
                 std::snprintf(buffer, sizeof buffer, "0x%016llx", static_cast<unsigned long long>(f.value));
-                Line(depth, name + (LooksLikeSteamId(f.value) ? "fixed64 <steamid redacted>"
-                                                              : std::string("fixed64 ") + buffer));
+                Line(depth, name + (Secret(f.value) ? "fixed64 <id redacted>" : std::string("fixed64 ") + buffer));
                 break;
             case 5:
                 std::snprintf(buffer, sizeof buffer, "0x%08x", static_cast<unsigned>(f.value));
-                Line(depth, name + "fixed32 " + buffer);
+                Line(depth, name + (Secret(f.value) ? "fixed32 <id redacted>" : std::string("fixed32 ") + buffer));
                 break;
             default:
                 if (f.bytes.empty())
@@ -110,7 +121,14 @@ struct Dumper
 
 std::string DumpProtobuf(std::span<const std::uint8_t> bytes, std::size_t maxBytes)
 {
-    Dumper dumper{{}, maxBytes, false};
+    DumpOptions options;
+    options.maxBytes = maxBytes;
+    return DumpProtobuf(bytes, options);
+}
+
+std::string DumpProtobuf(std::span<const std::uint8_t> bytes, const DumpOptions &options)
+{
+    Dumper dumper{{}, options.maxBytes, false, &options.redact};
     dumper.Message(bytes, 0);
     if (dumper.truncated)
         dumper.out += "<output truncated>\n";

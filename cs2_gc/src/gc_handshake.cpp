@@ -169,6 +169,70 @@ std::optional<ClientWelcome> DecodeClientWelcome(std::span<const std::uint8_t> b
     return welcome;
 }
 
+std::optional<SoSingleObject> DecodeSoSingleObject(std::span<const std::uint8_t> body)
+{
+    SoSingleObject object;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+    {
+        if (f.number == 2 && !I32(f, object.typeId))
+            return std::nullopt;
+        if (f.number == 3)
+        {
+            if (f.wire != 2)
+                return std::nullopt;
+            object.data.assign(f.bytes.begin(), f.bytes.end());
+        }
+        if (f.number == 4 && !Fixed64(f, object.version))
+            return std::nullopt;
+        if (f.number == 5 && (f.wire != 2 || !DecodeOwner(f.bytes, object.owner)))
+            return std::nullopt;
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    return object;
+}
+
+std::optional<SoMultipleObjects> DecodeSoMultipleObjects(std::span<const std::uint8_t> body)
+{
+    SoMultipleObjects result;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+    {
+        if (f.number == 2)
+        {
+            if (f.wire != 2)
+                return std::nullopt;
+            SoMultipleObjects::Object object;
+            PbReader inner(f.bytes);
+            PbField g;
+            while (inner.Next(g))
+            {
+                if (g.number == 1 && !I32(g, object.typeId))
+                    return std::nullopt;
+                if (g.number == 2)
+                {
+                    if (g.wire != 2)
+                        return std::nullopt;
+                    object.data.assign(g.bytes.begin(), g.bytes.end());
+                }
+            }
+            if (inner.Failed())
+                return std::nullopt;
+            result.objects.push_back(std::move(object));
+        }
+        else if (f.number == 3 && !Fixed64(f, result.version))
+            return std::nullopt;
+        else if (f.number == 6 && (f.wire != 2 || !DecodeOwner(f.bytes, result.owner)))
+            return std::nullopt;
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    return result;
+}
+
 std::vector<std::uint8_t> EncodeSoCacheSubscribed(const SoCacheSubscribed &cache)
 {
     PbWriter w;

@@ -10,11 +10,17 @@
 //    for it. Without that callback the game does not pick replies up.
 // Every interface name the game requests is logged, plus the GC messages it sends.
 //
+// Two modes (cs2_gc.cfg, "mode"). local, the default, answers the game from the in-process GC.
+// capture hands the game Valve's real GC unchanged and only records the traffic in both
+// directions, with the local account's identifiers redacted; it is for learning what the real
+// GC sends. Neither mode does anything without -insecure.
+//
 // It only activates when the game was launched with -insecure; otherwise every call goes to
 // the real library untouched and nothing is written. Windows x64 only.
 #include "cs2_gc/client_fingerprint.h"
 #include "cs2_gc/gc_endpoint.h"
 #include "cs2_gc/gc_msg_ids.h"
+#include "cs2_gc/gc_summary.h"
 #include "cs2_gc/protobuf_dump.h"
 #include "cs2_gc/proxy_support.h"
 
@@ -24,6 +30,7 @@
 #include <windows.h>
 #undef SendMessage // windows.h renames it; our methods keep their SDK names
 
+#include <atomic>
 #include <chrono>
 #include <vector>
 #include <filesystem>
@@ -129,6 +136,25 @@ std::string Indent(const std::string &text)
     return out;
 }
 
+// The local account's SteamID64 and 32-bit account ID, once known, are redacted from dumps.
+std::mutex g_redactMutex;
+std::vector<std::uint64_t> g_redact;
+
+void AddRedaction(std::uint64_t steamId)
+{
+    std::lock_guard lock(g_redactMutex);
+    g_redact = {steamId, steamId & 0xFFFFFFFFull};
+}
+
+DumpOptions CurrentOptions(std::size_t maxBytes)
+{
+    DumpOptions options;
+    options.maxBytes = maxBytes;
+    std::lock_guard lock(g_redactMutex);
+    options.redact = g_redact;
+    return options;
+}
+
 void LogFrame(Logger &log, const char *direction, std::uint32_t type, std::span<const std::uint8_t> bytes)
 {
     std::string text = std::string(direction) + " type=" + Describe(type) + " size=" + std::to_string(bytes.size());
@@ -136,10 +162,15 @@ void LogFrame(Logger &log, const char *direction, std::uint32_t type, std::span<
     if (ReadProtobufFrame(type, bytes, frame) == FrameError::None)
     {
         // Header and body are dumped through the redacting dumper; raw bytes are never logged.
-        const std::string header = DumpProtobuf(frame.header, 8 * 1024);
-        const std::string body = DumpProtobuf(frame.body, 48 * 1024);
+        const std::string header = DumpProtobuf(frame.header, CurrentOptions(8 * 1024));
+        // Inventory-sized shared-object messages are summarised (type IDs, counts, one sample
+        // each) instead of dumped whole.
+        const std::string summary = SummarizeSoMessage(type & ~ProtobufMask, frame.body, CurrentOptions(64 * 1024));
+        const std::string body = summary.empty() ? DumpProtobuf(frame.body, CurrentOptions(48 * 1024))
+                                                 : "<" + std::to_string(frame.body.size()) + " bytes; see summary>\n";
         text += "\n  header:\n" + (header.empty() ? "    <empty>\n" : Indent(header));
-        text += "  body:\n" + (body.empty() ? "    <empty>" : Indent(body));
+        text += "  body:\n" + (body.empty() ? "    <empty>\n" : Indent(body));
+        text += summary;
         if (!text.empty() && text.back() == '\n')
             text.pop_back();
     }
@@ -165,6 +196,7 @@ public:
             if (const std::uint64_t id = m_provider())
             {
                 m_gc.SetOwner({m_ownerType, id});
+                AddRedaction(id);
                 m_provider = nullptr;
                 m_log.Write("cache owner taken from the local Steam session (value not logged)");
             }
@@ -195,12 +227,50 @@ private:
     std::function<std::uint64_t()> m_provider;
 };
 
+// Wraps Valve's real GC interface: every call is passed straight through and only logged.
+class CaptureCoordinator final : public SteamGameCoordinatorInterface
+{
+public:
+    CaptureCoordinator(SteamGameCoordinatorInterface *real, Logger &log, std::function<void()> identity)
+        : m_real(real), m_log(log), m_identity(std::move(identity))
+    {
+    }
+
+    GCResult SendMessage(std::uint32_t type, const void *data, std::uint32_t size) override
+    {
+        m_identity();
+        if (data && size <= MaxMessageBytes)
+            LogFrame(m_log, ">> GAME->REAL GC", type, {static_cast<const std::uint8_t *>(data), size});
+        return m_real->SendMessage(type, data, size);
+    }
+
+    bool IsMessageAvailable(std::uint32_t *size) override { return m_real->IsMessageAvailable(size); }
+
+    GCResult RetrieveMessage(std::uint32_t *type, void *destination, std::uint32_t capacity,
+                             std::uint32_t *size) override
+    {
+        const GCResult result = m_real->RetrieveMessage(type, destination, capacity, size);
+        if (result == GCResult::OK && type && size && destination)
+        {
+            m_identity();
+            LogFrame(m_log, "<< REAL GC->GAME", *type, {static_cast<const std::uint8_t *>(destination), *size});
+        }
+        return result;
+    }
+
+private:
+    SteamGameCoordinatorInterface *m_real;
+    Logger &m_log;
+    std::function<void()> m_identity;
+};
+
 struct State
 {
     bool active{};
     std::wstring directory;
     Logger *log{};
     ProxyCoordinator *coordinator{};
+    ProxyMode mode{ProxyMode::Local};
     using FindFn = void *(__cdecl *)(int, const char *);
     using CreateFn = void *(__cdecl *)(const char *);
     FindFn realFind{};
@@ -229,6 +299,44 @@ void LogInterfaceRequest(const char *how, const char *version)
         state.log->Write("interface requested via " + entry);
 }
 
+// Capture mode: the account identifiers are learned from the local Steam session so they can
+// be redacted from everything that is logged.
+void ResolveIdentity()
+{
+    static std::atomic<bool> done{false};
+    State &state = Init();
+    if (done || !state.realGetUser || !state.realGetSteamId)
+        return;
+    void *user = state.realFind(state.realGetUser(), "SteamUser023");
+    const std::uint64_t id = user ? state.realGetSteamId(user) : 0;
+    if (!id)
+        return;
+    AddRedaction(id);
+    done = true;
+    state.log->Write("account identifiers read from the local Steam session; they are redacted (not logged)");
+}
+
+// Returns what the game should be given for the GC interface. Local mode: the in-process GC.
+// Capture mode: a logging wrapper around Valve's real one, which the caller obtained.
+void *GcInterfaceFor(State &state, void *realObject)
+{
+    if (state.mode == ProxyMode::Local)
+        return state.coordinator;
+    if (!realObject)
+        return nullptr;
+    static std::mutex mutex;
+    static std::map<void *, CaptureCoordinator *> wrappers;
+    std::lock_guard lock(mutex);
+    CaptureCoordinator *&wrapper = wrappers[realObject];
+    if (!wrapper)
+    {
+        wrapper = new CaptureCoordinator(static_cast<SteamGameCoordinatorInterface *>(realObject), *state.log,
+                                         [] { ResolveIdentity(); });
+        state.log->Write("capture: wrapping Valve's real SteamGameCoordinator001");
+    }
+    return wrapper;
+}
+
 // The original GetISteamGenericInterface for each patched vtable, keyed by the slot address.
 std::mutex g_patchMutex;
 std::map<void **, void *> g_originalGeneric;
@@ -241,7 +349,9 @@ void *__cdecl GenericInterfaceHook(void *self, int user, int pipe, const char *v
 {
     State &state = Init();
     LogInterfaceRequest("ISteamClient::GetISteamGenericInterface", version);
-    if (state.active && state.genericSlotOffset && version && std::string_view(version) == GcInterfaceName)
+    const bool wantsGc = state.active && state.genericSlotOffset && version &&
+                         std::string_view(version) == GcInterfaceName;
+    if (wantsGc && state.mode == ProxyMode::Local)
         return state.coordinator;
 
     void **vtable = *reinterpret_cast<void ***>(self);
@@ -252,7 +362,8 @@ void *__cdecl GenericInterfaceHook(void *self, int user, int pipe, const char *v
         const auto it = g_originalGeneric.find(slot);
         original = it == g_originalGeneric.end() ? nullptr : it->second;
     }
-    return original ? reinterpret_cast<GenericFn>(original)(self, user, pipe, version) : nullptr;
+    void *result = original ? reinterpret_cast<GenericFn>(original)(self, user, pipe, version) : nullptr;
+    return wantsGc ? GcInterfaceFor(state, result) : result;
 }
 
 // Redirects one vtable entry of the real ISteamClient object in place. Only done once per
@@ -324,6 +435,10 @@ State &Init()
                 note = "config: cs2_gc.cfg is invalid, using defaults";
         }
 
+        s.mode = proxy.mode;
+        if (proxy.steamId)
+            AddRedaction(proxy.steamId);
+
         GcEndpointConfig endpoint;
         endpoint.welcomeVersion = proxy.welcomeVersion;
         endpoint.owner = {proxy.ownerType, proxy.steamId};
@@ -339,14 +454,21 @@ State &Init()
                 return user ? self.realGetSteamId(user) : 0;
             };
         }
-        s.coordinator = new ProxyCoordinator(endpoint, *s.log, std::move(provider));
-        s.log->Write("cs2_gc diagnostic proxy active (-insecure). Targets Steam build " +
-                     std::string(TargetSteamBuildId) + "; the GC is local and nothing is sent to Valve.");
+        if (s.mode == ProxyMode::Local)
+        {
+            s.coordinator = new ProxyCoordinator(endpoint, *s.log, std::move(provider));
+            s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=local. Targets Steam build " +
+                         std::string(TargetSteamBuildId) + "; the GC is local and nothing is sent to Valve.");
+        }
+        else
+            s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
+                         "unchanged; traffic is only recorded. Targets Steam build " +
+                         std::string(TargetSteamBuildId) + ".");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");
-        s.log->Write(note + "; welcome values are unverified guesses. Logs redact SteamID-shaped values, "
-                            "but review before sharing.");
+        s.log->Write(note + "; welcome values are unverified guesses. Logs redact SteamID-shaped values and the "
+                            "local account's identifiers, but review before sharing.");
         return s;
     }();
     return state;
@@ -425,7 +547,7 @@ void DeliverGcMessageAvailable(State &state, std::uint32_t size)
 extern "C" __declspec(dllexport) void __cdecl SteamAPI_RegisterCallback(void *callback, int id)
 {
     State &state = Init();
-    if (state.active && callback && IsGcCallback(id))
+    if (state.active && state.mode == ProxyMode::Local && callback && IsGcCallback(id))
     {
         auto *object = static_cast<CallbackObject *>(callback);
         if (!(object->flags & CallbackFlagGameServer))
@@ -501,7 +623,11 @@ extern "C" __declspec(dllexport) void *__cdecl SteamInternal_FindOrCreateUserInt
         return nullptr;
     LogInterfaceRequest("SteamInternal_FindOrCreateUserInterface", version);
     if (state.active && version && std::string_view(version) == GcInterfaceName)
-        return state.coordinator;
+    {
+        if (state.mode == ProxyMode::Local)
+            return state.coordinator;
+        return GcInterfaceFor(state, state.realFind(user, version));
+    }
     return state.realFind(user, version);
 }
 

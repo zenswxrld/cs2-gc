@@ -20,8 +20,15 @@ std::optional<std::uint32_t> DecodeVtableThunkOffset(std::span<const std::uint8_
 // Settings for the proxy, read from a small key=value file. Every value is optional,
 // '#' starts a comment, and an unknown key or malformed value rejects the whole file
 // so a typo cannot silently run with defaults.
+enum class ProxyMode
+{
+    Local,   // answer the game from the in-process GC
+    Capture, // pass everything to Valve's real GC and only record the traffic
+};
+
 struct ProxyConfig
 {
+    ProxyMode mode{ProxyMode::Local}; // mode: local | capture
     std::uint64_t steamId{};          // steam_id: SteamID64 used as the cache owner
     std::uint32_t welcomeVersion{};   // welcome_version
     std::uint32_t ownerType{1};       // owner_type: SO owner type for the steam id

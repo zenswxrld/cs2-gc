@@ -3,6 +3,7 @@
 #include "cs2_gc/client_fingerprint.h"
 #include "cs2_gc/gc_endpoint.h"
 #include "cs2_gc/gc_msg_ids.h"
+#include "cs2_gc/gc_summary.h"
 #include "cs2_gc/protobuf.h"
 #include "cs2_gc/protobuf_dump.h"
 #include "cs2_gc/proxy_support.h"
@@ -649,7 +650,7 @@ void ProtobufDump()
     ids.Message(3, nestedId);
     const std::string redacted = DumpProtobuf(ids.bytes());
     Check(!has(redacted, "0110000") && !has(redacted, std::to_string(Id).c_str()) &&
-              !has(redacted, "123456789") && has(redacted, "<steamid redacted>"), "steam ids redacted");
+              !has(redacted, "123456789") && has(redacted, "<id redacted>"), "steam ids redacted");
 
     PbWriter textId;
     textId.String(1, "id=76561198012345678");
@@ -702,11 +703,80 @@ void ProxySupport()
     const auto config = ParseProxyConfig("# comment\n steam_id = 76561198000000000 \nwelcome_version=3 # trailing\r\nowner_type=1\ncache_version=9\n");
     Check(config && config->steamId == 76561198000000000ull && config->welcomeVersion == 3 && config->ownerType == 1 &&
               config->cacheVersion == 9, "config values");
+    Check(ParseProxyConfig("mode = capture")->mode == ProxyMode::Capture && ParseProxyConfig("mode=local")->mode == ProxyMode::Local &&
+              ParseProxyConfig("")->mode == ProxyMode::Local && !ParseProxyConfig("mode=Capture") && !ParseProxyConfig("mode=") &&
+              !ParseProxyConfig("mode=capture extra"), "mode setting is strict");
     const auto defaults = ParseProxyConfig("");
     Check(defaults && defaults->steamId == 0 && defaults->ownerType == 1 && defaults->cacheVersion == 1, "defaults");
     for (const char *bad : {"steam_id=abc", "steam_id=", "steam_id=12x", "steam_id=-1", "welcome_version=4294967296",
                             "owner_type=99999999999", "steamid=1", "nonsense", "=5", "steam_id=1 2"})
         Check(!ParseProxyConfig(bad), bad);
+}
+
+void SoSummaries()
+{
+    const auto has = [](const std::string &text, const char *part) { return text.find(part) != std::string::npos; };
+
+    // Extra redaction of the local account's values, without touching small counters.
+    PbWriter account;
+    account.Varint(1, 123456789);
+    account.Fixed32(2, 123456789);
+    account.Fixed64(3, 123456789);
+    account.Varint(4, 12345);
+    DumpOptions options;
+    options.redact = {123456789, 12345};
+    const std::string dump = DumpProtobuf(account.bytes(), options);
+    Check(!has(dump, "123456789") && !has(dump, "0x075bcd15") && has(dump, "4: varint 12345"), "account values redacted, small values kept");
+    Check(has(DumpProtobuf(account.bytes()), "1: varint 123456789"), "no redaction without options");
+
+    // Object messages round trip through the decoders.
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 99);
+    PbWriter single;
+    single.Varint(2, 7);
+    single.Bytes(3, Bytes({1, 2, 3}));
+    single.Fixed64(4, 5);
+    single.Message(5, owner);
+    const auto decodedSingle = DecodeSoSingleObject(single.bytes());
+    Check(decodedSingle && decodedSingle->typeId == 7 && decodedSingle->data == Bytes({1, 2, 3}) && decodedSingle->version == 5 &&
+              decodedSingle->owner.id == 99, "single object decode");
+    PbWriter objectA, objectB, multi;
+    objectA.Varint(1, 1);
+    objectA.Bytes(2, Bytes({9}));
+    objectB.Varint(1, 2);
+    objectB.Bytes(2, Bytes({8, 8}));
+    multi.Message(2, objectA);
+    multi.Message(2, objectB);
+    multi.Fixed64(3, 6);
+    multi.Message(6, owner);
+    const auto decodedMulti = DecodeSoMultipleObjects(multi.bytes());
+    Check(decodedMulti && decodedMulti->objects.size() == 2 && decodedMulti->objects[1].data == Bytes({8, 8}) &&
+              decodedMulti->owner.type == 1, "multiple objects decode");
+    Check(!DecodeSoSingleObject(Bytes({0x10})) && !DecodeSoMultipleObjects(Bytes({0x12, 0x05, 1})), "malformed object messages rejected");
+    PbWriter wrongWire;
+    wrongWire.Varint(3, 1);
+    Check(!DecodeSoSingleObject(wrongWire.bytes()), "wrong wire type rejected");
+
+    // A welcome with 3 items and 1 persona object summarises to counts and one sample each.
+    PbWriter item;
+    item.Varint(1, 4242);
+    item.Varint(2, 123456789); // the local account id inside an object
+    ClientWelcome welcome;
+    welcome.outOfDateCaches.push_back({{1, 76561190000000000ull + 123456789}, 3,
+                                       {{1, {item.bytes(), item.bytes(), item.bytes()}}, {2, {Bytes({0x08, 0x01})}}}});
+    DumpOptions secret;
+    secret.redact = {123456789};
+    const std::string summary = SummarizeSoMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, EncodeClientWelcome(welcome), secret);
+    Check(has(summary, "object type_id=1 count=3") && has(summary, "object type_id=2 count=1") && has(summary, "1: varint 4242"),
+          "welcome summary counts and samples");
+    Check(!has(summary, "123456789") && has(summary, "<id redacted>"), "summary redacts account values inside objects");
+
+    const std::string update = SummarizeSoMessage(gc_msg::ESOMsg::k_ESOMsg_UpdateMultiple, multi.bytes(), secret);
+    Check(has(update, "type_id=1 count=1") && has(update, "type_id=2 count=1"), "update multiple summary");
+    Check(has(SummarizeSoMessage(gc_msg::ESOMsg::k_ESOMsg_Update, single.bytes(), secret), "type_id=7"), "single object summary");
+    Check(SummarizeSoMessage(9999, single.bytes(), secret).empty() && SummarizeSoMessage(gc_msg::ESOMsg::k_ESOMsg_Update, Bytes({0x10}), secret).empty(),
+          "unrelated or undecodable messages produce no summary");
 }
 
 int main()
@@ -727,6 +797,7 @@ int main()
         Endpoint(); std::cout << "PASS local game coordinator hello/welcome\n";
         ProtobufDump(); std::cout << "PASS protobuf dump and SteamID redaction\n";
         ProxySupport(); std::cout << "PASS launch guard and proxy config parsing\n";
+        SoSummaries(); std::cout << "PASS object message decoders, summaries and account redaction\n";
         return 0;
     }
     catch (const std::exception &error)

@@ -16,6 +16,7 @@ add_library(cs2_gc_core STATIC
     cs2_gc/src/case_opening.cpp
     cs2_gc/src/gc_endpoint.cpp
     cs2_gc/src/gc_handshake.cpp
+    cs2_gc/src/gc_summary.cpp
     cs2_gc/src/protobuf.cpp
     cs2_gc/src/protobuf_dump.cpp
     cs2_gc/src/proxy_support.cpp

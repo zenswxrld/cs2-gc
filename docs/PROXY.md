@@ -61,10 +61,27 @@ The log appears next to the DLL as `cs2_gc_log.txt` (capped at 8 MB).
 Delete the proxy `steam_api64.dll`, rename `steam_api64_real.dll` back to `steam_api64.dll`
 (or verify game files in Steam). Delete `cs2_gc.cfg` and `cs2_gc_log.txt` if you like.
 
+## Capture mode: record what the real GC sends
+
+Set `mode = capture` in `cs2_gc.cfg` (still requires `-insecure`). The game then talks to
+Valve's real GC exactly as it normally would, and the proxy only records the traffic in both
+directions in `cs2_gc_log.txt`. This is how we learn what a real Welcome contains and what
+object type IDs the game uses, instead of guessing them.
+
+- **Everything you do is real.** Your actual inventory loads. Do not open cases, buy anything,
+  trade, delete, or use tools while capturing; just open the inventory, loadout, store and
+  armory pages and look around. Equipping a skin and joining a practice match are fine.
+- The log contains descriptions of your own inventory. It is summarised (object type IDs, counts,
+  and one sample object per type, not every item). Your SteamID64 and 32-bit account ID are
+  read from the local Steam session and redacted wherever they appear, but read the log
+  before sharing it.
+- Nothing is changed in what the game sends or receives.
+
 ## Config (`cs2_gc.cfg`, optional)
 
 ```
-# SteamID64 used as the cache owner. Leave out to use 0.
+# mode = local (default) or capture
+# SteamID64 used as the cache owner. Leave out to read it from the local Steam session.
 steam_id = 7656119XXXXXXXXXX
 welcome_version = 0
 owner_type = 1

@@ -132,6 +132,15 @@ std::optional<ProxyConfig> ParseProxyConfig(std::string_view text)
             if (!Number(value, config.steamId))
                 return std::nullopt;
         }
+        else if (key == "mode")
+        {
+            if (value == "local")
+                config.mode = ProxyMode::Local;
+            else if (value == "capture")
+                config.mode = ProxyMode::Capture;
+            else
+                return std::nullopt;
+        }
         else if (key == "welcome_version")
         {
             if (!Number(value, config.welcomeVersion))

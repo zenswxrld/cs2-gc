@@ -201,3 +201,14 @@ while CS2 runs (the DLL processes the request); native-picker support needs a di
   Balance / pass bars at the top, so it is visible without opening the nav. `rotate_armory.py` creates the label as
   `id-local-rotation-countdown` inside `id-xpshop-top-nav`; add a second label on the main page and keep both in sync.
   Also check the nav label does not overlap the stock "Next Armory Credit by" text.
+
+## Confirmed live (build 14): scoreboard ranks
+- The Competitive scoreboard now uses the Premier row and shows CS Rating badges (local player 4,000). Bots show the
+  same 4,000 because `premier_bot_badges = 1` mirrors the local rating.
+
+## User requests (next work)
+- Random bot names like the CS:GO project (CSOffline) instead of the stock bot names, and a fake ping for bots
+  instead of the BOT icon / 0 in the ping column. Look at how CSOffline did it (legacy/ reference subtree and the
+  zenswxrld/CSOffline repo) and port the idea, e.g. generated botprofile names applied before bots spawn (the helper
+  already writes cs2_gc_premier_bots.cfg) and a patched scoreboard ping cell for bots in tools/native_scoreboard.py.
+  Consider giving each bot its own believable rating near the player's instead of mirroring 4,000.

@@ -193,3 +193,6 @@ while CS2 runs (the DLL processes the request); native-picker support needs a di
   * `cs2_gc/src/terminal.cpp` AdvanceTerminal also treats `request.volatileLimit` as an offer count
     (`limit = request.volatileLimit ? request.volatileLimit : terminal_default_offers`). It should treat it as a price
     cap on the offered item and take the offer count from `terminal_default_offers`.
+- CLARIFICATION from the user on the spare Armory slots: fill them with more rotating *groups* (more collections,
+  cases, capsules, charm packs, sticker sets), not single skins. Each extra slot should rotate through its own pool of
+  official collections/cases/capsules like the existing category tiles do.

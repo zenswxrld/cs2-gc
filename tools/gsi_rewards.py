@@ -197,6 +197,7 @@ def main():
     parser.add_argument('--cfg-dir', type=Path, help='Install only gamestate_integration_cs2_gc.cfg here, then restart CS2')
     parser.add_argument('--port', type=int, default=31923)
     parser.add_argument('--parent-pid', type=int, help='Exit when the launching game process closes')
+    parser.add_argument('--debug-console', action='store_true', help='Enable offline test aliases; disabled in release builds')
     parser.add_argument('--log-file', type=Path, help='Write diagnostics here instead of a console window')
     args = parser.parse_args()
     if (not args.proxy_dir.is_dir() or not 1 <= args.port <= 65535
@@ -279,8 +280,8 @@ def run_with_parent(args, parent):
             write_difficulty()
             print('Local Premier bot config prepared. In the local server console: exec cs2_gc_premier_bots', flush=True)
         print('Local CS2 rewards bridge running' + (' in background; exits with CS2.' if args.parent_pid else ' in manual diagnostic mode.'), flush=True)
-        console = ConsoleControls(rewards, args.cfg_dir, args.parent_pid) if args.cfg_dir and args.parent_pid else None
-        if console: print('Console controls prepared: launch with -condebug, then exec cs2_gc_console in game.', flush=True)
+        console = ConsoleControls(rewards, args.cfg_dir, args.parent_pid) if args.debug_console and args.cfg_dir and args.parent_pid else None
+        if console: print('Debug console controls enabled; cs2_gc_debug.exe loads the launch flags and command CFG automatically.', flush=True)
         next_status = [time.monotonic() + 30]
         def after_request():
             if console: console.poll()

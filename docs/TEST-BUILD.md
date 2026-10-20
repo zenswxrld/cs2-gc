@@ -4,7 +4,7 @@
 
 1. Fully close CS2 and back up `steam_api64.dll`, `cs2_gc_inventory.txt` and your gameplay config.
 2. Copy the ZIP contents into `game/bin/win64`, keeping your existing original `steam_api64_real.dll`, `items_game.txt`, replay folder and proxy/account config. Keep Python 3 installed and every bundled helper beside the DLL. Preserve custom gameplay settings when copying the example config.
-3. Launch local CS2 with `-insecure -condebug`. The hidden rewards helper starts/stops with CS2; no rewards window is needed.
+3. With CS2 closed, double-click **cs2_gc_debug.exe** from that folder. It starts Steam with `-applaunch 730 -insecure -condebug +exec cs2_gc_console`, preparing the command CFG first. Debug flags and exec apply automatically for this launch. The hidden rewards helper starts/stops with CS2; no rewards window is needed. Steam may show its normal launch-options confirmation.
 4. Wait for native preparation messages in `cs2_gc_rewards.log`, fully close CS2, then launch again. Schema and Panorama changes need this extra restart. Unsupported/missing assets are logged and skipped without stopping XP.
 5. Open the native Armory. Check its timer and six category slots, buy one active item, and equip skins for both teams. Restart again to check saved loadouts.
 
@@ -33,11 +33,9 @@ Limited items share the existing limited-style native tile flow. Howl uses the e
 
 ## In-game test commands
 
-With `-condebug` added to your launch options, wait for the helper to start, then enter once per game launch:
+Use **cs2_gc_debug.exe** to start the game: it adds the flags and runs the command setup automatically. Once the background helper is ready, use these directly in the in-game console.
 
-```
-exec cs2_gc_console
-```
+For a manual Steam launch instead, add `-insecure -condebug`, wait for the helper, then enter `exec cs2_gc_console` once.
 
 Then use:
 
@@ -47,9 +45,11 @@ cs2_gc_give_stars_1000
 cs2_gc_force_rotation
 ```
 
-The first adds 100 stars; the second adds 1,000. They add to the saved balance without advancing XP or passes. Force rotation advances every category pool; wait two seconds before buying. It advances the selection while retaining the normal quarter-hour timer. No BAT file is involved. Do not re-execute the setup CFG mid-session: it initializes the UI rotation offset. A helper restart regenerates aliases; execute the setup again if it restarts.
+The first adds 100 stars; the second adds 1,000. They add to the saved balance without advancing XP or passes. Force rotation advances every category pool; wait two seconds before buying. It advances the selection while retaining the normal quarter-hour timer. No BAT file is involved. Do not re-execute the setup CFG mid-session: it initializes the UI rotation offset. The launcher prepares a fresh nonce before startup; the helper reuses it. A helper restart in the same game retains its rotation offset.
 
-These are console aliases using normal echo/user-info commands and the game's local console log. The helper reads new, exact session-marked lines; the proxy applies a cumulative star cursor atomically with inventory. Historical console output cannot pay again. The UI reads the same local rotation offset. These new aliases still need live validation on this client.
+These are console aliases using normal echo/user-info commands and the game's local console log. The helper reads new, exact session-marked lines; the proxy applies a cumulative star cursor atomically with inventory. Historical console output cannot pay again. The UI reads the same local rotation offset. These new aliases and automatic launcher still need live validation on this client.
+
+Debug builds explicitly enable CMake `CS2_GC_DEBUG_TOOLS=ON`. It defaults **OFF** for release: no debug launcher target, no console-control polling, and the helper starts without test commands. Release launch instructions omit `-condebug` and the debug `+exec`; `-insecure` remains required for the offline GC. The launcher does not edit Steam launch options or the user's autoexec, so it leaves no persistent debug flags to remove.
 
 ## Rewards retained
 

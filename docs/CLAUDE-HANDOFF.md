@@ -1,5 +1,17 @@
 # Build 05: current status (supersedes historical notes below)
 
+Latest steering: automatic debug launch flags AND exec, disabled for release.
+CS2_GC_DEBUG_TOOLS defaultsOFF; test build explicitlyON. Debug-only Windows GUI
+launcher prepares nonce/aliases before invoking installed Steam.exe -applaunch730
+-insecure -condebug +exec cs2_gc_console. HKCU SteamExe lookup, checks CS2 closed
+and installed game folder. No Steam config/autoexec mutations. Helper reuses boot
+nonce, retains rotation offset across same-game helper restart. Release proxy does
+not poll console controls or launch helper with --debug-console; launcher target
+is absent. Keep -insecure for offline operation, omit debug log/exec on release.
+Debug launcher and proxy cross-build pass; separate Windows release build with
+DEBUG_TOOLS=OFF passes and omits the launcher/control startup. 13 suites pass.
+Launcher is not live Windows/Steam tested.
+
 Validation: all13 Linux core/Python suites pass, Windows x64 core/proxy build passes.
 1,046 export names match supplied proxy; imports onlyKERNEL32/msvcrt. Generated
 25966348 catalogue resolves every item/list; all active goods redeemed over42

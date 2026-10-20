@@ -282,6 +282,7 @@ public:
         }
         PollTradeUpRequest();
         PollTerminalRequest();
+#ifdef CS2_GC_DEBUG_TOOLS
         {
             std::ifstream control(m_rewardPath.parent_path() / "cs2_gc_console.txt");
             std::uint64_t pid = 0, stars = 0, offset = 0; std::string extra;
@@ -289,6 +290,7 @@ public:
                 pid == GetCurrentProcessId() && offset <= 1000000)
                 m_gc.ApplyConsoleControl(stars, static_cast<std::uint32_t>(offset), m_afterReward);
         }
+#endif
         m_gc.ApplyLevelRewards(m_afterReward);
         {
             std::ifstream premier(m_rewardPath.parent_path() / "cs2_gc_premier.txt");
@@ -555,6 +557,9 @@ void StartRewardsIfNeeded(State &state)
                    L" --cfg-dir " + QuoteWindowsArgument(cfg.wstring()) +
                    L" --parent-pid " + std::to_wstring(GetCurrentProcessId()) +
                    L" --log-file " + QuoteWindowsArgument((std::filesystem::path(state.directory) / L"cs2_gc_rewards.log").wstring());
+#ifdef CS2_GC_DEBUG_TOOLS
+        command += L" --debug-console";
+#endif
         STARTUPINFOW startup{};
         startup.cb = sizeof(startup);
         startup.dwFlags = STARTF_USESHOWWINDOW;

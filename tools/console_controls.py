@@ -15,10 +15,14 @@ class ConsoleControls:
         self.rewards = rewards
         self.pid = pid
         self.log = Path(cfg_dir).parent / 'console.log'
-        self.nonce = secrets.token_hex(16)
+        boot = rewards.directory / 'cs2_gc_console_boot.txt'
+        nonce = boot.read_text().strip() if boot.exists() else ''
+        self.nonce = nonce if re.fullmatch('[0-9a-f]{32}', nonce) else secrets.token_hex(16)
         self.position = self.log.stat().st_size if self.log.exists() else 0
         self.pending = b''
-        self.offset = 0
+        self.offset = rewards.state.get('console_rotation', 0) if rewards.state.get('console_pid') == pid else 0
+        if type(self.offset) is not int or not 0 <= self.offset <= 1000000:
+            raise ValueError('Invalid console rotation offset')
         cursor = rewards.directory / 'cs2_gc_console.txt'
         old = cursor.read_text().split() if cursor.exists() else []
         rewards.state.setdefault('console_stars', int(old[1]) if len(old) == 3 and old[1].isdigit() else 0)
@@ -35,6 +39,8 @@ class ConsoleControls:
         atomic_write(Path(cfg_dir) / 'cs2_gc_console.cfg', text)
 
     def publish(self):
+        self.rewards.state['console_pid'] = self.pid
+        self.rewards.state['console_rotation'] = self.offset
         self.rewards.save()
         atomic_write(self.rewards.directory / 'cs2_gc_console.txt',
                      f"{self.pid} {self.rewards.state['console_stars']} {self.offset}\n")

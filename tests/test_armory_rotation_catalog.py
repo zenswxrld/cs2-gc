@@ -101,6 +101,23 @@ assert.deepEqual(visible(), ['capsule', 'case_a', 'charm_a']);
 
 
 class ConsoleControls(unittest.TestCase):
+    def test_launcher_nonce_is_reused_and_helper_restart_keeps_rotation(self):
+        import tempfile
+        from console_controls import ConsoleControls
+        from gsi_rewards import Rewards
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); proxy = root / 'bin'; proxy.mkdir()
+            cfg = root / 'csgo/cfg'; cfg.mkdir(parents=True)
+            (proxy / 'cs2_gc_console_boot.txt').write_text('b' * 32 + '\n')
+            control = ConsoleControls(Rewards(proxy), cfg, 100)
+            self.assertEqual(control.nonce, 'b' * 32)
+            control.offset = 3; control.publish()
+            restarted = ConsoleControls(Rewards(proxy), cfg, 100)
+            self.assertEqual(restarted.offset, 3)
+            self.assertEqual(restarted.nonce, control.nonce)
+            next_game = ConsoleControls(Rewards(proxy), cfg, 101)
+            self.assertEqual(next_game.offset, 0)
+
     def test_exact_session_lines_partial_reads_and_restart_do_not_replay_grants(self):
         import tempfile
         from console_controls import ConsoleControls

@@ -196,3 +196,8 @@ while CS2 runs (the DLL processes the request); native-picker support needs a di
 - CLARIFICATION from the user on the spare Armory slots: fill them with more rotating *groups* (more collections,
   cases, capsules, charm packs, sticker sets), not single skins. Each extra slot should rotate through its own pool of
   official collections/cases/capsules like the existing category tiles do.
+- User request (Armory): the "Armory refresh: m:ss" countdown currently appears only in the category nav bar (it sits on
+  top of the stock "Next Armory Credit by" text there). Also show it on the main Armory screen, e.g. near the Credits
+  Balance / pass bars at the top, so it is visible without opening the nav. `rotate_armory.py` creates the label as
+  `id-local-rotation-countdown` inside `id-xpshop-top-nav`; add a second label on the main page and keep both in sync.
+  Also check the nav label does not overlap the stock "Next Armory Credit by" text.

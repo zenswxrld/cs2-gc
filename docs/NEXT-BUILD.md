@@ -114,3 +114,7 @@ Wherever this document says "verified", it means offline tests only.
 - Server cache now includes equip-slot objects (type 3). The server library registers `CSOEconEquipSlot`.
 - The scoreboard in the test was `Competitive | Vertigo`; the rank badge hook only reached a "0" cell there. Premier
   mode scoreboard behaviour is unverified.
+
+## Confirmed live (build 07)
+- Held skins in a bot match: the equipped StatTrak USP-S | Caiman is held (weapon HUD shows it). Cause: the server cache
+  needed the equip-slot objects (type 3) as well as items. Knife, gloves and bought weapons still to be checked.

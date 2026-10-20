@@ -14,6 +14,8 @@ namespace cs2_gc
 inline constexpr std::uint32_t AttributePaintIndex = 6;
 inline constexpr std::uint32_t AttributePaintSeed = 7;
 inline constexpr std::uint32_t AttributePaintWear = 8;
+inline constexpr std::uint32_t AttributeKillEater = 80;
+inline constexpr std::uint32_t AttributeKillEaterScoreType = 81;
 
 // Sticker (and graffiti) kit id, and charm id. The sticker attribute is what the capture's graffiti
 // item carries; the sticker and charm items themselves are tools (definitions 1209 and 1355).
@@ -23,6 +25,18 @@ inline constexpr std::uint32_t AttributeKeychain = 299;     // "keychain slot 0 
 // (+0..+3, the id stored as an integer), offset x and y at 278 + 2 * slot (+0, +1).
 inline constexpr std::uint32_t AttributeStickerSlotBase = 113;
 inline constexpr std::uint32_t AttributeStickerOffsetBase = 278;
+// An attached charm: id 299 (an integer), offsets x, y, z at 300, 301, 302 (floats).
+inline constexpr std::uint32_t AttributeKeychainOffsetBase = 300;
+// "keychain slot 0 sticker": the sticker kit inside a sealed Sticker Slab charm.
+inline constexpr std::uint32_t AttributeKeychainSticker = 321;
+// Storage units: the unit (definition 1201) carries an item count (270) and a modification date (271);
+// an item inside one carries the unit's id as two integers, low half at 272 and high half at 273.
+inline constexpr std::uint32_t DefinitionStorageUnit = 1201;
+inline constexpr std::uint32_t AttributeCasketItemsCount = 270;
+inline constexpr std::uint32_t AttributeCasketModificationDate = 271;
+inline constexpr std::uint32_t AttributeCasketIdLow = 272;
+inline constexpr std::uint32_t AttributeCasketIdHigh = 273;
+inline constexpr std::uint32_t MaxStorageUnitItems = 1000;
 inline constexpr std::uint32_t AttributeCustomName = 111; // "custom name attr", a string
 inline constexpr std::uint32_t DefinitionSticker = 1209;
 inline constexpr std::uint32_t DefinitionKeychain = 1355;
@@ -32,12 +46,14 @@ inline constexpr std::uint32_t DefinitionKeychain = 1355;
 // names (found_in_crate is 5, ..., ad 21, rental 22, xpshopredeem 23, purchasedvolatile 24);
 // 23 is derived from that order and still has to be confirmed in the game.
 inline constexpr std::uint32_t InventoryUnacknowledgedBit = 1u << 30;
+inline constexpr std::uint32_t PickupCrafted = 2; // a trade-up contract's result
 inline constexpr std::uint32_t PickupPurchased = 4;
 inline constexpr std::uint32_t PickupFoundInCrate = 5;
 inline constexpr std::uint32_t PickupXpShopRedeem = 23;
 
 // Quality "unique" from the same schema; the real item in the capture used it too.
 inline constexpr std::uint32_t QualityUnique = 4;
+inline constexpr std::uint32_t QualityStrange = 9;
 
 // Encodes a CSOEconItem (base_gcmessages.proto of the target client) for a plain paint-kit
 // weapon. StatTrak is not encoded yet. `inventoryPosition` is the backpack slot.
@@ -67,9 +83,19 @@ std::optional<std::vector<std::uint8_t>> WithXpShopBalance(std::span<const std::
 // object is malformed.
 std::optional<std::vector<std::uint8_t>> WithXpShopTrack(std::span<const std::uint8_t> object, std::uint32_t xp);
 
+// The pass object with its `xp_tracks` (field 3) replaced by exactly these entries, every other field kept.
+// The Armory page only draws a pass whose XP is non-zero. Nothing if the object is malformed.
+std::optional<std::vector<std::uint8_t>> WithXpShopTracks(std::span<const std::uint8_t> object,
+                                                          std::span<const std::uint32_t> tracks);
+
 // The item definition of the Armory Pass ticket (`XpShopTicket1`, tool type xp_shop_ticket): bought in
 // the Store, then used from the Armory page, which sends a use-item request.
 inline constexpr std::uint32_t DefinitionArmoryPass = 1354;
+
+// The built-in "Remove Keychain Tool" (the Charm Detachments entry in the inventory). The game uses it with
+// the ApplySticker message: the "sticker" is its default item id (0xF000000000000000 | 65) and the item is
+// the weapon to take the charm off.
+inline constexpr std::uint32_t DefinitionRemoveKeychainTool = 65;
 
 // Returns the Welcome with the redeemable balance of every XpShop object set to `balance`. All
 // other fields, objects and types are carried over unchanged. Nothing when the Welcome is

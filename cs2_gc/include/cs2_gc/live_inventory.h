@@ -2,6 +2,7 @@
 
 #include "cs2_gc/case_opening.h"
 #include "cs2_gc/gc_handshake.h"
+#include "cs2_gc/trade_up.h"
 #include "cs2_gc/inventory.h"
 #include <cstdint>
 #include <filesystem>
@@ -18,6 +19,24 @@ public:
     explicit LiveInventory(Inventory inventory);
 
     const Inventory &Items() const { return m_inventory; }
+    std::vector<std::vector<std::uint8_t>> EncodedServerItems(std::uint32_t accountId) const;
+    struct TerminalChange
+    {
+        InventoryItem terminal;
+        std::optional<InventoryItem> offer;
+        std::vector<InventoryItem> removed;
+        bool unsealed{};
+        bool exhausted{};
+    };
+    std::optional<TerminalChange> AdvanceTerminal(const Schema &schema, const OpenCrateRequest &request,
+                                                const RandomSource &random, std::uint32_t now);
+    std::optional<InventoryItem> TerminalOffer(const Schema &schema, std::uint64_t gameId) const;
+    std::optional<TerminalChange> AcceptTerminal(const Schema &schema, std::uint64_t gameId);
+    void SetArmoryCredits(std::uint32_t credits) { m_inventory.SetArmoryCredits(credits); }
+    bool ApplyEarnedXp(std::uint64_t cumulativeXp) { return m_inventory.ApplyEarnedXp(cumulativeXp); }
+
+    // Activates one more Armory Pass, starting at `xp`; false when MaxXpTracks are already active.
+    bool AddXpTrack(std::uint32_t xp);
 
     // Adds an item to the inventory and returns it with its new id (the game sees it as
     // CustomItemIdBase + id).
@@ -45,11 +64,14 @@ public:
     {
         InventoryItem item;                // the weapon with the sticker on it
         std::uint32_t position{};          // its backpack position, as a Welcome would give it
-        InventoryItem consumed;            // the sticker item, now removed
+        InventoryItem consumed;            // the sticker (or charm) item, now removed
+        bool charm{};                      // a charm was attached, not a sticker
+        bool created{};                    // the item is new: a built-in weapon that became an inventory item
     };
 
-    // Applies a sticker item to a weapon slot. All checks come first: both ids must be ours, the
-    // first a sticker item, the second not a sticker, charm or graffiti, and the slot (0-4) free.
+    // Applies a sticker item to a weapon slot, or a charm item to a weapon. All checks come first: both
+    // ids must be ours, the first a sticker or charm item, the second not a sticker, charm or graffiti,
+    // and the slot (0-4) free (a weapon takes one charm).
     // On failure nothing changes.
     std::optional<StickerApplied> ApplySticker(const ApplyStickerRequest &request);
 
@@ -74,7 +96,72 @@ public:
     };
     std::optional<Renamed> Rename(std::uint64_t itemId, const std::string &name);
 
+    enum class StorageResult { Ok, Invalid, Full };
+    struct StorageChange
+    {
+        StorageResult result{StorageResult::Invalid};
+        InventoryItem item;               // the item moved
+        InventoryItem casket;             // the storage unit, with its new count
+        std::uint32_t itemPosition{};
+        std::uint32_t casketPosition{};
+    };
+
+    // Puts one of our items into one of our storage units, or takes it out again (a unit holds
+    // MaxStorageUnitItems). Both ids as the game sees them. Invalid leaves everything unchanged.
+    StorageChange StoreItem(std::uint64_t casketItemId, std::uint64_t itemId, std::uint32_t now);
+    StorageChange TakeItem(std::uint64_t casketItemId, std::uint64_t itemId, std::uint32_t now);
+
+    struct Detached
+    {
+        InventoryItem weapon;     // the weapon without its charm
+        std::uint32_t position{};
+        InventoryItem charm;      // the charm, now a loose item again
+    };
+
+    // Takes the charm off one of our weapons and returns it to the inventory as an item of its own. Nothing
+    // if the item is not ours or carries no charm.
+    std::optional<Detached> DetachCharm(std::uint64_t weaponItemId);
+
+    // A trade-up contract over ten of our items (ids as the game sees them). Nothing changes on failure.
+    TradeUpResult TradeUp(const Schema &schema, const std::vector<std::uint64_t> &gameItemIds,
+                          const RandomSource &random);
+
+    struct Scraped
+    {
+        InventoryItem item;        // the weapon after the scrape
+        std::uint32_t position{};
+        bool removed{};            // the sticker wore away completely
+    };
+
+    // Scrapes the sticker in one slot of one of our items. With a target (the level chosen on the scrape
+    // slider) its wear goes to that level, never down, and a target of 1 or more removes it; without one
+    // the wear rises by a ninth and past 1 the sticker is removed. Nothing if the item is not ours or has
+    // no sticker in that slot.
+    std::optional<Scraped> ScrapeSticker(std::uint64_t itemId, std::uint32_t slot,
+                                         std::optional<float> target = std::nullopt);
+
+    // Strips stickers and charms from Sticker Slabs. An earlier build wrote a sticker onto a slab item
+    // (as if it were a weapon), saved it, and the game crashed on it. Returns how many items were repaired.
+    std::size_t RepairSlabs(const Schema &schema);
+
+    // Earlier Armory rolls incorrectly assigned hidden StatTrak to collection-only finishes.
+    // Clear those flags on known collection skins, preserving valid case finishes and unknown items.
+    std::size_t RepairCollectionStatTrak(const Schema &schema);
+
+    struct Sealed
+    {
+        InventoryItem charm;    // the new charm: the slab with the sticker in it
+        InventoryItem sticker;  // consumed
+        InventoryItem slab;     // consumed
+    };
+
+    // Seals a sticker in a Sticker Slab: both items go and one charm of the slab's keychain, holding the
+    // sticker, takes their place. Nothing changes unless the first id is one of our stickers and the
+    // second one of our slabs (an item the schema gives `can_wrap_sticker`).
+    std::optional<Sealed> SealSticker(const Schema &schema, std::uint64_t stickerItemId, std::uint64_t slabItemId);
+
 private:
+    std::uint32_t PositionOf(std::uint64_t ourId) const;
     struct Slot
     {
         std::uint32_t classId{};

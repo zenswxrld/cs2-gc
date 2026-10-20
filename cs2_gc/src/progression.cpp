@@ -40,3 +40,64 @@ ProgressChange ApplyReward(Profile &profile, RewardEvent event, const RewardConf
     return change;
 }
 }
+
+// Profile fields are from build 25966348's CMsgGCCStrike15_v2_MatchmakingGC2ClientHello.
+// The recorded CS2 welcome also confirms the native XP base (327680000) in game_data2.
+#include "cs2_gc/protobuf.h"
+namespace cs2_gc
+{
+namespace
+{
+void CopyField(PbWriter &out, const PbField &field)
+{
+    switch (field.wire)
+    {
+    case 0: out.Varint(field.number, field.value); break;
+    case 1: out.Fixed64(field.number, field.value); break;
+    case 5: out.Fixed32(field.number, static_cast<std::uint32_t>(field.value)); break;
+    default: out.Bytes(field.number, field.bytes); break;
+    }
+}
+}
+std::optional<std::vector<std::uint8_t>> WithLocalProfile(std::span<const std::uint8_t> body,
+                                                       const LocalProgress &profile)
+{
+    PbWriter out;
+    PbReader reader(body);
+    PbField field;
+    while (reader.Next(field))
+        if (field.number != 17 && field.number != 18)
+            CopyField(out, field);
+    if (reader.Failed())
+        return std::nullopt;
+    out.Varint(17, profile.level);
+    out.Varint(18, 327680000u + profile.xp);
+    return out.bytes();
+}
+std::optional<std::vector<std::uint8_t>> WithWelcomeProfile(std::span<const std::uint8_t> body,
+                                                         const LocalProgress &profile)
+{
+    PbWriter out;
+    PbReader reader(body);
+    PbField field;
+    bool found = false;
+    while (reader.Next(field))
+    {
+        if (field.number == 6 && field.wire == 2)
+        {
+            const auto patched = WithLocalProfile(field.bytes, profile);
+            if (!patched)
+                return std::nullopt;
+            out.Bytes(6, *patched);
+            found = true;
+        }
+        else
+            CopyField(out, field);
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    if (!found)
+        out.Bytes(6, *WithLocalProfile({}, profile));
+    return out.bytes();
+}
+}

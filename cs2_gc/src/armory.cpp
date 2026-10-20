@@ -42,7 +42,11 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
     // Everything that can fail happens before anything changes.
     std::optional<InventoryItem> item;
     if (goods->itemName.starts_with(LootListPrefix))
-        item = RollLootList(m_schema, std::string_view(goods->itemName).substr(LootListPrefix.size()), random, odds);
+    {
+        CaseOdds collectionOdds = odds;
+        collectionOdds.statTrakPerMille = 0;
+        item = RollLootList(m_schema, std::string_view(goods->itemName).substr(LootListPrefix.size()), random, collectionOdds);
+    }
     else if (const auto definition = m_schema.ItemDefIndex(goods->itemName))
     {
         InventoryItem plain;
@@ -57,6 +61,7 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
     }
 
     m_balance -= goods->points;
+    inventory.SetArmoryCredits(m_balance);
     result.item = inventory.AddItem(*item);
     return result;
 }

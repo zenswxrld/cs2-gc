@@ -27,6 +27,9 @@ class MessageQueue
 public:
     explicit MessageQueue(std::size_t byteLimit = 32 * 1024 * 1024, std::size_t messageLimit = 4096);
     bool Push(Message message);
+    // A message in the old struct form: no protobuf bit, and the bytes start with the same type. The size and
+    // count limits are the same as for Push.
+    bool PushStruct(Message message);
     bool IsMessageAvailable(std::uint32_t *size) const;
     GCResult RetrieveMessage(std::uint32_t *type, void *destination, std::uint32_t capacity,
         std::uint32_t *size);

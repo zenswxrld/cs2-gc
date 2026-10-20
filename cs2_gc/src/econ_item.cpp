@@ -119,7 +119,18 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
     out.Varint(2, accountId);
     out.Varint(3, inventoryPosition);
     out.Varint(4, item.defIndex);
-    out.Varint(7, QualityUnique);
+    out.Varint(7, item.expiration ? 14 : item.unusual ? 3 : item.statTrak ? QualityStrange : QualityUnique);
+    if (item.terminalRemaining)
+        AddIntegerAttribute(out, 169, *item.terminalRemaining);
+    if (item.expiration)
+        AddIntegerAttribute(out, 183, item.expiration);
+    if (item.purchasePrice)
+        AddIntegerAttribute(out, 316, *item.purchasePrice);
+    if (item.statTrak)
+    {
+        AddIntegerAttribute(out, AttributeKillEater, 0);
+        AddIntegerAttribute(out, AttributeKillEaterScoreType, 0);
+    }
     if (item.paintKitIndex)
     {
         AddFloatAttribute(out, AttributePaintIndex, static_cast<float>(item.paintKitIndex));
@@ -130,6 +141,8 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
         AddIntegerAttribute(out, AttributeStickerKit, item.stickerKit);
     if (item.keychain)
         AddIntegerAttribute(out, AttributeKeychain, item.keychain);
+    if (item.slabSticker)
+        AddIntegerAttribute(out, AttributeKeychainSticker, item.slabSticker);
     for (const AppliedSticker &sticker : item.stickers)
     {
         const std::uint32_t base = AttributeStickerSlotBase + 4 * sticker.slot;
@@ -145,6 +158,30 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
             AddFloatAttribute(out, offset, sticker.offsetX);
         if (sticker.offsetY != 0.0f)
             AddFloatAttribute(out, offset + 1, sticker.offsetY);
+    }
+    if (item.defIndex == DefinitionStorageUnit)
+    {
+        AddIntegerAttribute(out, AttributeCasketItemsCount, item.casketCount);
+        AddIntegerAttribute(out, AttributeCasketModificationDate,
+                            item.casketModified ? item.casketModified : 1700000000u);
+    }
+    if (item.storedIn)
+    {
+        const std::uint64_t casketId = CustomItemIdBase + item.storedIn;
+        AddIntegerAttribute(out, AttributeCasketIdLow, static_cast<std::uint32_t>(casketId & 0xFFFFFFFFull));
+        AddIntegerAttribute(out, AttributeCasketIdHigh, static_cast<std::uint32_t>(casketId >> 32));
+    }
+    if (item.charm)
+    {
+        AddIntegerAttribute(out, AttributeKeychain, item.charm->kit);
+        if (item.charm->offsetX != 0.0f)
+            AddFloatAttribute(out, AttributeKeychainOffsetBase, item.charm->offsetX);
+        if (item.charm->offsetY != 0.0f)
+            AddFloatAttribute(out, AttributeKeychainOffsetBase + 1, item.charm->offsetY);
+        if (item.charm->offsetZ != 0.0f)
+            AddFloatAttribute(out, AttributeKeychainOffsetBase + 2, item.charm->offsetZ);
+        if (item.charm->slabSticker)
+            AddIntegerAttribute(out, AttributeKeychainSticker, item.charm->slabSticker);
     }
     if (!item.customName.empty())
     {
@@ -311,6 +348,22 @@ std::optional<std::vector<std::uint8_t>> WithXpShopTrack(std::span<const std::ui
     if (reader.Failed())
         return std::nullopt;
     out.Varint(3, xp);
+    return out.bytes();
+}
+
+std::optional<std::vector<std::uint8_t>> WithXpShopTracks(std::span<const std::uint8_t> object,
+                                                          std::span<const std::uint32_t> tracks)
+{
+    PbWriter out;
+    PbReader reader(object);
+    PbField f;
+    while (reader.Next(f))
+        if (!(f.number == 3 && f.wire == 0))
+            Reemit(out, f);
+    if (reader.Failed())
+        return std::nullopt;
+    for (const std::uint32_t xp : tracks)
+        out.Varint(3, xp);
     return out.bytes();
 }
 

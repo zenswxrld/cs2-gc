@@ -17,11 +17,13 @@ OVERRIDDEN = (
     "SteamAPI_RegisterCallback",
     "SteamAPI_UnregisterCallback",
     "SteamAPI_RunCallbacks",
+    "SteamGameServer_RunCallbacks",
+    "SteamInternal_FindOrCreateGameServerInterface",
 )
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_@?$]*$")
 
 
-def export_names(data):
+def export_names(data, proxy_target=None):
     """Names of every named export, read from the PE export directory without loading the file."""
     if data[:2] != b"MZ" or len(data) < 0x40:
         raise ValueError("Not a PE executable")
@@ -81,7 +83,13 @@ def export_names(data):
         ordinal = struct.unpack_from("<H", data, offset(ordinals_rva + 2 * index, 2))[0]
         function_rva = struct.unpack_from("<I", data, offset(functions_rva + 4 * ordinal, 4))[0]
         if export_rva <= function_rva < export_rva + export_size:
-            raise ValueError(f"{name} is itself a forwarder; refusing to chain it")
+            if not proxy_target:
+                raise ValueError(f"{name} is itself a forwarder; refusing to chain it")
+            start = offset(function_rva)
+            end = data.find(b"\0", start, start + 512)
+            expected = f"{proxy_target}.{name}".encode('ascii')
+            if end < 0 or data[start:end] != expected:
+                raise ValueError(f"{name} forwards somewhere other than {proxy_target}.{name}")
         names.append(name)
     if len(set(names)) != len(names):
         raise ValueError("Duplicate export names")
@@ -106,9 +114,11 @@ def main(argv=None):
     parser.add_argument("--out", type=Path, required=True, help=".def file to create; never overwritten")
     parser.add_argument("--target", default="steam_api64_real",
                         help="Module name the exports forward to (without .dll)")
+    parser.add_argument("--from-proxy", action="store_true",
+                        help="Read an existing proxy; validate each forwarder and still target the original module directly")
     args = parser.parse_args(argv)
     try:
-        text = render(export_names(args.steam_api_dll.read_bytes()), args.target)
+        text = render(export_names(args.steam_api_dll.read_bytes(), args.target if args.from_proxy else None), args.target)
         with args.out.open("x", encoding="ascii", newline="\n") as destination:
             destination.write(text)
         print(f"Wrote {args.out} ({text.count(chr(10)) - 2} exports).")

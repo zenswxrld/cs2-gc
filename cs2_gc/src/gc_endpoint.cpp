@@ -3,6 +3,8 @@
 #include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/protobuf.h"
 #include <utility>
+#include <ctime>
+#include <set>
 
 namespace cs2_gc
 {
@@ -14,6 +16,15 @@ namespace
 constexpr std::uint32_t NotificationNameItem = 1006;
 constexpr std::uint32_t NotificationUnlockCrate = 1007;
 constexpr std::uint32_t NotificationApplySticker = 1086;
+constexpr std::uint32_t NotificationApplyKeychain = 1091;
+constexpr std::uint32_t NotificationRemoveSticker = 1053;
+constexpr std::uint32_t NotificationRemoveKeychain = 1092;
+constexpr std::uint32_t NotificationEncapsulateSticker = 1055;
+constexpr std::uint32_t NotificationCasketTooFull = 1011;
+constexpr std::uint32_t NotificationCasketContents = 1012;
+constexpr std::uint32_t NotificationCasketAdded = 1013;
+constexpr std::uint32_t NotificationCasketRemoved = 1014;
+constexpr std::uint32_t NotificationXpShopUseTicket = 9221;
 
 std::vector<std::uint8_t> EncodeCustomizationNotification(std::uint32_t request, std::uint64_t itemId)
 {
@@ -70,6 +81,93 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
     }
 }
 
+void LocalGameCoordinator::EnableServerInventory(std::shared_ptr<LiveInventory> inventory)
+{
+    m_live = std::move(inventory);
+    SetHandler(gc_msg::EGCBaseClientMsg::k_EMsgGCServerHello, [](const FrameView &, LocalGameCoordinator &gc) {
+        PbWriter gameData;
+        gameData.Varint(18, 1); // a local gscookieid, not a Valve session cookie
+        PbWriter welcome;
+        welcome.Varint(1, 0);
+        welcome.Bytes(2, gameData.bytes());
+        welcome.Varint(7, static_cast<std::uint32_t>(std::time(nullptr)));
+        gc.Reply(gc_msg::EGCBaseClientMsg::k_EMsgGCServerWelcome, welcome.bytes());
+        gc.m_serverReady = true;
+        gc.m_serverItems.clear();
+    });
+    SetHandler(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_Server2GCClientValidate,
+               [](const FrameView &, LocalGameCoordinator &gc) { gc.m_serverItems.clear(); });
+}
+
+void LocalGameCoordinator::RefreshServerInventory()
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_serverReady || !m_live || !m_config.owner.id)
+        return;
+    auto items = m_live->EncodedServerItems(static_cast<std::uint32_t>(m_config.owner.id));
+    if (items == m_serverItems)
+        return;
+    m_serverItems = items;
+    PbWriter type;
+    type.Varint(1, ItemTypeId);
+    for (const auto &item : items)
+        type.Bytes(2, item);
+    PbWriter owner;
+    owner.Varint(1, m_config.owner.type);
+    owner.Varint(2, m_config.owner.id);
+    PbWriter cache;
+    cache.Message(2, type);
+    cache.Fixed64(3, ++m_soVersion);
+    cache.Message(4, owner);
+    Reply(gc_msg::ESOMsg::k_ESOMsg_CacheSubscribed, cache.bytes());
+}
+
+bool LocalGameCoordinator::ApplyEarnedXp(std::uint64_t cumulativeXp, const std::function<void()> &afterChange)
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_live || !m_live->ApplyEarnedXp(cumulativeXp))
+        return false;
+    const auto &inventory = m_live->Items();
+    if (m_armory)
+        m_armory->SetBalance(inventory.ArmoryCredits().value_or(0));
+    {
+        std::lock_guard passLock(m_txnMutex);
+        if (!m_xpShop.empty())
+        {
+            auto pass = WithXpShopBalance(m_xpShop, inventory.ArmoryCredits().value_or(0));
+            if (pass)
+                pass = WithXpShopTracks(*pass, inventory.XpTracks());
+            if (pass)
+            {
+                m_xpShop = *pass;
+                SoSingleObject updated;
+                updated.typeId = static_cast<std::int32_t>(XpShopTypeId);
+                updated.data = *pass;
+                updated.version = ++m_soVersion;
+                updated.owner = m_config.owner;
+                Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+            }
+        }
+    }
+    std::vector<std::uint8_t> base;
+    if (m_replay)
+        if (const auto *welcome = m_replay->Find(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome))
+        {
+            PbReader reader(*welcome);
+            PbField field;
+            while (reader.Next(field))
+                if (field.number == 6 && field.wire == 2)
+                    base.assign(field.bytes.begin(), field.bytes.end());
+        }
+    if (const auto profile = WithLocalProfile(base, inventory.Progress()))
+        Reply(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, *profile);
+    if (m_config.diagnostic)
+        m_config.diagnostic("progression: earned XP applied; profile, passes and stars saved");
+    if (afterChange)
+        afterChange();
+    return true;
+}
+
 void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::shared_ptr<LiveInventory> inventory,
                                         RandomSource random, std::function<void()> afterGrant)
 {
@@ -88,8 +186,12 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
             auto objects = ExtractObjects(*welcome, XpShopTypeId);
             if (!objects.empty())
             {
+                // The recorded account's own passes are not ours: start from the ones activated here (none at first).
+                auto pass = WithXpShopBalance(objects.front(), armory->Balance());
+                if (pass)
+                    pass = WithXpShopTracks(*pass, inventory->Items().XpTracks());
                 std::lock_guard lock(m_txnMutex);
-                m_xpShop = WithXpShopBalance(objects.front(), armory->Balance()).value_or(std::move(objects.front()));
+                m_xpShop = pass.value_or(std::move(objects.front()));
             }
         }
 
@@ -149,8 +251,10 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                    std::optional<std::vector<std::uint8_t>> pass;
                    {
                        std::lock_guard lock(gc.m_txnMutex);
-                       if (definition == DefinitionArmoryPass && !gc.m_xpShop.empty() && (*itemId >> 60) != 0xF)
-                           pass = WithXpShopTrack(gc.m_xpShop, 0);
+                       // A new pass starts at 1 XP: the page draws a pass only when its XP is non-zero.
+                       if (definition == DefinitionArmoryPass && !gc.m_xpShop.empty() && (*itemId >> 60) != 0xF &&
+                           inventory->AddXpTrack(1))
+                           pass = WithXpShopTracks(gc.m_xpShop, inventory->Items().XpTracks());
                        if (pass)
                            gc.m_xpShop = *pass;
                    }
@@ -175,6 +279,8 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                    destroyed.version = ++gc.m_soVersion;
                    destroyed.owner = gc.m_config.owner;
                    gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(destroyed));
+                   gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                            EncodeCustomizationNotification(NotificationXpShopUseTicket, *itemId));
                    if (afterGrant)
                        afterGrant();
                });
@@ -267,12 +373,54 @@ void LocalGameCoordinator::EnableStorePurchases(std::shared_ptr<LiveInventory> i
                    }
                    const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
                    std::vector<std::uint64_t> itemIds;
+                   std::shared_ptr<const Schema> schema;
+                   {
+                       std::lock_guard lock(gc.m_txnMutex);
+                       schema = gc.m_schema;
+                   }
                    // The creates go out before the response so the ids in it already resolve in the cache.
+                   std::set<std::uint64_t> terminals;
+                   for (const auto &line : txn->lines)
+                       if (line.supplementalData &&
+                           (!schema || line.quantity != 1 || !terminals.insert(line.supplementalData).second ||
+                            inventory->DefinitionOf(line.supplementalData) != line.defIndex ||
+                            !inventory->TerminalOffer(*schema, line.supplementalData)))
+                       {
+                           response.Varint(1, ResultFail);
+                           gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseFinalizeResponse, response.bytes(),
+                                    ReplyHeaderFor(frame));
+                           return;
+                       }
                    for (const auto &line : txn->lines)
                        for (std::uint32_t i = 0; i < line.quantity; ++i)
                        {
+                           if (line.supplementalData)
+                           {
+                               const auto accepted = inventory->AcceptTerminal(*schema, line.supplementalData);
+                               SoSingleObject object;
+                               object.typeId = static_cast<std::int32_t>(ItemTypeId);
+                               object.owner = gc.m_config.owner;
+                               object.version = ++gc.m_soVersion;
+                               object.data = BuildEconItem(accepted->terminal, accountId, line.supplementalData, ItemPositionBase);
+                               gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(object));
+                               object.version = ++gc.m_soVersion;
+                               object.data = BuildEconItem(*accepted->offer, accountId, CustomItemIdBase + accepted->offer->id,
+                                                          InventoryUnacknowledgedBit | PickupPurchased);
+                               gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(object));
+                               itemIds.push_back(CustomItemIdBase + accepted->offer->id);
+                               continue;
+                           }
                            InventoryItem item;
                            item.defIndex = line.defIndex;
+                           // Deliver a coupon's guaranteed item directly, including capsules and packages.
+                           // Do not roll/open that container or guess at unresolved/bundle coupon contents.
+                           if (schema)
+                               if (const auto entries = schema->CouponEntries(line.defIndex); entries.size() == 1)
+                                   if (const auto loot = schema->ResolveLootItem(entries[0]);
+                                       loot && (loot->kind == LootKind::Sticker || loot->kind == LootKind::Keychain ||
+                                                loot->kind == LootKind::Plain))
+                                       item = MakeLootItem(*loot, schema->ItemRarity(loot->weaponDefIndex),
+                                                           [] { return std::uint64_t{0}; });
                            item = inventory->AddItem(item);
                            SoSingleObject created;
                            created.typeId = static_cast<std::int32_t>(ItemTypeId);
@@ -299,9 +447,46 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
 {
     if (!inventory || !schema)
         return;
+    {
+        std::lock_guard lock(m_txnMutex);
+        m_schema = schema;
+    }
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCOpenCrate,
                [inventory, schema, random, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
                    const auto request = DecodeOpenCrateRequest(frame.body);
+                   const auto definition = request ? inventory->DefinitionOf(request->crateItemId) : std::nullopt;
+                   const auto *crateInfo = definition ? schema->FindCrate(*definition) : nullptr;
+                   if (request && crateInfo && crateInfo->kind == CrateKind::Terminal)
+                   {
+                       const auto change = inventory->AdvanceTerminal(*schema, *request, random,
+                                                                       static_cast<std::uint32_t>(std::time(nullptr)));
+                       if (!change)
+                       {
+                           ++gc.m_ignored;
+                           return;
+                       }
+                       const auto send = [&](std::uint32_t type, const InventoryItem &item) {
+                           SoSingleObject object;
+                           object.typeId = static_cast<std::int32_t>(ItemTypeId);
+                           object.data = BuildEconItem(item, static_cast<std::uint32_t>(gc.m_config.owner.id),
+                                                      CustomItemIdBase + item.id, ItemPositionBase);
+                           object.version = ++gc.m_soVersion;
+                           object.owner = gc.m_config.owner;
+                           gc.Reply(type, EncodeSoSingleObject(object));
+                       };
+                       for (const auto &item : change->removed)
+                           send(gc_msg::ESOMsg::k_ESOMsg_Destroy, item);
+                       send(change->exhausted ? gc_msg::ESOMsg::k_ESOMsg_Destroy : gc_msg::ESOMsg::k_ESOMsg_Update,
+                            change->terminal);
+                       if (change->offer)
+                           send(gc_msg::ESOMsg::k_ESOMsg_Create, *change->offer);
+                       gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                                EncodeCustomizationNotification(change->unsealed ? NotificationUnlockCrate : NotificationCasketContents,
+                                                                request->crateItemId));
+                       if (afterChange)
+                           afterChange();
+                       return;
+                   }
                    const auto opened = request ? inventory->Open(*schema, request->crateItemId, request->keyItemId, random)
                                                : std::nullopt;
                    if (!opened)
@@ -331,6 +516,122 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                    gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
                             EncodeCustomizationNotification(NotificationUnlockCrate,
                                                             CustomItemIdBase + opened->item.id));
+                   if (afterChange)
+                       afterChange();
+               });
+
+    // Storage units. The items stay in the cache; one inside a unit just carries the unit's id in two
+    // attributes and the game shows it there. Every outcome is a notification naming the unit.
+    const auto storage = [inventory, afterChange](bool deposit) {
+        return [inventory, afterChange, deposit](const FrameView &frame, LocalGameCoordinator &gc) {
+            const auto request = DecodeCasketRequest(frame.body);
+            if (!request)
+            {
+                ++gc.m_ignored;
+                return;
+            }
+            const auto now = static_cast<std::uint32_t>(std::time(nullptr));
+            const auto change = deposit ? inventory->StoreItem(request->casketItemId, request->itemId, now)
+                                        : inventory->TakeItem(request->casketItemId, request->itemId, now);
+            if (change.result == LiveInventory::StorageResult::Invalid)
+            {
+                ++gc.m_ignored;
+                return;
+            }
+            if (change.result == LiveInventory::StorageResult::Full)
+            {
+                gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                         EncodeCustomizationNotification(NotificationCasketTooFull, request->casketItemId));
+                return;
+            }
+            const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+            for (const auto &[object, position] : {std::pair{&change.item, change.itemPosition},
+                                                   std::pair{&change.casket, change.casketPosition}})
+            {
+                SoSingleObject updated;
+                updated.typeId = static_cast<std::int32_t>(ItemTypeId);
+                updated.data = BuildEconItem(*object, accountId, CustomItemIdBase + object->id, position);
+                updated.version = ++gc.m_soVersion;
+                updated.owner = gc.m_config.owner;
+                gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+            }
+            gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                     EncodeCustomizationNotification(deposit ? NotificationCasketAdded : NotificationCasketRemoved,
+                                                     request->casketItemId));
+            if (afterChange)
+                afterChange();
+        };
+    };
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCCasketItemAdd, storage(true));
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCCasketItemExtract, storage(false));
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCCasketItemLoadContents,
+               [inventory, schema](const FrameView &frame, LocalGameCoordinator &gc) {
+                   const auto request = DecodeCasketRequest(frame.body);
+                   const InventoryItem *casket = request && request->casketItemId > CustomItemIdBase
+                                                     ? inventory->Items().Find(request->casketItemId - CustomItemIdBase)
+                                                     : nullptr;
+                   const auto *crate = casket ? schema->FindCrate(casket->defIndex) : nullptr;
+                   if (!casket || (casket->defIndex != DefinitionStorageUnit && (!crate || crate->kind != CrateKind::Terminal)))
+                   {
+                       ++gc.m_ignored;
+                       return;
+                   }
+                   gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                            EncodeCustomizationNotification(NotificationCasketContents, request->casketItemId));
+               });
+
+    // Trade-up contracts. The request is a protobuf (recipe, ten item ids); the response is still the old
+    // struct: recipe index (int16), result (uint32), item count (uint16), then the new item's id.
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCCraft,
+               [inventory, schema, random, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
+                   constexpr std::uint32_t ResponseOk = 0;
+                   constexpr std::uint32_t ResponseInvalid = 4;
+                   const auto request = DecodeCraftRequest(frame.body);
+                   if (!request)
+                   {
+                       ++gc.m_ignored;
+                       return;
+                   }
+                   const auto respond = [&gc, &request](std::uint32_t result, std::uint64_t itemId) {
+                       std::vector<std::uint8_t> body;
+                       const auto put = [&body](std::uint64_t value, int bytes) {
+                           for (int i = 0; i < bytes; ++i)
+                               body.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
+                       };
+                       put(request->recipe, 2);
+                       put(result, 4);
+                       put(itemId ? 1 : 0, 2);
+                       if (itemId)
+                           put(itemId, 8);
+                       gc.ReplyStruct(gc_msg::EGCItemMsg::k_EMsgGCCraftResponse, body);
+                   };
+                   const TradeUpResult traded = inventory->TradeUp(*schema, request->itemIds, random);
+                   if (gc.m_config.diagnostic)
+                       gc.m_config.diagnostic(std::string{"trade-up: "} + TradeUpErrorText(traded.error));
+                   if (traded.error != TradeUpError::None)
+                   {
+                       ++gc.m_ignored;
+                       respond(ResponseInvalid, 0);
+                       return;
+                   }
+                   const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                   for (const InventoryItem &input : traded.consumed)
+                   {
+                       SoSingleObject destroyed;
+                       destroyed.typeId = static_cast<std::int32_t>(ItemTypeId);
+                       destroyed.data = BuildEconItem(input, accountId, CustomItemIdBase + input.id, ItemPositionBase);
+                       destroyed.version = ++gc.m_soVersion;
+                       destroyed.owner = gc.m_config.owner;
+                       gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(destroyed));
+                   }
+                   SoSingleObject created;
+                   created.typeId = static_cast<std::int32_t>(ItemTypeId);
+                   created.data = BuildEconItem(traded.item, accountId, CustomItemIdBase + traded.item.id,
+                                                InventoryUnacknowledgedBit | PickupCrafted);
+                   created.version = ++gc.m_soVersion;
+                   created.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
+                   respond(ResponseOk, CustomItemIdBase + traded.item.id);
                    if (afterChange)
                        afterChange();
                });
@@ -404,6 +705,111 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCApplySticker,
                [inventory, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
                    const auto request = DecodeApplyStickerRequest(frame.body);
+                   std::shared_ptr<const Schema> schema;
+                   {
+                       std::lock_guard lock(gc.m_txnMutex);
+                       schema = gc.m_schema;
+                   }
+                   // The built-in Remove Keychain Tool takes the charm off a weapon and gives it back as an item.
+                   if (request && (request->stickerItemId >> 60) == 0xF &&
+                       (request->stickerItemId & 0xFFFFFFFFull) == DefinitionRemoveKeychainTool)
+                   {
+                       const auto detached = inventory->DetachCharm(request->targetItemId);
+                       if (!detached)
+                       {
+                           ++gc.m_ignored;
+                           return;
+                       }
+                       const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                       SoSingleObject created;
+                       created.typeId = static_cast<std::int32_t>(ItemTypeId);
+                       created.data = BuildEconItem(detached->charm, accountId, CustomItemIdBase + detached->charm.id,
+                                                    InventoryUnacknowledgedBit | PickupPurchased);
+                       created.version = ++gc.m_soVersion;
+                       created.owner = gc.m_config.owner;
+                       gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
+                       SoSingleObject updated;
+                       updated.typeId = static_cast<std::int32_t>(ItemTypeId);
+                       updated.data = BuildEconItem(detached->weapon, accountId, CustomItemIdBase + detached->weapon.id,
+                                                    detached->position);
+                       updated.version = ++gc.m_soVersion;
+                       updated.owner = gc.m_config.owner;
+                       gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+                       gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                                EncodeCustomizationNotification(NotificationRemoveKeychain,
+                                                                CustomItemIdBase + detached->weapon.id));
+                       if (afterChange)
+                           afterChange();
+                       return;
+                   }
+                   // No sticker item means a scrape of the one in that slot.
+                   if (request && request->stickerItemId == 0)
+                   {
+                       const auto scraped = inventory->ScrapeSticker(request->targetItemId, request->slot, request->wearTarget);
+                       if (!scraped)
+                       {
+                           ++gc.m_ignored;
+                           return;
+                       }
+                       const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                       SoSingleObject updated;
+                       updated.typeId = static_cast<std::int32_t>(ItemTypeId);
+                       updated.data = BuildEconItem(scraped->item, accountId, CustomItemIdBase + scraped->item.id,
+                                                    scraped->position);
+                       updated.version = ++gc.m_soVersion;
+                       updated.owner = gc.m_config.owner;
+                       gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+                       if (scraped->removed)
+                           gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                                    EncodeCustomizationNotification(NotificationRemoveSticker,
+                                                                    CustomItemIdBase + scraped->item.id));
+                       if (afterChange)
+                           afterChange();
+                       return;
+                   }
+                   // The same message seals a sticker in a Sticker Slab: the target is the slab, not a weapon.
+                   if (request && schema)
+                       if (const auto sealed = inventory->SealSticker(*schema, request->stickerItemId, request->targetItemId))
+                       {
+                           const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                           const auto destroy = [&](const InventoryItem &item) {
+                               SoSingleObject object;
+                               object.typeId = static_cast<std::int32_t>(ItemTypeId);
+                               object.data = BuildEconItem(item, accountId, CustomItemIdBase + item.id, ItemPositionBase);
+                               object.version = ++gc.m_soVersion;
+                               object.owner = gc.m_config.owner;
+                               gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(object));
+                           };
+                           destroy(sealed->sticker);
+                           destroy(sealed->slab);
+                           SoSingleObject created;
+                           created.typeId = static_cast<std::int32_t>(ItemTypeId);
+                           created.data = BuildEconItem(sealed->charm, accountId, CustomItemIdBase + sealed->charm.id,
+                                                        InventoryUnacknowledgedBit | PickupPurchased);
+                           created.version = ++gc.m_soVersion;
+                           created.owner = gc.m_config.owner;
+                           gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
+                           gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                                    EncodeCustomizationNotification(NotificationEncapsulateSticker,
+                                                                    CustomItemIdBase + sealed->charm.id));
+                           if (afterChange)
+                               afterChange();
+                           return;
+                       }
+                   // A built-in weapon the schema does not define cannot become an item.
+                   if (request && request->baseItemDefIndex && schema && !schema->HasItem(request->baseItemDefIndex))
+                   {
+                       ++gc.m_ignored;
+                       return;
+                   }
+                   // A slab is never a weapon: if sealing did not take, change nothing.
+                   if (request && schema)
+                       if (const auto target = inventory->DefinitionOf(request->targetItemId);
+                           target && schema->SlabKeychainIndex(*target))
+                       {
+                           ++gc.m_ignored;
+                           return;
+                       }
                    const auto applied = request ? inventory->ApplySticker(*request) : std::nullopt;
                    if (!applied)
                    {
@@ -425,10 +831,13 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
                                                 applied->position);
                    updated.version = ++gc.m_soVersion;
                    updated.owner = gc.m_config.owner;
-                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+                   // A built-in weapon becomes an inventory item here, so the game is told of a new item.
+                   gc.Reply(applied->created ? gc_msg::ESOMsg::k_ESOMsg_Create : gc_msg::ESOMsg::k_ESOMsg_Update,
+                            EncodeSoSingleObject(updated));
 
                    gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
-                            EncodeCustomizationNotification(NotificationApplySticker,
+                            EncodeCustomizationNotification(applied->charm ? NotificationApplyKeychain
+                                                                            : NotificationApplySticker,
                                                             CustomItemIdBase + applied->item.id));
                    if (afterChange)
                        afterChange();
@@ -495,6 +904,23 @@ bool LocalGameCoordinator::Reply(std::uint32_t type, std::span<const std::uint8_
     return m_toGame.Push(std::move(message));
 }
 
+bool LocalGameCoordinator::ReplyStruct(std::uint32_t type, std::span<const std::uint8_t> body)
+{
+    Message message{type, {}};
+    const auto put = [&message](std::uint64_t value, int bytes) {
+        for (int i = 0; i < bytes; ++i)
+            message.bytes.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
+    };
+    put(type, 4);
+    put(0, 4);
+    put(0, 8);
+    put(1, 2); // header version
+    put(~std::uint64_t{0}, 8); // target job: none
+    put(~std::uint64_t{0}, 8); // source job: none
+    message.bytes.insert(message.bytes.end(), body.begin(), body.end());
+    return m_toGame.PushStruct(std::move(message));
+}
+
 bool LocalGameCoordinator::Reply(std::uint32_t type, std::span<const std::uint8_t> body)
 {
     Message message{type | ProtobufMask, {}};
@@ -536,6 +962,9 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
         if (const auto *welcome = m_replay->Find(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome))
         {
             std::vector<std::uint8_t> patched = *welcome;
+            if (m_live)
+                if (auto profile = WithWelcomeProfile(patched, m_live->Items().Progress()))
+                    patched = std::move(*profile);
             if (m_itemProvider || m_dropRecordedItems)
             {
                 const auto items = m_itemProvider ? m_itemProvider(m_config.owner.id)

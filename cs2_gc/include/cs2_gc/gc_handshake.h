@@ -97,11 +97,14 @@ struct ApplyStickerRequest // CMsgApplySticker: the body of k_EMsgGCApplySticker
     std::uint64_t stickerItemId{};
     std::uint64_t targetItemId{};
     std::uint32_t slot{};
+    std::uint32_t baseItemDefIndex{}; // baseitem_defidx: apply to a built-in item that is not in the inventory yet
     float wear{};
     float rotation{};
     float scale{};
     float offsetX{};
     float offsetY{};
+    float offsetZ{};
+    std::optional<float> wearTarget; // sticker_wear_target: the level chosen on the scrape slider
 };
 
 struct StorePurchaseRequest // CMsgGCStorePurchaseInit: the body of k_EMsgGCStorePurchaseInit
@@ -110,6 +113,7 @@ struct StorePurchaseRequest // CMsgGCStorePurchaseInit: the body of k_EMsgGCStor
     {
         std::uint32_t defIndex{};
         std::uint32_t quantity{};
+        std::uint64_t supplementalData{};
     };
     std::uint32_t currency{};
     std::vector<Line> lines;
@@ -119,6 +123,20 @@ struct OpenCrateRequest // CMsgOpenCrate: the body of k_EMsgGCOpenCrate
 {
     std::uint64_t keyItemId{};   // tool_item_id; zero for containers that need no key
     std::uint64_t crateItemId{}; // subject_item_id
+    std::optional<std::uint32_t> pointsRemaining;
+    std::uint32_t volatileLimit{};
+};
+
+struct CasketRequest // CMsgCasketItem: the body of the storage unit messages
+{
+    std::uint64_t casketItemId{};
+    std::uint64_t itemId{}; // zero when loading contents
+};
+
+struct CraftRequest // CMsgCraftItemsRequest: the body of k_EMsgGCCraft (a trade-up contract)
+{
+    std::uint32_t recipe{};
+    std::vector<std::uint64_t> itemIds;
 };
 
 struct NameItemRequest // k_EMsgGCNameItem, fields as seen in a capture: 1 name tag item (0 here), 2 item, 4 name
@@ -140,6 +158,8 @@ std::optional<StorePurchaseRequest> DecodeStorePurchaseRequest(std::span<const s
 std::optional<std::uint64_t> DecodeTxnId(std::span<const std::uint8_t> body); // Finalize / Cancel: field 1
 std::optional<std::uint64_t> DecodeUseItemRequest(std::span<const std::uint8_t> body); // CMsgUseItem.item_id
 std::optional<OpenCrateRequest> DecodeOpenCrateRequest(std::span<const std::uint8_t> body);
+std::optional<CasketRequest> DecodeCasketRequest(std::span<const std::uint8_t> body);
+std::optional<CraftRequest> DecodeCraftRequest(std::span<const std::uint8_t> body);
 std::optional<NameItemRequest> DecodeNameItemRequest(std::span<const std::uint8_t> body);
 std::optional<RedeemRequest> DecodeRedeemRequest(std::span<const std::uint8_t> body);
 std::vector<std::uint8_t> EncodeSoSingleObject(const SoSingleObject &object);

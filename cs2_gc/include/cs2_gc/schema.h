@@ -6,11 +6,12 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace cs2_gc
 {
-enum class CrateKind { Case, Capsule, GraffitiBox, Other };
+enum class CrateKind { Case, Capsule, GraffitiBox, Pins, Terminal, Other }; // Pins: collectible pin capsules, keyless
 
 struct CrateInfo
 {
@@ -30,7 +31,7 @@ struct LootTier
     std::vector<std::string> items;  // "[paintkit]weapon_class" style entries, unexpanded
 };
 
-enum class LootKind { Skin, Sticker, Keychain };
+enum class LootKind { Skin, Sticker, Keychain, Plain }; // Plain: an item named as it is in the schema
 
 // One resolved "[name]class" loot entry: "[finish]weapon_x" is a skin, "[kit]sticker" a sticker and
 // "[charm]keychain" a charm.
@@ -61,6 +62,13 @@ struct ArmoryRedeemable
 
 std::uint32_t Crc32(std::string_view text);
 
+// A weapon skin: the weapon's item definition and the finish (paint kit) index.
+struct SkinRef
+{
+    std::uint32_t weaponDefIndex{};
+    std::uint32_t paintKitIndex{};
+};
+
 // Read-only view over the target client's items_game.txt. Built from the real
 // file at runtime; nothing here is a hand-written item list.
 class Schema
@@ -89,8 +97,40 @@ public:
     const std::vector<ArmoryRedeemable> &ArmoryRedeemables() const { return m_armoryRedeemables; }
     const ArmoryRedeemable *FindRedeemable(std::uint32_t campaignId, std::uint32_t redeemId) const;
 
+    // Collections (the schema's `item_sets`: cases' contents and the newer Armory collections alike) a skin
+    // belongs to, sorted by name. Only weapon skins are indexed.
+    std::vector<std::string> CollectionsOf(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
+    // The skins of one collection, in schema order; empty for an unknown collection.
+    const std::vector<SkinRef> &CollectionSkins(const std::string &collection) const;
+    std::size_t CollectionCount() const { return m_collectionSkins.size(); }
+
+    // A finish offered by a keyed weapon case can have StatTrak; collection-only drops cannot.
+    bool CanBeStatTrak(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
+    // Supplement server-only rare pools with a versioned catalogue, validating every definition/finish.
+    bool LoadGoldPools(std::string_view text);
+    std::vector<SkinRef> GoldOutcomes(const std::string &collection, bool statTrak) const;
+    bool IsKnife(std::uint32_t defIndex) const;
+
+    // A skin as a loot entry (finish name and wear range) so a trade-up can mint it. Nothing if the
+    // weapon or finish is unknown.
+    std::optional<LootItem> SkinAsLootItem(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
+
     // The rarity value of an item definition by its own `item_rarity` (0 when it has none).
     std::uint32_t ItemRarity(std::uint32_t defIndex) const;
+
+    // The raw loot list entries of a Store coupon item ("[kit]sticker", "[kit]musickit", a plain item
+    // name, ...); empty when the item is not a coupon.
+    std::vector<std::string> CouponEntries(std::uint32_t defIndex) const;
+
+    // What a Store "coupon" item (names like "coupon - crate_xray_p250", with a `loot_list_name`) turns
+    // into when opened: the items its coupon loot list names, which are plain items such as a crate.
+    // Empty when the item is not a coupon or its list resolves to nothing.
+    std::vector<std::uint32_t> CouponContents(std::uint32_t defIndex) const;
+
+    // For a Sticker Slab (an item with the `can_wrap_sticker` capability): the keychain index its
+    // attribute "display case keychain id" names. A sealed slab is a charm of that keychain holding a
+    // sticker. Nothing for any other item.
+    std::optional<std::uint32_t> SlabKeychainIndex(std::uint32_t defIndex) const;
 
     bool HasItem(std::uint32_t defIndex) const { return m_itemsByIndex.count(defIndex) != 0; }
 
@@ -120,5 +160,11 @@ private:
     std::unordered_map<std::string, std::uint32_t> m_keychains;     // name -> index
     std::vector<ArmoryRedeemable> m_armoryRedeemables;
     std::unordered_map<std::string, const KvNode *> m_prefabs;
+    std::vector<const KvNode *> m_itemSets;
+    std::unordered_map<std::string, std::vector<SkinRef>> m_collectionSkins;
+    std::unordered_map<std::uint64_t, std::vector<std::string>> m_skinCollections; // weapon << 32 | kit
+    std::unordered_set<std::uint64_t> m_statTrakSkins;
+    std::unordered_map<std::string, std::vector<SkinRef>> m_goldPools;
+    std::unordered_map<std::uint32_t, std::string> m_weaponNames;                  // definition -> class name
 };
 }

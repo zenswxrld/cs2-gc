@@ -1,3 +1,5 @@
+> For the current Codex test build, saved ranks/stars, bot-server GC, gold contracts and terminals, see [TEST-BUILD.md](TEST-BUILD.md) and [CLAUDE-HANDOFF.md](CLAUDE-HANDOFF.md). Older implementation notes below describe earlier builds.
+
 # Diagnostic proxy (`steam_api64.dll` stand-in)
 
 **Status: built and cross-compiled, never run.** It has not been tested on Windows or against
@@ -153,6 +155,60 @@ in this session's view of the inventory: nothing is stored on Valve's side.
   notification (message 1090, request 1007) the "Unlock Container" screen waits for. Not handled: music kit
   boxes, souvenir packages, graffiti boxes and about 55 old capsules whose loot lists the schema loader
   cannot resolve. The apply-sticker screen likewise waits for a notification (request 1086), now sent.
+- **Store coupons** (the envelope items, definitions 20xxx, such as the 10 Year Birthday Sticker Capsule) open into the
+  container their coupon loot list names, with no key: the coupon is consumed and the container appears, to be
+  opened in turn. 45 coupons resolve in the target schema: their containers are 19 sticker capsules (which open),
+  3 graffiti boxes and 23 others (pins, patch packs, the X-Ray package) that do not open yet.
+- **Charms** attach through the same `ApplySticker` request (1086) as stickers, with the charm item as the first
+  id and x, y, z offsets in fields 8 to 10. The weapon gets attributes 299 (id) and 300 to 302 (offsets) and the
+  game gets the ApplyKeychain notification (1091). One charm per weapon. Armory Pass activation sends the
+  XpShopUseTicket notification (9221).
+- **Storage units** (item 1201): the game's add, extract and load-contents messages (1092, 1093, 1094, each
+  naming the unit and the item) are answered locally. A stored item stays in the inventory and carries the
+  unit's id in attributes 272 and 273, which is how the game places it inside the unit; the unit carries an item
+  count (270) and a modification date (271). Deposit and extract send an update of the item and of the unit and
+  then a notification naming the unit (1013 added, 1014 removed, 1011 full, 1012 contents). A unit holds 1000
+  items. The contents are saved in `cs2_gc_inventory.txt`. Unconfirmed in the game.
+- **Collectible pin capsules** open without a key into one pin (their loot lists name plain items). Patch packs,
+  the X-Ray package and music kit boxes still do not open.
+- **Store purchases of coupons.** The Store sells coupon items (definitions 20xxx). A coupon for a single sticker or
+  charm is bought as that sticker or charm; a coupon for a container stays an envelope to unlock (as in the CS:GO
+  fork). Music kit coupons (92 of them) are still bought as envelopes until music kits are supported.
+- **Sticker Slabs** (item 4000: the schema gives it `can_wrap_sticker` and a "display case keychain id" of 37). Sealing
+  a sticker sends the same `ApplySticker` message with the slab as the target. The proxy destroys both and creates
+  one charm of keychain 37 holding the sticker (attributes 299 and 321) and sends EncapsulateSticker (1055).
+  This is a best guess at what the real GC does, not confirmed; an earlier build treated the slab as a weapon
+  and the game crashed. An attached slab keeps its sticker.
+- **Repairing slabs.** An early build wrote a sticker onto a slab item and saved it; the game crashed on that item, and
+  kept crashing on the slab screen each session afterwards, since the file reloads it. The proxy now strips
+  stickers and charms from slab items when it loads the inventory (log line: "removed stickers or charms from N
+  Sticker Slab item(s)") and refuses to apply anything to a slab except by sealing.
+- **Trade-up contracts.** `Craft` (1002) is a protobuf (`CMsgCraftItemsRequest`: recipe in field 1, the ten item ids
+  in field 2). Ten skins of one rarity (and all StatTrak or all not) become one skin of the next rarity: each
+  collection that supplied inputs is picked in proportion to how many it supplied, then one of its next-rarity
+  skins evenly; the wear is the inputs' average placed in the new finish's range. Collections are the schema's
+  `item_sets`, 97 in the target build, so the CS2-only Armory collections count like the older ones. Checked
+  offline against the real file: every skin in every collection has a computable rarity, and every collection
+  and rarity below its top tier produces an outcome. Not handled: Covert to knife or glove contracts (65
+  collection and rarity pairs), and the 3 character sets hold agents, not skins. The result arrives as a
+  new item (pickup type 2, crafted) after ten destroys, then the response in the old struct form that the
+  client's `CGCCraftResponse` class implies: recipe (int16), result (uint32, 0 OK, 4 invalid), count
+  (uint16), item id. That frame is copied from the CS:GO fork and not confirmed in the CS2 client.
+- **Stickers and charms on built-in weapons** (the C4, default rifles): the request names `baseitem_defidx` (field 4)
+  instead of an item id. The weapon becomes an inventory item, with the sticker or charm on it, announced as a
+  new item.
+- **Armory passes** (corrected): the page draws a pass only when its XP is non-zero (`xp_tracks[i]` is tested for
+  truth), so a new pass starts at 1 XP. At most 5 passes can be active. They are saved in `cs2_gc_inventory.txt`
+  (`xp_tracks`), and the recorded account's own two passes are dropped, so the Armory starts with none. A
+  ticket is kept when a sixth would exceed the limit.
+- **Removing a charm**: the built-in Remove Keychain Tool (definition 65, id `0xF000000000000041`) is sent through
+  `ApplySticker` with the weapon as the item. The charm becomes a loose item again, the weapon is updated and
+  RemoveKeychain (1092) is sent.
+- **Scraping and removing stickers**: an `ApplySticker` with no sticker item targets the sticker in that slot. Field 11
+  (`sticker_wear_target`) is read as the level chosen on the "Sticker Scrape Level" slider: the wear moves to it
+  (never down), and a target of 1 or more removes the sticker and sends RemoveSticker (1053). Without a target
+  the wear rises by a ninth (the CS:GO fork's rule). Field 5 (`sticker_wear`) is seen as -1.0 and 1.0 and is not
+  used; this reading of the two fields is a guess, not confirmed.
 - **Naming items** (`NameItem` 1006: item and name) sets the custom name attribute (111) and notifies; the name
   is saved in `cs2_gc_inventory.txt`. The name tag item is not consumed (the game sent no tag id).
 - **Armory Pass.** The pass is item 1354 (`XpShopTicket1`), bought in the Store like any item. The Armory page then

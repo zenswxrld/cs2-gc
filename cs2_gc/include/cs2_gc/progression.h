@@ -1,9 +1,25 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
+#include <span>
+#include <vector>
 
 namespace cs2_gc
 {
+inline constexpr std::uint32_t ProfileLevelXp = 5000;
+inline constexpr std::uint32_t ArmoryStarXp = 400;
+inline constexpr std::uint32_t ArmoryPassMaxXp = 40 * ArmoryStarXp;
+struct LocalProgress
+{
+    std::uint32_t level{1};
+    std::uint32_t xp{};
+    std::uint64_t rewardTotal{}; // cumulative bridge XP already applied, for idempotent delivery
+};
+std::optional<std::vector<std::uint8_t>> WithLocalProfile(std::span<const std::uint8_t> body,
+                                                       const LocalProgress &profile);
+std::optional<std::vector<std::uint8_t>> WithWelcomeProfile(std::span<const std::uint8_t> body,
+                                                         const LocalProgress &profile);
 // The adapter must filter events to the local player. Headshot is an extra
 // reward in addition to Kill, matching the CS:GO fork's configuration.
 enum class RewardEvent { Kill, Headshot, MVP, Plant, Defuse, MatchComplete };

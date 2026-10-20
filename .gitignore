@@ -9,3 +9,7 @@ cs2_gc_log.txt
 cs2_gc_replay/
 cs2_gc.cfg
 cs2_gc.cfg.txt
+cs2_gc_inventory.txt
+cs2_gc_rewards.txt
+cs2_gc_gsi_state.json
+gamestate_integration_cs2_gc.cfg

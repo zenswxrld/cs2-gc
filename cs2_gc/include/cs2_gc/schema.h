@@ -92,6 +92,11 @@ public:
     // The rarity value of an item definition by its own `item_rarity` (0 when it has none).
     std::uint32_t ItemRarity(std::uint32_t defIndex) const;
 
+    // What a Store "coupon" item (names like "coupon - crate_xray_p250", with a `loot_list_name`) turns
+    // into when opened: the items its coupon loot list names, which are plain items such as a crate.
+    // Empty when the item is not a coupon or its list resolves to nothing.
+    std::vector<std::uint32_t> CouponContents(std::uint32_t defIndex) const;
+
     bool HasItem(std::uint32_t defIndex) const { return m_itemsByIndex.count(defIndex) != 0; }
 
     // The item definition index for an item name such as "crate_community_35".

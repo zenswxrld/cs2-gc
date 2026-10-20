@@ -22,6 +22,7 @@
 #include <cstring>
 #include <iostream>
 #include <map>
+#include <set>
 #include <limits>
 #include <random>
 #include <stdexcept>
@@ -2075,6 +2076,17 @@ void ArmoryPassActivation()
               tracks(pass1->data) == std::vector<std::uint64_t>({77, 0}), "activating adds an empty pass, keeps the recorded one");
     Check(destroyed.type == m::ESOMsg::k_ESOMsg_Destroy && live->Items().Items().size() == 1 && saves == 1,
           "the ticket is consumed and the inventory saved");
+    const Out passNotice = next();
+    std::uint64_t noticeRequest = 0;
+    {
+        PbReader reader(passNotice.body);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 2)
+                noticeRequest = f.value;
+    }
+    Check(passNotice.type == m::EGCItemMsg::k_EMsgGCItemCustomizationNotification && noticeRequest == 9221,
+          "activation sends the XpShopUseTicket notification");
     use(CustomItemIdBase + 1);
     Check(!next().any, "a ticket activates once");
 
@@ -2191,10 +2203,101 @@ void ContainersAndNaming()
     Check(!read() && live->Items().Items()[1].customName == "Stuff", "a name with a quote is refused");
 }
 
+void CharmsAndCoupons()
+{
+    namespace m = gc_msg;
+    Inventory inventory;
+    InventoryItem weapon;
+    weapon.defIndex = 7;
+    weapon.paintKitIndex = 282;
+    inventory.Add(weapon);
+    InventoryItem charm;
+    charm.defIndex = DefinitionKeychain;
+    charm.keychain = 33;
+    inventory.Add(charm);
+    InventoryItem second;
+    second.defIndex = DefinitionKeychain;
+    second.keychain = 34;
+    inventory.Add(second);
+    auto live = std::make_shared<LiveInventory>(inventory);
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    int saves = 0;
+    gc.EnableLiveInventory(live, [&saves] { ++saves; });
+
+    PbWriter body;
+    body.Varint(1, CustomItemIdBase + 2);
+    body.Varint(2, CustomItemIdBase + 1);
+    body.Fixed32(8, std::bit_cast<std::uint32_t>(9.5f));
+    body.Fixed32(9, std::bit_cast<std::uint32_t>(0.5f));
+    body.Fixed32(10, std::bit_cast<std::uint32_t>(4.25f));
+    const auto request = DecodeApplyStickerRequest(body.bytes());
+    Check(request && request->offsetZ == 4.25f, "the third offset decodes");
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCApplySticker, {}, body.bytes(), frame);
+    gc.SendMessage(m::EGCItemMsg::k_EMsgGCApplySticker | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    std::vector<std::uint32_t> types;
+    std::uint64_t notifyRequest = 0;
+    std::uint32_t size = 0;
+    while (gc.IsMessageAvailable(&size))
+    {
+        std::uint32_t got = 0, type = 0;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&type, buffer.data(), size, &got);
+        types.push_back(type & ~ProtobufMask);
+        if ((type & ~ProtobufMask) == m::EGCItemMsg::k_EMsgGCItemCustomizationNotification)
+        {
+            FrameView view;
+            ReadProtobufFrame(type, buffer, view);
+            PbReader reader(view.body);
+            PbField f;
+            while (reader.Next(f))
+                if (f.number == 2)
+                    notifyRequest = f.value;
+        }
+    }
+    Check(types.size() == 3 && types[0] == m::ESOMsg::k_ESOMsg_Destroy && types[1] == m::ESOMsg::k_ESOMsg_Update &&
+              notifyRequest == 1091,
+          "a charm is applied with the ApplyKeychain notification");
+    const InventoryItem &applied = live->Items().Items()[0];
+    Check(applied.charm && applied.charm->kit == 33 && applied.charm->offsetZ == 4.25f && applied.stickers.empty() &&
+              saves == 1 && live->Items().Items().size() == 2,
+          "the charm sits on the weapon and the charm item is consumed");
+    const auto encoded = BuildEconItem(applied, 555, CustomItemIdBase + 1, ItemPositionBase);
+    std::set<std::uint64_t> attributes;
+    {
+        PbReader reader(encoded);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 12 && f.wire == 2)
+            {
+                PbReader inner(f.bytes);
+                PbField g;
+                while (inner.Next(g))
+                    if (g.number == 1)
+                        attributes.insert(g.value);
+            }
+    }
+    Check(attributes.count(299) && attributes.count(300) && attributes.count(301) && attributes.count(302),
+          "charm id and offsets are encoded");
+    const auto restored = Inventory::FromText(live->Items().ToText());
+    Check(restored && restored->Items()[0].charm && restored->Items()[0].charm->offsetX == 9.5f,
+          "an attached charm survives a save and load");
+
+    PbWriter again;
+    again.Varint(1, CustomItemIdBase + 3);
+    again.Varint(2, CustomItemIdBase + 1);
+    WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCApplySticker, {}, again.bytes(), frame);
+    gc.SendMessage(m::EGCItemMsg::k_EMsgGCApplySticker | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    Check(!gc.IsMessageAvailable(&size) && live->Items().Items().size() == 2, "a weapon takes one charm");
+}
+
 int main()
 {
     try
     {
+        CharmsAndCoupons(); std::cout << "PASS charms\n";
         ContainersAndNaming(); std::cout << "PASS containers and naming\n";
         ArmoryPassActivation(); std::cout << "PASS armory pass activation\n";
         StorePurchases(); std::cout << "PASS store purchases\n";

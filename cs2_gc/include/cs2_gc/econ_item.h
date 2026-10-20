@@ -23,6 +23,8 @@ inline constexpr std::uint32_t AttributeKeychain = 299;     // "keychain slot 0 
 // (+0..+3, the id stored as an integer), offset x and y at 278 + 2 * slot (+0, +1).
 inline constexpr std::uint32_t AttributeStickerSlotBase = 113;
 inline constexpr std::uint32_t AttributeStickerOffsetBase = 278;
+// An attached charm: id 299 (an integer), offsets x, y, z at 300, 301, 302 (floats).
+inline constexpr std::uint32_t AttributeKeychainOffsetBase = 300;
 inline constexpr std::uint32_t AttributeCustomName = 111; // "custom name attr", a string
 inline constexpr std::uint32_t DefinitionSticker = 1209;
 inline constexpr std::uint32_t DefinitionKeychain = 1355;

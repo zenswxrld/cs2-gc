@@ -88,6 +88,9 @@ std::string Inventory::ToText() const
             << "\t\t\t\"keychain\"\t\"" << item.keychain << "\"\n";
         if (!item.customName.empty())
             out << "\t\t\t\"custom_name\"\t\"" << item.customName << "\"\n";
+        if (item.charm)
+            out << "\t\t\t\"charm\"\t\"" << item.charm->kit << ' ' << FloatText(item.charm->offsetX) << ' '
+                << FloatText(item.charm->offsetY) << ' ' << FloatText(item.charm->offsetZ) << "\"\n";
         for (const AppliedSticker &sticker : item.stickers)
             out << "\t\t\t\"sticker_" << sticker.slot << "\"\t\"" << sticker.kit << ' ' << FloatText(sticker.wear)
                 << ' ' << FloatText(sticker.scale) << ' ' << FloatText(sticker.rotation) << ' '
@@ -138,6 +141,24 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             if (node->block || !ParseSticker(node->value, sticker))
                 return std::nullopt;
             item.stickers.push_back(sticker);
+        }
+        if (const KvNode *charm = entry.Find("charm"))
+        {
+            AppliedKeychain applied;
+            float *offsets[] = {&applied.offsetX, &applied.offsetY, &applied.offsetZ};
+            std::string_view text = charm->value;
+            auto next = [&text]() {
+                const auto end = text.find(' ');
+                const std::string_view word = text.substr(0, end);
+                text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
+                return word;
+            };
+            bool ok = !charm->block && ParseNumber(next(), applied.kit) && applied.kit != 0;
+            for (float *offset : offsets)
+                ok = ok && ParseNumber(next(), *offset) && std::isfinite(*offset);
+            if (!ok || !text.empty())
+                return std::nullopt;
+            item.charm = applied;
         }
         if (const KvNode *name = entry.Find("custom_name"))
         {

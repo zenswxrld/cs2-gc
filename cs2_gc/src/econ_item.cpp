@@ -146,6 +146,16 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
         if (sticker.offsetY != 0.0f)
             AddFloatAttribute(out, offset + 1, sticker.offsetY);
     }
+    if (item.charm)
+    {
+        AddIntegerAttribute(out, AttributeKeychain, item.charm->kit);
+        if (item.charm->offsetX != 0.0f)
+            AddFloatAttribute(out, AttributeKeychainOffsetBase, item.charm->offsetX);
+        if (item.charm->offsetY != 0.0f)
+            AddFloatAttribute(out, AttributeKeychainOffsetBase + 1, item.charm->offsetY);
+        if (item.charm->offsetZ != 0.0f)
+            AddFloatAttribute(out, AttributeKeychainOffsetBase + 2, item.charm->offsetZ);
+    }
     if (!item.customName.empty())
     {
         // A string attribute's value_bytes hold a serialized CAttribute_String (value = field 1).

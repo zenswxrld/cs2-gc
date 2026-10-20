@@ -379,6 +379,7 @@ std::optional<ApplyStickerRequest> DecodeApplyStickerRequest(std::span<const std
         case 7: if (!asFloat(f, request.scale)) return std::nullopt; break;
         case 8: if (!asFloat(f, request.offsetX)) return std::nullopt; break;
         case 9: if (!asFloat(f, request.offsetY)) return std::nullopt; break;
+        case 10: if (!asFloat(f, request.offsetZ)) return std::nullopt; break;
         default: break;
         }
     }

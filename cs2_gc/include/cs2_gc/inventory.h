@@ -23,6 +23,15 @@ struct AppliedSticker
 
 inline constexpr std::uint32_t StickerSlotCount = 5;
 
+// A charm attached to a weapon (one per weapon), with the offsets the apply screen placed it at.
+struct AppliedKeychain
+{
+    std::uint32_t kit{};
+    float offsetX{};
+    float offsetY{};
+    float offsetZ{};
+};
+
 struct InventoryItem
 {
     std::uint64_t id{};
@@ -35,7 +44,8 @@ struct InventoryItem
     std::uint32_t stickerKit{}; // for a sticker (or graffiti) item: the sticker kit index; zero otherwise
     std::uint32_t keychain{};   // for a charm item: the keychain index; zero otherwise
     std::string customName;               // set with a name tag; empty when none
-    std::vector<AppliedSticker> stickers; // stickers applied to this item, one per slot
+    std::vector<AppliedSticker> stickers;
+    std::optional<AppliedKeychain> charm; // the charm attached to this weapon, if any // stickers applied to this item, one per slot
 };
 
 // Local, in-memory inventory. Persistence and client sync are not wired yet.

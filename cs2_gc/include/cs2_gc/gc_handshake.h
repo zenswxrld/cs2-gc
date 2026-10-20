@@ -102,6 +102,7 @@ struct ApplyStickerRequest // CMsgApplySticker: the body of k_EMsgGCApplySticker
     float scale{};
     float offsetX{};
     float offsetY{};
+    float offsetZ{};
 };
 
 struct StorePurchaseRequest // CMsgGCStorePurchaseInit: the body of k_EMsgGCStorePurchaseInit

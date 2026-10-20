@@ -14,6 +14,8 @@ namespace
 constexpr std::uint32_t NotificationNameItem = 1006;
 constexpr std::uint32_t NotificationUnlockCrate = 1007;
 constexpr std::uint32_t NotificationApplySticker = 1086;
+constexpr std::uint32_t NotificationApplyKeychain = 1091;
+constexpr std::uint32_t NotificationXpShopUseTicket = 9221;
 
 std::vector<std::uint8_t> EncodeCustomizationNotification(std::uint32_t request, std::uint64_t itemId)
 {
@@ -175,6 +177,8 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                    destroyed.version = ++gc.m_soVersion;
                    destroyed.owner = gc.m_config.owner;
                    gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(destroyed));
+                   gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
+                            EncodeCustomizationNotification(NotificationXpShopUseTicket, *itemId));
                    if (afterGrant)
                        afterGrant();
                });
@@ -428,7 +432,8 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
                    gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
 
                    gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
-                            EncodeCustomizationNotification(NotificationApplySticker,
+                            EncodeCustomizationNotification(applied->charm ? NotificationApplyKeychain
+                                                                            : NotificationApplySticker,
                                                             CustomItemIdBase + applied->item.id));
                    if (afterChange)
                        afterChange();

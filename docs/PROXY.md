@@ -153,6 +153,14 @@ in this session's view of the inventory: nothing is stored on Valve's side.
   notification (message 1090, request 1007) the "Unlock Container" screen waits for. Not handled: music kit
   boxes, souvenir packages, graffiti boxes and about 55 old capsules whose loot lists the schema loader
   cannot resolve. The apply-sticker screen likewise waits for a notification (request 1086), now sent.
+- **Store coupons** (the envelope items, definitions 20xxx, such as the 10 Year Birthday Sticker Capsule) open into the
+  container their coupon loot list names, with no key: the coupon is consumed and the container appears, to be
+  opened in turn. 45 coupons resolve in the target schema: their containers are 19 sticker capsules (which open),
+  3 graffiti boxes and 23 others (pins, patch packs, the X-Ray package) that do not open yet.
+- **Charms** attach through the same `ApplySticker` request (1086) as stickers, with the charm item as the first
+  id and x, y, z offsets in fields 8 to 10. The weapon gets attributes 299 (id) and 300 to 302 (offsets) and the
+  game gets the ApplyKeychain notification (1091). One charm per weapon. Armory Pass activation sends the
+  XpShopUseTicket notification (9221).
 - **Naming items** (`NameItem` 1006: item and name) sets the custom name attribute (111) and notifies; the name
   is saved in `cs2_gc_inventory.txt`. The name tag item is not consumed (the game sent no tag id).
 - **Armory Pass.** The pass is item 1354 (`XpShopTicket1`), bought in the Store like any item. The Armory page then

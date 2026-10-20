@@ -45,11 +45,13 @@ public:
     {
         InventoryItem item;                // the weapon with the sticker on it
         std::uint32_t position{};          // its backpack position, as a Welcome would give it
-        InventoryItem consumed;            // the sticker item, now removed
+        InventoryItem consumed;            // the sticker (or charm) item, now removed
+        bool charm{};                      // a charm was attached, not a sticker
     };
 
-    // Applies a sticker item to a weapon slot. All checks come first: both ids must be ours, the
-    // first a sticker item, the second not a sticker, charm or graffiti, and the slot (0-4) free.
+    // Applies a sticker item to a weapon slot, or a charm item to a weapon. All checks come first: both
+    // ids must be ours, the first a sticker or charm item, the second not a sticker, charm or graffiti,
+    // and the slot (0-4) free (a weapon takes one charm).
     // On failure nothing changes.
     std::optional<StickerApplied> ApplySticker(const ApplyStickerRequest &request);
 

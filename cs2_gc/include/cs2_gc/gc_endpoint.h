@@ -52,6 +52,13 @@ public:
     // recording are left exactly as they were. The recorded bodies belong to one account.
     void EnableReplay(std::shared_ptr<const ReplayStore> store);
 
+    // Extra encoded items (CSOEconItem) to add to a replayed Welcome. Called at each Hello with
+    // the cache owner's SteamID64. If the recorded Welcome cannot be patched it is sent as
+    // recorded and PatchFailures() increases.
+    using ItemProvider = std::function<std::vector<std::vector<std::uint8_t>>(std::uint64_t steamId)>;
+    void SetItemProvider(ItemProvider provider);
+    std::size_t PatchFailures() const { return m_patchFailures; }
+
     std::size_t IgnoredMessages() const { return m_ignored; }
 
 private:
@@ -63,5 +70,7 @@ private:
     std::mutex m_mutex;
     std::unordered_map<std::uint32_t, Handler> m_handlers;
     std::atomic<std::size_t> m_ignored{0};
+    std::atomic<std::size_t> m_patchFailures{0};
+    ItemProvider m_itemProvider;
 };
 }

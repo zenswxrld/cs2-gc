@@ -1,4 +1,5 @@
 #include "cs2_gc/gc_endpoint.h"
+#include "cs2_gc/econ_item.h"
 #include "cs2_gc/gc_msg_ids.h"
 
 namespace cs2_gc
@@ -47,6 +48,12 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
             gc.Reply(reply, *store->Find(reply));
         });
     }
+}
+
+void LocalGameCoordinator::SetItemProvider(ItemProvider provider)
+{
+    std::lock_guard lock(m_mutex);
+    m_itemProvider = std::move(provider);
 }
 
 LocalGameCoordinator::LocalGameCoordinator(GcEndpointConfig config)
@@ -108,7 +115,23 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
     {
         if (const auto *welcome = m_replay->Find(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome))
         {
-            Reply(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, *welcome);
+            std::vector<std::uint8_t> patched;
+            std::span<const std::uint8_t> body = *welcome;
+            if (m_itemProvider)
+            {
+                const auto items = m_itemProvider(m_config.owner.id);
+                if (!items.empty())
+                {
+                    if (auto result = AppendItemsToWelcome(*welcome, items))
+                    {
+                        patched = std::move(*result);
+                        body = patched;
+                    }
+                    else
+                        ++m_patchFailures;
+                }
+            }
+            Reply(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, body);
             for (std::uint32_t id : PostWelcome)
                 if (const auto *body = m_replay->Find(id))
                     Reply(id, *body);

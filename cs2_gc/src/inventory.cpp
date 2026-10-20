@@ -60,6 +60,7 @@ std::string Inventory::ToText() const
             << "\t\t\t\"wear\"\t\"" << FloatText(item.wear) << "\"\n"
             << "\t\t\t\"seed\"\t\"" << item.seed << "\"\n"
             << "\t\t\t\"stattrak\"\t\"" << (item.statTrak ? 1 : 0) << "\"\n"
+            << "\t\t\t\"rarity\"\t\"" << item.rarity << "\"\n"
             << "\t\t}\n";
     }
     out << "\t}\n}\n";
@@ -89,6 +90,9 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             !ParseNumber(entry.Value("wear"), item.wear) || !std::isfinite(item.wear) || item.wear < 0.0f ||
             item.wear > 1.0f || !ParseNumber(entry.Value("seed"), item.seed) || item.seed > 1000 ||
             !ParseNumber(entry.Value("stattrak"), statTrak) || statTrak > 1)
+            return std::nullopt;
+        // Optional so files written before the field existed still load.
+        if (entry.Find("rarity") && (!ParseNumber(entry.Value("rarity"), item.rarity) || item.rarity > 99))
             return std::nullopt;
         item.statTrak = statTrak == 1;
         inventory.m_items.push_back(item);

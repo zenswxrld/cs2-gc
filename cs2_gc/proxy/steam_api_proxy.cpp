@@ -18,6 +18,7 @@
 // It only activates when the game was launched with -insecure; otherwise every call goes to
 // the real library untouched and nothing is written. Windows x64 only.
 #include "cs2_gc/client_fingerprint.h"
+#include "cs2_gc/econ_item.h"
 #include "cs2_gc/gc_endpoint.h"
 #include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/gc_summary.h"
@@ -214,6 +215,7 @@ public:
     bool IsMessageAvailable(std::uint32_t *size) override { return m_gc.IsMessageAvailable(size); }
 
     void EnableReplay(std::shared_ptr<const ReplayStore> store) { m_gc.EnableReplay(std::move(store)); }
+    void SetItemProvider(LocalGameCoordinator::ItemProvider provider) { m_gc.SetItemProvider(std::move(provider)); }
 
     GCResult RetrieveMessage(std::uint32_t *type, void *destination, std::uint32_t capacity,
                              std::uint32_t *size) override
@@ -504,6 +506,38 @@ State &Init()
             }
             else
                 s.log->Write("replay: no recordings in cs2_gc_replay, using the synthetic welcome");
+
+            // Optional custom items, added to the replayed welcome. The file uses the same format
+            // the inventory is saved in, so it can be edited by hand.
+            const std::filesystem::path inventoryPath(s.directory + L"cs2_gc_inventory.txt");
+            if (std::filesystem::exists(inventoryPath))
+            {
+                const auto inventory = Inventory::Load(inventoryPath);
+                if (!inventory)
+                    s.log->Write("custom inventory: cs2_gc_inventory.txt is invalid, no custom items added");
+                else if (!replay->Size())
+                    s.log->Write("custom inventory: needs a recorded welcome (cs2_gc_replay) to add items to; "
+                                 "no custom items added");
+                else
+                {
+                    std::size_t statTrak = 0;
+                    for (const InventoryItem &item : inventory->Items())
+                        statTrak += item.statTrak;
+                    s.coordinator->SetItemProvider([items = inventory->Items()](std::uint64_t steamId) {
+                        std::vector<std::vector<std::uint8_t>> encoded;
+                        std::uint32_t position = 1000; // clear of the account's own backpack slots
+                        for (const InventoryItem &item : items)
+                            encoded.push_back(BuildEconItem(item, static_cast<std::uint32_t>(steamId & 0xFFFFFFFFull),
+                                                            1000000000000ull + item.id, position++));
+                        return encoded;
+                    });
+                    s.log->Write("custom inventory: " + std::to_string(inventory->Items().size()) +
+                                 " item(s) from cs2_gc_inventory.txt will be added to the welcome" +
+                                 (statTrak ? "; StatTrak is not encoded yet, so " + std::to_string(statTrak) +
+                                                 " item(s) will appear without it"
+                                           : std::string{}));
+                }
+            }
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=local. Targets Steam build " +
                          std::string(TargetSteamBuildId) + "; the GC is local and nothing is sent to Valve.");
         }

@@ -17,6 +17,7 @@ struct InventoryItem
     float wear{};
     std::uint32_t seed{};
     bool statTrak{};
+    std::uint32_t rarity{}; // rarities value from the schema; zero leaves it to the client
 };
 
 // Local, in-memory inventory. Persistence and client sync are not wired yet.

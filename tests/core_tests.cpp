@@ -1,5 +1,6 @@
 #include "cs2_gc/armory_catalog.h"
 #include "cs2_gc/case_opening.h"
+#include "cs2_gc/econ_item.h"
 #include "cs2_gc/client_fingerprint.h"
 #include "cs2_gc/gc_endpoint.h"
 #include "cs2_gc/gc_msg_ids.h"
@@ -16,7 +17,9 @@
 #include <fstream>
 #include <cmath>
 #include <atomic>
+#include <cstring>
 #include <iostream>
+#include <map>
 #include <limits>
 #include <random>
 #include <stdexcept>
@@ -896,6 +899,215 @@ void WelcomeOtherFields()
     Check(!has(summary, "3: message"), "the cache itself is not repeated in the other fields");
 }
 
+// Reads a CSOEconItem back into its parts, independently of the encoder.
+struct DecodedItem
+{
+    std::uint64_t id{};
+    std::uint32_t account{}, inventory{}, defIndex{}, quality{}, rarity{};
+    std::map<std::uint32_t, std::uint32_t> floatBits; // attribute def index -> value_bytes as LE uint32
+    bool ok{true};
+};
+
+DecodedItem DecodeItem(const std::vector<std::uint8_t> &bytes)
+{
+    DecodedItem item;
+    PbReader reader(bytes);
+    PbField f;
+    while (reader.Next(f))
+    {
+        switch (f.number)
+        {
+        case 1: item.id = f.value; break;
+        case 2: item.account = static_cast<std::uint32_t>(f.value); break;
+        case 3: item.inventory = static_cast<std::uint32_t>(f.value); break;
+        case 4: item.defIndex = static_cast<std::uint32_t>(f.value); break;
+        case 7: item.quality = static_cast<std::uint32_t>(f.value); break;
+        case 19: item.rarity = static_cast<std::uint32_t>(f.value); break;
+        case 12:
+        {
+            PbReader inner(f.bytes);
+            PbField g;
+            std::uint32_t def = 0;
+            while (inner.Next(g))
+            {
+                if (g.number == 1)
+                    def = static_cast<std::uint32_t>(g.value);
+                else if (g.number == 3 && g.bytes.size() == 4)
+                    item.floatBits[def] = std::uint32_t{g.bytes[0]} | (std::uint32_t{g.bytes[1]} << 8) |
+                                          (std::uint32_t{g.bytes[2]} << 16) | (std::uint32_t{g.bytes[3]} << 24);
+                else
+                    item.ok = false;
+            }
+            break;
+        }
+        default: item.ok = false; break;
+        }
+    }
+    item.ok = item.ok && !reader.Failed();
+    return item;
+}
+
+float AsFloat(std::uint32_t bits)
+{
+    float value;
+    std::memcpy(&value, &bits, sizeof value);
+    return value;
+}
+
+void EconItems()
+{
+    InventoryItem skin{0, 7, 282, 0.15f, 661, false, 4};
+    const auto bytes = BuildEconItem(skin, 123456, 1000000000005ull, 1002);
+    const DecodedItem item = DecodeItem(bytes);
+    Check(item.ok && item.id == 1000000000005ull && item.account == 123456 && item.inventory == 1002 && item.defIndex == 7 &&
+              item.quality == QualityUnique && item.rarity == 4, "item fields");
+    Check(AsFloat(item.floatBits.at(AttributePaintIndex)) == 282.0f && AsFloat(item.floatBits.at(AttributePaintSeed)) == 661.0f &&
+              AsFloat(item.floatBits.at(AttributePaintWear)) == 0.15f && item.floatBits.size() == 3, "paint attributes are floats");
+    InventoryItem plain{0, 4001, 0, 0.0f, 1, false, 0};
+    const DecodedItem noPaint = DecodeItem(BuildEconItem(plain, 1, 2, 3));
+    Check(noPaint.ok && noPaint.floatBits.empty() && noPaint.rarity == 0, "no paint attributes or rarity for a plain item");
+
+    // Welcome patching: every other field survives, in order, and only the item type grows.
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 99);
+    const auto existing = Bytes({0x08, 0x01});
+    PbWriter itemType;
+    itemType.Varint(1, 1);
+    itemType.Bytes(2, existing);
+    PbWriter otherType;
+    otherType.Varint(1, 7);
+    otherType.Bytes(2, Bytes({0x08, 0x05}));
+    PbWriter cache;
+    cache.Message(2, otherType);
+    cache.Message(2, itemType);
+    cache.Fixed64(3, 77);
+    cache.Message(4, owner);
+    cache.Varint(15, 12345); // unknown to the patcher; must survive
+    PbWriter welcome;
+    welcome.Varint(1, 0);
+    welcome.Bytes(2, Bytes({0x28, 0x03})); // game data
+    welcome.Message(3, cache);
+    welcome.String(11, "XX");
+
+    const std::vector<std::vector<std::uint8_t>> extra{bytes, BuildEconItem(plain, 1, 2, 3)};
+    const auto patched = AppendItemsToWelcome(welcome.bytes(), extra);
+    Check(patched.has_value(), "welcome patched");
+    const auto decoded = DecodeClientWelcome(*patched);
+    Check(decoded && decoded->version == 0 && decoded->outOfDateCaches.size() == 1, "patched welcome decodes");
+    const SoCacheSubscribed &patchedCache = decoded->outOfDateCaches[0];
+    Check(patchedCache.types.size() == 2 && patchedCache.types[0].typeId == 7 && patchedCache.types[0].objects.size() == 1, "other type untouched");
+    Check(patchedCache.types[1].typeId == 1 && patchedCache.types[1].objects.size() == 3 && patchedCache.types[1].objects[0] == existing &&
+              patchedCache.types[1].objects[1] == bytes, "items appended after the existing ones");
+    Check(patchedCache.owner.id == 99 && patchedCache.version == 77, "owner and version preserved");
+
+    // Byte-level: removing the appended items must give back the original bytes exactly.
+    const auto unpatched = AppendItemsToWelcome(welcome.bytes(), {});
+    Check(unpatched && *unpatched == welcome.bytes(), "patching with no items reproduces the welcome byte for byte");
+    PbReader fieldReader(*patched);
+    PbField field;
+    std::vector<std::uint32_t> order;
+    while (fieldReader.Next(field))
+        order.push_back(field.number);
+    Check(order == std::vector<std::uint32_t>({1, 2, 3, 11}), "top-level field order preserved");
+
+    // A cache without an item type gets one; malformed or cache-less welcomes are refused.
+    PbWriter bareCache;
+    bareCache.Fixed64(3, 1);
+    bareCache.Message(4, owner);
+    PbWriter bareWelcome;
+    bareWelcome.Message(3, bareCache);
+    const auto created = DecodeClientWelcome(*AppendItemsToWelcome(bareWelcome.bytes(), extra));
+    Check(created && created->outOfDateCaches[0].types.size() == 1 && created->outOfDateCaches[0].types[0].typeId == 1 &&
+              created->outOfDateCaches[0].types[0].objects.size() == 2, "item type created when missing");
+    PbWriter noCache;
+    noCache.Varint(1, 5);
+    Check(!AppendItemsToWelcome(noCache.bytes(), extra) && !AppendItemsToWelcome(Bytes({0x1A, 0x09, 1}), extra) &&
+              !AppendItemsToWelcome(Bytes({0x08}), extra), "no cache, truncated or malformed welcome refused");
+    for (std::size_t n = 0; n < welcome.bytes().size(); ++n)
+        AppendItemsToWelcome(std::span(welcome.bytes()).first(n), extra); // never crashes on a prefix
+
+    // The endpoint applies the provider to a replayed welcome, and survives a bad recording.
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcome.bytes());
+    GcEndpointConfig config;
+    config.owner = {1, 99};
+    LocalGameCoordinator gc(config);
+    gc.EnableReplay(store);
+    std::uint64_t askedFor = 0;
+    gc.SetItemProvider([&](std::uint64_t steamId) {
+        askedFor = steamId;
+        return extra;
+    });
+    ClientHello hello;
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello, {}, EncodeClientHello(hello), frame);
+    gc.SendMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    std::uint32_t size = 0, type = 0, got = 0;
+    Check(gc.IsMessageAvailable(&size), "welcome queued");
+    std::vector<std::uint8_t> out(size);
+    gc.RetrieveMessage(&type, out.data(), size, &got);
+    FrameView outFrame;
+    ReadProtobufFrame(type, out, outFrame);
+    const auto sent = DecodeClientWelcome(outFrame.body);
+    Check(askedFor == 99 && sent && sent->outOfDateCaches[0].types[1].objects.size() == 3, "endpoint added the provided items");
+
+    auto broken = std::make_shared<ReplayStore>();
+    broken->Set(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, Bytes({0x08, 0x01})); // valid protobuf, no cache
+    LocalGameCoordinator gc2(config);
+    gc2.EnableReplay(broken);
+    gc2.SetItemProvider([&](std::uint64_t) { return extra; });
+    gc2.SendMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    Check(gc2.PatchFailures() == 1 && gc2.IsMessageAvailable(&size), "unpatchable welcome is sent as recorded and counted");
+}
+
+void InventoryRarity()
+{
+    Inventory inventory;
+    inventory.Add({0, 7, 282, 0.15f, 661, false, 4});
+    const auto back = Inventory::FromText(inventory.ToText());
+    Check(back && back->Items()[0].rarity == 4, "rarity round trip");
+    // Files written before the field existed still load, with rarity zero.
+    std::string text = inventory.ToText();
+    const std::size_t at = text.find("\t\t\t\"rarity\"");
+    text.erase(at, text.find('\n', at) - at + 1);
+    const auto old = Inventory::FromText(text);
+    Check(old && old->Items()[0].rarity == 0, "older files without rarity load");
+    text = inventory.ToText();
+    text.replace(text.find("\"rarity\"\t\"4\""), 12, "\"rarity\"\t\"100\"");
+    Check(!Inventory::FromText(text), "out of range rarity rejected");
+}
+
+void SummaryDiversityAndLocation()
+{
+    const auto has = [](const std::string &text, const char *part) { return text.find(part) != std::string::npos; };
+    // Items of different shape each get a sample; identical shapes share one.
+    const auto skin = BuildEconItem({0, 7, 282, 0.15f, 661, false, 4}, 1, 11, 1);
+    const auto skin2 = BuildEconItem({0, 9, 801, 0.30f, 5, false, 5}, 1, 12, 2);
+    const auto crate = BuildEconItem({0, 4001, 0, 0.0f, 1, false, 0}, 1, 13, 3);
+    SoCacheSubscribed cache;
+    cache.owner = {1, 9};
+    cache.types.push_back({1, {skin, skin2, crate}});
+    PbWriter locationInner;
+    locationInner.Fixed32(1, 0xc217418b);
+    locationInner.Fixed32(2, 0x4310f692);
+    locationInner.String(3, "AU");
+    ClientWelcome welcome;
+    welcome.outOfDateCaches.push_back(cache);
+    auto raw = EncodeClientWelcome(welcome);
+    PbWriter withLocation;
+    withLocation.Varint(1, 0);
+    withLocation.Message(5, locationInner);
+    withLocation.Varint(7, 1792458960);
+    std::vector<std::uint8_t> combined = raw;
+    combined.insert(combined.end(), withLocation.bytes().begin(), withLocation.bytes().end());
+    const std::string summary = SummarizeSoMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, combined, DumpOptions{});
+    Check(has(summary, "object type_id=1 count=3") && has(summary, "sample 1") && has(summary, "sample 2"), "distinct shapes sampled");
+    Check(!has(summary, "sample 3"), "same-shaped items share a sample"); // the two skins have the same shape
+    Check(has(summary, "other welcome fields") && has(summary, "5: <location redacted>") && !has(summary, "0xc217418b") &&
+              !has(summary, "\"AU\"") && has(summary, "7: varint 1792458960"), "location redacted, other fields kept");
+}
+
 int main()
 {
     try
@@ -917,6 +1129,9 @@ int main()
         SoSummaries(); std::cout << "PASS object message decoders, summaries and account redaction\n";
         Replay(); std::cout << "PASS replay store and recorded-reply endpoint\n";
         WelcomeOtherFields(); std::cout << "PASS welcome summary shows non-cache fields\n";
+        EconItems(); std::cout << "PASS econ item encoding and welcome patching\n";
+        InventoryRarity(); std::cout << "PASS inventory rarity\n";
+        SummaryDiversityAndLocation(); std::cout << "PASS summary samples and location redaction\n";
         return 0;
     }
     catch (const std::exception &error)

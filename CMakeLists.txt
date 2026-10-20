@@ -14,6 +14,7 @@ find_package(Threads REQUIRED)
 add_library(cs2_gc_core STATIC
     cs2_gc/src/armory_catalog.cpp
     cs2_gc/src/case_opening.cpp
+    cs2_gc/src/econ_item.cpp
     cs2_gc/src/gc_endpoint.cpp
     cs2_gc/src/gc_handshake.cpp
     cs2_gc/src/gc_summary.cpp

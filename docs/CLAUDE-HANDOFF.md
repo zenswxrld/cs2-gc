@@ -357,3 +357,9 @@ Full build-25966348 schema loaded successfully, all supplementary rare pools val
   to a dated backup folder.
 - Still open from the same report: clicking the bottom-right sticker capsule tile opens a random tab. Likely the stock
   scrolling tile (`shuffledArray[iScrollingTile ...]`) routes the click to whichever entry it is showing; not fixed.
+- Follow-up (same day): Armory is one stock-style page again: 4 small / 3 large / 4 small, no paging arrows. The
+  limited edition item is always one of the 3 large tiles and is moved to the middle (`MoveChildAfter`). The single
+  white countdown sits on the right just under the green line (in `cs2gc-category-bar`), below the pass button.
+- Reset script bug fixed: in a .cmd file `set MODE=progress` cleared the CHOICE errorlevel, so option 2 always ran as
+  option 1 (rank reset, inventory kept). The answer is now read before any SET, and the full reset fails loudly if
+  cs2_gc_inventory.txt is still present afterwards.

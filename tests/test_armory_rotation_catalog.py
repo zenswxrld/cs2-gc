@@ -112,7 +112,7 @@ assert.deepEqual(visible(), ['capsule', 'case_a', 'charm_a']);
 now = 899; _LocalRotationRefresh(); assert.equal(closed, 0);
 now = 900; _LocalRotationRefresh();
 assert.deepEqual(visible(), ['capsule', 'case_b', 'charm_b']); assert.equal(closed, 1);
-assert.equal(label.text, 'Armory refresh: 15:00');
+// The countdown label lives in the category bar (checked in the paging fixture); none is mounted here.
 now = 1800; _LocalRotationRefresh();
 assert.deepEqual(visible(), ['capsule', 'case_a', 'charm_a']);
 '''
@@ -147,34 +147,23 @@ Date.now=()=>0;
             'counts':{'collection':3,'limited':1,'charm':1,'case':1,'capsule':1}})) + '''
 m_localRotationItems=['c0','c1','c2','limited','charm','case','capsule'].map(item_name=>({
  item_name,ui_order:item_name[0]==='c' && item_name.length===2 || item_name==='limited' ? '2' : '3'}));
-m_localRotationItems.forEach(e=>panel(e.item_name));
+m_localRotationItems.forEach(e=>panel(e.item_name, nodes['id-xpshop-row-' + e.ui_order]));
 _LocalRotationRefresh();
-assert.equal(nodes['cs2gc-page-number'].text,'1 / 2');
 assert.equal(m_localRotationActive.length,7);
-assert.equal(m_localRotationItems.filter(e=>nodes[e.item_name].visible).length,5);
-assert.equal(nodes.limited.visible,true);
-const oldTop=m_localRotationItems.filter(e=>e.item_name!=='limited'&&nodes[e.item_name].visible).map(e=>e.item_name);
-nodes['cs2gc-page-next'].activate();
-assert.equal(nodes['cs2gc-page-number'].text,'2 / 2');
-assert.equal(nodes.limited.visible,true);
-oldTop.forEach(name=>assert.equal(nodes[name].visible,false));
-assert.equal(nodes['cs2gc-category-capsule'],undefined);
-assert.equal(nodes['cs2gc-paging-controls'].style.horizontalAlign,'center');
-assert.equal(nodes['cs2gc-page-next'].style.width,'56px');
+// One stock 4/3/4 page: the limited item plus two collections fill the 3 large tiles; no paging controls.
+const shown=()=>m_localRotationItems.filter(e=>nodes[e.item_name].visible).map(e=>e.item_name).sort();
+assert.deepEqual(shown(),['c0','c1','capsule','case','charm','limited']);
+assert.equal(nodes['cs2gc-page-next'],undefined); assert.equal(nodes['cs2gc-page-number'],undefined);
+// The limited tile is moved to sit right after the first large tile, i.e. in the middle.
+assert.deepEqual(nodes['id-xpshop-row-2'].order,[['limited','c0']]);
 assert.equal(nodes['cs2gc-armory-clock'],undefined);  // one countdown only
-nodes['cs2gc-page-next'].activate();
-assert.equal(nodes['cs2gc-page-number'].text,'1 / 2');
-assert.equal(nodes.limited.visible,true);
 const clock=nodes['id-local-rotation-countdown'];
 assert.equal(clock.text,'Armory refresh: 15:00');
 assert.equal(clock.style.color,'#ffffff'); assert.equal(clock.style.fontFamily,'Stratum2');
-assert.deepEqual(passBox.order,[['id-local-rotation-countdown','id-xpshop-more-passes-btn']]);
-assert.equal(nodes['cs2gc-category-bar'].visible,true);
+assert.equal(clock.GetParent().id,'cs2gc-category-bar'); assert.equal(clock.style.horizontalAlign,'right');
 root.SetHasClass('xpshop-grids-visible',true); _LocalRotationRefresh();
-assert.equal(nodes['cs2gc-category-bar'].visible,false);  // arrows hidden while a tab is open
-root.SetHasClass('xpshop-grids-visible',false); _LocalRotationRefresh();
-assert.equal(nodes['cs2gc-category-bar'].visible,true);
-assert.equal(rows.style.marginTop,'60px');
+assert.equal(nodes['cs2gc-category-bar'].visible,true);      // the timer stays visible in a tab
+assert.equal(rows.style.marginTop,'36px');
 '''
         result=subprocess.run(['node','-e',script],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)

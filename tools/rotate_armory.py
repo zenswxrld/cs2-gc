@@ -9,42 +9,17 @@ END = '''            _MakeNavButton(element);
         });'''
 INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_gc_gameplay.cfg.
     const m_localRotation = __SETTINGS__;
-    let m_localPage = 0;
     function _LocalCatalogueControls() {
         const root = $.GetContextPanel();
+        // One stock-style page (4 / 3 / 4); the bar under the green line only holds the countdown.
         let bar = m_elContentPanel.FindChildInLayoutFile('cs2gc-category-bar');
         if (bar) return;
         bar = $.CreatePanel('Panel', m_elContentPanel, 'cs2gc-category-bar');
-        bar.style.width = '100%'; bar.style.height = '56px';
+        bar.style.width = '100%'; bar.style.height = '32px';
         bar.style.flowChildren = 'none'; bar.style.verticalAlign = 'top';
-        const controls = $.CreatePanel('Panel', bar, 'cs2gc-paging-controls');
-        controls.style.width = 'fit-children'; controls.style.height = '52px';
-        controls.style.horizontalAlign = 'center'; controls.style.verticalAlign = 'center';
-        controls.style.flowChildren = 'right';
-        ['previous','page','next'].forEach(kind => {
-            if (kind === 'page') {
-                const label = $.CreatePanel('Label', controls, 'cs2gc-page-number');
-                label.style.width = '84px';
-                label.style.fontSize = '23px'; label.style.fontFamily = 'Stratum2 Bold';
-                label.style.textAlign = 'center'; label.style.verticalAlign = 'center';
-                label.style.color = '#d8eeee';
-                return;
-            }
-            const button = $.CreatePanel('Button', controls, 'cs2gc-page-' + kind);
-            button.style.width = '56px'; button.style.height = '48px';
-            button.style.backgroundColor = '#2b5c60dd'; button.style.border = '1px solid #608e8e88';
-            const label = $.CreatePanel('Label', button, '', {text:kind === 'previous' ? '<' : '>'});
-            label.style.fontSize = '34px'; label.style.color = '#ffffff';
-            label.style.horizontalAlign = 'center'; label.style.verticalAlign = 'center';
-            button.SetPanelEvent('onactivate', () => {
-                m_localPage += kind === 'previous' ? -1 : 1;
-                m_elContentPanel.SetHasClass('xpshop-grids-visible', false);
-                _LocalRotationRefresh();
-            });
-        });
         const row = m_elContentPanel.FindChildInLayoutFile('id-xpshop-row-1');
-        if (row) {row.GetParent().style.marginTop = '60px'; row.GetParent().style.height = '92%';}
-        $.Msg('cs2_gc Armory build 17: centered arrow controls mounted');
+        if (row) {row.GetParent().style.marginTop = '36px'; row.GetParent().style.height = '94%';}
+        $.Msg('cs2_gc Armory: single 4/3/4 page mounted');
     }
     function _LocalCataloguePage(entries, active) {
         const offers = entries.filter(e => active.indexOf(e.item_name) !== -1);
@@ -66,22 +41,21 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
                 kinds.forEach(kind => {if (types[kind][index]) ordered.push(types[kind][index]);});
             groups[row] = ordered;
         });
+        // A single stock-style page: 4 small / 3 large / 4 small. The limited item takes one of the 3 large slots.
         const capacity = {'1':4,'2':3,'3':4};
-        const budget = row => Math.max(1, (capacity[row] || 4) - featured.filter(e => (e.ui_order || '3') === row).length);
-        const pages = Math.max(1, ...Object.keys(groups).map(row => Math.ceil(groups[row].length / budget(row))));
-        m_localPage = (m_localPage % pages + pages) % pages;
         const view = featured.map(e => e.item_name);
         Object.keys(groups).forEach(row => {
-            // Balance each row across the same pages instead of repeating short rows.
-            const count = Math.min(budget(row), Math.ceil(groups[row].length / pages));
-            groups[row].slice(m_localPage * count, (m_localPage + 1) * count).forEach(e => view.push(e.item_name));
+            const room = Math.max(0, (capacity[row] || 4) - featured.filter(e => (e.ui_order || '2') === row).length);
+            groups[row].slice(0, room).forEach(e => view.push(e.item_name));
         });
-        const bar = m_elContentPanel.FindChildInLayoutFile('cs2gc-category-bar');
-        if (bar) {
-            bar.FindChildInLayoutFile('cs2gc-page-number').text = (m_localPage + 1) + ' / ' + pages;
-            bar.FindChildInLayoutFile('cs2gc-page-previous').enabled = pages > 1;
-            bar.FindChildInLayoutFile('cs2gc-page-next').enabled = pages > 1;
-
+        // Put the limited tile in the middle of its row, between the other two large tiles.
+        if (featured.length) {
+            const tile = m_elContentPanel.FindChildInLayoutFile(featured[0].item_name);
+            const parent = tile && tile.GetParent ? tile.GetParent() : null;
+            const row = featured[0].ui_order || '2';
+            const first = (groups[row] || []).length ? m_elContentPanel.FindChildInLayoutFile(groups[row][0].item_name) : null;
+            if (parent && first && first.GetParent && first.GetParent() === parent && parent.MoveChildAfter)
+                parent.MoveChildAfter(tile, first);
         }
         return view;
     }
@@ -223,19 +197,13 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
         m_localRotationActive = active;
         const text = 'Armory refresh: ' + Math.floor(remaining / 60) + ':' + ('0' + remaining % 60).slice(-2);
         const bar = m_elContentPanel.FindChildInLayoutFile('cs2gc-category-bar');
-        // Page arrows belong to the tile view only; hide them while a tab's inspect grid is open.
-        if (bar) bar.visible = !m_elContentPanel.BHasClass('xpshop-grids-visible');
-        // One countdown, white, CS UI font, directly below the "Get Armory Passes" button (under the green line).
-        const passes = root.FindChildInLayoutFile('id-xpshop-more-passes-btn');
-        const holder = passes ? passes.GetParent() : root.FindChildInLayoutFile('id-xpshop-top-nav');
-        if (holder) {
-            let label = holder.FindChildInLayoutFile('id-local-rotation-countdown');
+        // One countdown, white, CS UI font, under the green line on the right of the arrow bar (it stays visible in tabs).
+        if (bar) {
+            let label = bar.FindChildInLayoutFile('id-local-rotation-countdown');
             if (!label) {
-                label = $.CreatePanel('Label', holder, 'id-local-rotation-countdown');
-                label.style.fontFamily = 'Stratum2'; label.style.fontSize = '18px';
-                label.style.color = '#ffffff'; label.style.horizontalAlign = 'center';
-                label.style.marginTop = '6px';
-                if (passes) holder.MoveChildAfter(label, passes);
+                label = $.CreatePanel('Label', bar, 'id-local-rotation-countdown');
+                label.style.fontFamily = 'Stratum2'; label.style.fontSize = '18px'; label.style.color = '#ffffff';
+                label.style.horizontalAlign = 'right'; label.style.verticalAlign = 'center';
             }
             label.text = text;
         }

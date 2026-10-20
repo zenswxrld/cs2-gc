@@ -37,6 +37,9 @@ def reset(directory, mode):
         if (directory / name).exists():
             shutil.move(str(directory / name), str(backup / name)); moved.append(name)
     inventory = directory / INVENTORY
+    if mode == 'all' and inventory.exists():
+        raise ValueError(INVENTORY + ' is still there (is CS2 or another program holding it open?); '
+                         'the other files are in ' + backup.name)
     if mode == 'progress' and inventory.exists():
         original = inventory.read_text(encoding='utf-8')
         shutil.copy2(inventory, backup / INVENTORY)

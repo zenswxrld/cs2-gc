@@ -161,6 +161,8 @@ def install_override(proxy_directory, *, enabled, folder, comment, owner, asset,
         target.parent.mkdir(parents=True, exist_ok=True)
         temp = target.with_name(target.name + '.tmp')
         temp.write_bytes(result); temp.replace(target)
+    from vpk_pack import pack
+    changed = pack(mod) or changed  # loose files lose to pak01 VPKs; a VPK in our own folder wins
     if mounted != current:
         backup = info.with_name(info.name + '.' + folder + '_backup')
         if not backup.exists():

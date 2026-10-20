@@ -236,3 +236,23 @@ console.log('native badge fixture passed');
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class OfferNumbers(unittest.TestCase):
+    def test_label_counts_up_and_falls_back_when_limit_unknown(self):
+        import native_offer_numbers
+        source = native_offer_numbers.ANCHOR
+        patched = native_offer_numbers.patch(source)
+        import subprocess, shutil
+        if not shutil.which('node'): self.skipTest('Node needed')
+        script = patched + '''
+const assert = require('assert');
+let limitJson = '{"limit":5}';
+const InventoryAPI = { GetVolatileLimits: () => limitJson };
+m_numOfferCounter = 4; assert.equal(_CurrentOfferNumber(), 1);
+m_numOfferCounter = 0; assert.equal(_CurrentOfferNumber(), 5);
+limitJson = 'not json'; m_numOfferCounter = 3; assert.equal(_CurrentOfferNumber(), 3);
+limitJson = '{"limit":0}'; m_numOfferCounter = 2; assert.equal(_CurrentOfferNumber(), 2);
+'''
+        script = 'var m_numOfferCounter = 0;\n' + script
+        subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)

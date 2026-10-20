@@ -118,3 +118,13 @@ Wherever this document says "verified", it means offline tests only.
 ## Confirmed live (build 07)
 - Held skins in a bot match: the equipped StatTrak USP-S | Caiman is held (weapon HUD shows it). Cause: the server cache
   needed the equip-slot objects (type 3) as well as items. Knife, gloves and bought weapons still to be checked.
+
+## Build 09: why no native UI/schema override has ever loaded
+The console.log search-path list shows `csgo\pak01.vpk` and `core\pak01.vpk` (GAME) **before** our `cs2_gc_*` folders, so
+the installed originals always win over loose override files. Build 09 also writes a `pak01_dir.vpk` inside each
+`cs2_gc_*` folder (tools/vpk_pack.py); VPKs are listed in gameinfo order and ours come before `csgo`. Unverified in the
+client. To revert: delete `pak01_dir.vpk` from the `game\cs2_gc_*` folders (the loose files stay).
+Also in build 09: terminal offers are labelled limit minus remaining (the stock label is the remaining counter, so it
+counted down); offer numbers use a new `cs2_gc_offers` override.
+What to look for after the second launch: the console.log top list should show `cs2_gc_*\pak01.vpk (vpk)` lines before
+`csgo\pak01.vpk`, plus the `cs2_gc scoreboard hook reached` and `cs2_gc armory rotation hook` lines.

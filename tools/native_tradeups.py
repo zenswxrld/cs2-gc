@@ -223,5 +223,8 @@ def prepare(proxy_directory, enabled=True, config=None):
     import zlib
     stamp = 'CS2_GC_NATIVE_V1 {} {}\n'.format(zlib.crc32(source.encode('utf-8')), zlib.crc32(patched.encode('utf-8')))
     atomic_write(mod / 'cs2_gc_schema_stamp.txt', stamp)
+    # CS2 searches pak01 VPKs before loose files, so ship the override inside a VPK in our own folder.
+    from vpk_pack import pack
+    changed = pack(mod) or changed
     return ('prepared; RESTART CS2 ONCE to load native recipes/catalogue' if changed else
             'installed: native recipes/catalogue; live verification needed')

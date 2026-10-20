@@ -179,3 +179,10 @@ while CS2 runs (the DLL processes the request); native-picker support needs a di
 - Armory nav bar (live): the rotation countdown shows ("Armory refresh: 3:58"), so the timer runs. Two of the category
   nav buttons have blank icons (between Train and Fracture, and between Fracture and LTD) - probably the sticker
   capsule / Sugarface entries whose nav icon is not resolved for generated catalogue rows.
+- User request (Armory): the page shows only six tiles (one per rotation category: charms, collection, limited,
+  stickers/Sugarface, case, capsule) and leaves unused slots. Use the spare slots for more purchasable options and add
+  them to the rotation (e.g. two or more items per category, or extra categories). See `rotate_armory.py`, which shows
+  exactly one entry per category pool.
+- Limited-edition tile shows the wrong skin: the tile is named "XM1014 | Solitude" but displays an AK-47 (the model
+  changed between screenshots, still an AK). The name and the displayed/purchased item disagree; check which item the
+  catalogue row references and what the tile renders from (`armory_rotation_catalog.py`, the stock xpshop tile code).

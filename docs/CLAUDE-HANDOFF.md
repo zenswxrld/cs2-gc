@@ -384,3 +384,10 @@ Full build-25966348 schema loaded successfully, all supplementary rare pools val
 - Countdown right edge now lines up with `id-xpshop-balance` (the pass button is hidden at 5 passes).
 - Removed the custom Random Agent grid title styling (it sat over the tab icons) and the explicit `Stratum2` on the
   countdown, so both use the stock CS2 font/styles.
+
+### Build 17f (Claude)
+
+- Armory capsule rows (`local_rotation_slot capsule`) now open on purchase: `Armory::Redeem` rolls one sticker
+  from the capsule crate's own loot list (`FindCrate(...)->lootListName`, StatTrak off), falling back to the
+  capsule item only if the loot list can't be resolved. Core test added. Requested by the user after seeing the
+  capsule itself granted; the client "Received from Armory" popup should show the sticker (not yet verified).

@@ -1503,11 +1503,13 @@ constexpr const char *ArmoryFixture = R"("items_game"
         "weapon_case_base" { }
         "weapon_case" { "prefab" "weapon_case_base" "associated_item" "50" }
         "rifle" { "item_rarity" "uncommon" }
+        "sticker_capsule" { "prefab" "weapon_case_base" }
     }
     "items"
     {
         "50" { "name" "the_key" }
         "60" { "name" "the_case" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
+        "61" { "name" "crate_sticker_pack_test_capsule" "prefab" "sticker_capsule" "attributes" { "set supply crate series" { "value" "2" } } }
         "7" { "name" "weapon_rifle" "prefab" "rifle" }
         "1209" { "name" "sticker" }
         "1355" { "name" "keychain" }
@@ -1525,6 +1527,7 @@ constexpr const char *ArmoryFixture = R"("items_game"
         "kc_test" { "kc_test_rare" "1" }
         "kc_test_rare" { "[kc_a]keychain" "1" }
     }
+    "revolving_loot_lists" { "2" "stickers_test" }
     "seasonaloperations"
     {
         "11"
@@ -1535,6 +1538,7 @@ constexpr const char *ArmoryFixture = R"("items_game"
             "operational_point_redeemable" { "points" "1" "item_name" "lootlist:stickers_test" }
             "operational_point_redeemable" { "points" "3" "item_name" "lootlist:kc_test" }
             "operational_point_redeemable" { "points" "5" "item_name" "lootlist:missing_list" }
+            "operational_point_redeemable" { "points" "1" "item_name" "crate_sticker_pack_test_capsule" "local_rotation_slot" "capsule" }
             "operational_point_redeemable" { "item_name" "no_points_given" }
         }
         "12" { "redeemable_goods" "credits" "operational_point_redeemable" { "points" "1" "item_name" "ignored" } }
@@ -1549,7 +1553,7 @@ void ArmoryRedeems()
 
     const auto schema = Schema::Load(ArmoryFixture);
     Check(schema.has_value(), "armory fixture loads");
-    Check(schema->ArmoryRedeemables().size() == 5, "five usable tiles; the one without points and the credits campaign are skipped");
+    Check(schema->ArmoryRedeemables().size() == 6, "six usable tiles; the one without points and the credits campaign are skipped");
     const auto *collection = schema->FindRedeemable(11, Crc32("lootlist:set_test"));
     Check(collection && collection->points == 4 && collection->shopIndex == 0, "collection tile");
     const auto *theCase = schema->FindRedeemable(11, Crc32("the_case"));
@@ -1613,6 +1617,14 @@ void ArmoryRedeems()
     const auto charmRedeem = armory.Redeem(request("lootlist:kc_test", 3), live, random);
     Check(charmRedeem.status == Armory::Status::Ok && charmRedeem.item.defIndex == 1355 && charmRedeem.item.keychain == 17, "charm pack");
     Check(armory.Balance() == 40 && live.Items().Items().size() == 4, "balance and inventory after four redeems");
+    {
+        Armory capsules(*schema, 11, 1);
+        LiveInventory fresh(Inventory{});
+        const auto opened = capsules.Redeem(request("crate_sticker_pack_test_capsule", 1), fresh, random);
+        Check(opened.status == Armory::Status::Ok && opened.item.defIndex == 1209 &&
+                  (opened.item.stickerKit == 300 || opened.item.stickerKit == 301) && fresh.Items().Items().size() == 1,
+              "a capsule purchase grants one sticker from that capsule, not the capsule");
+    }
 
     // Every failure leaves the balance and the inventory exactly as they were.
     const auto unchanged = [&](Armory::Status want, const RedeemRequest &r, const char *what) {

@@ -140,6 +140,25 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
             rolledCollection = name;
         }
     }
+    else if (goods->rotationSlot == "capsule")
+    {
+        // Capsules are opened on purchase: grant one sticker from the capsule's own loot list, as opening it would.
+        const auto definition = m_schema.ItemDefIndex(goods->itemName);
+        const CrateInfo *crate = definition ? m_schema.FindCrate(*definition) : nullptr;
+        if (crate && !crate->lootListName.empty())
+        {
+            CaseOdds capsuleOdds = odds;
+            capsuleOdds.statTrakPerMille = 0;
+            item = RollLootList(m_schema, crate->lootListName, random, capsuleOdds);
+        }
+        if (!item && definition)
+        {
+            InventoryItem plain;
+            plain.defIndex = *definition;
+            plain.rarity = m_schema.ItemRarity(*definition);
+            item = plain;
+        }
+    }
     else if (const auto definition = m_schema.ItemDefIndex(goods->itemName))
     {
         InventoryItem plain;

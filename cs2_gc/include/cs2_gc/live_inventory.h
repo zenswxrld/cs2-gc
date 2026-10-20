@@ -12,7 +12,7 @@
 namespace cs2_gc
 {
 // The inventory as the game sees it during a session: the items plus which item is in which loadout
-// slot. Slots are kept in memory only.
+// slot. Slots save with the inventory and are restored for client/server welcomes.
 class LiveInventory
 {
 public:
@@ -33,6 +33,7 @@ public:
     std::optional<InventoryItem> TerminalOffer(const Schema &schema, std::uint64_t gameId) const;
     std::optional<TerminalChange> AcceptTerminal(const Schema &schema, std::uint64_t gameId);
     void SetArmoryCredits(std::uint32_t credits) { m_inventory.SetArmoryCredits(credits); }
+    bool ApplyConsoleStars(std::uint64_t cumulative) { return m_inventory.ApplyConsoleStars(cumulative); }
     void SetArmoryPity(const std::string &collection, std::uint32_t misses) { m_inventory.SetArmoryPity(collection, misses); }
     std::optional<std::vector<InventoryItem>> GrantMatchRewards(const Schema &schema, std::uint64_t completed,
                                                                const RandomSource &random)
@@ -195,15 +196,6 @@ public:
 
 private:
     std::uint32_t PositionOf(std::uint64_t ourId) const;
-    struct Slot
-    {
-        std::uint32_t classId{};
-        std::uint32_t slotId{};
-        std::uint64_t itemId{};
-        std::uint32_t itemDefinition{};
-    };
-
     Inventory m_inventory;
-    std::vector<Slot> m_slots;
 };
 }

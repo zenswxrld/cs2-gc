@@ -1338,6 +1338,13 @@ void LoadoutAndPurchases()
     const auto first = slotFields((*changed)[0]);
     Check(first.at(1) == 555 && first.at(2) == 2 && first.at(3) == 14 && first.at(4) == mine && first.at(5) == 7, "equip slot object");
     Check(live.EncodedSlots(555).size() == 2, "slots remembered");
+    const auto equippedSave = Inventory::FromText(live.Items().ToText());
+    Check(equippedSave && LiveInventory(*equippedSave).EncodedSlots(555) == live.EncodedSlots(555),
+          "team-specific custom and default loadout slots survive a full inventory reload");
+    auto removedEquipped = *equippedSave;
+    Check(removedEquipped.Remove(1) && removedEquipped.Loadout().size() == 1 &&
+              removedEquipped.Loadout()[0].itemId == defaultAk && Inventory::FromText(removedEquipped.ToText()),
+          "consuming an equipped custom item removes its saved slot while preserving base weapons");
 
     // One unknown item rejects the whole request, and nothing changes.
     AdjustEquipSlots bad;
@@ -1349,6 +1356,8 @@ void LoadoutAndPurchases()
     const auto cleared = live.Adjust(clear, 555);
     Check(cleared && slotFields((*cleared)[0]).at(4) == 0 && slotFields((*cleared)[0]).at(5) == 0 && live.EncodedSlots(555).size() == 1,
           "cleared slot");
+    const auto clearedSave = Inventory::FromText(live.Items().ToText());
+    Check(clearedSave && LiveInventory(*clearedSave).EncodedSlots(555) == live.EncodedSlots(555), "unequipping also survives restart");
 
     // Message codecs.
     PbWriter slotMsg;
@@ -1405,7 +1414,8 @@ void LoadoutAndPurchases()
     gc.EnableReplay(store);
     gc.SetDropRecordedItems(true);
     auto liveForEndpoint = std::make_shared<LiveInventory>(inventory);
-    gc.EnableLiveInventory(liveForEndpoint);
+    int equipSaves = 0;
+    gc.EnableLiveInventory(liveForEndpoint, [&] { ++equipSaves; });
     gc.EnableStorePurchaseFailure();
 
     const auto send = [&](std::uint32_t type, const std::vector<std::uint8_t> &payload, const std::vector<std::uint8_t> &header = {}) {
@@ -1444,6 +1454,8 @@ void LoadoutAndPurchases()
 
     send(m::EGCItemMsg::k_EMsgGCAdjustEquipSlotsManual, body.bytes());
     const Out u = next();
+    Check(equipSaves == 1 && Inventory::FromText(liveForEndpoint->Items().ToText())->Loadout().size() == 1,
+          "native equip request invokes the save callback and persists its slot");
     const auto updateOut = DecodeSoMultipleObjects(u.body);
     Check(u.any && u.type == (m::ESOMsg::k_ESOMsg_UpdateMultiple | ProtobufMask) && updateOut && updateOut->objects.size() == 1 &&
               updateOut->objects[0].typeId == 3 && updateOut->owner.id == 555 && updateOut->version == 41, "equip answered with an SO update, version past the recorded one");
@@ -3383,6 +3395,39 @@ void Terminals()
     Check(live->Items().Items().size() == 1 && saves == 4, "repeated finalize cannot duplicate a terminal reward");
 }
 
+void NativeArmorySlotsAndConsoleStars()
+{
+    std::string text = R"("items_game" { "items" { )";
+    for (unsigned i = 0; i < 12; ++i)
+        text += "\"" + std::to_string(100 + i) + "\" { \"name\" \"item_" + std::to_string(i) + "\" } ";
+    text += R"(} "seasonaloperations" { "11" { "redeemable_goods" "xpshop" )";
+    const std::string slots[] = {"case", "capsule", "charm", "sticker", "collection", "limited"};
+    for (unsigned i = 0; i < 12; ++i)
+        text += "\"operational_point_redeemable\" { \"item_name\" \"item_" + std::to_string(i) +
+            "\" \"points\" \"2\" \"local_rotation_slot\" \"" + slots[i / 2] + "\" } ";
+    text += "} } }";
+    auto schema = Schema::Load(text);
+    Check(schema && schema->ArmoryRedeemables().size() == 12, "generated native catalogue loads every row");
+    GameplayConfig config;
+    Armory armory(*schema, 11, 10);
+    const auto first = armory.RotationAt(0, config), next = armory.RotationAt(900, config);
+    Check(first.redeemIds.size() == 6 && next.redeemIds.size() == 6, "every category has its own active slot");
+    for (const auto id : first.redeemIds)
+        Check(std::find(next.redeemIds.begin(), next.redeemIds.end(), id) == next.redeemIds.end(), "each pool advances");
+    armory.SetRotationOffset(1);
+    Check(armory.RotationAt(0, config).redeemIds == next.redeemIds, "console force rotation advances all pools");
+    Inventory saved; saved.SetArmoryCredits(10); saved.SetGameplay(config);
+    LiveInventory live(saved);
+    RedeemRequest request; request.campaignId = 11; request.expectedCost = 2; request.redeemId = first.redeemIds[0];
+    Check(armory.Redeem(request, live, [] { return 0ull; }, {}, 0).status == Armory::Status::NotInRotation &&
+          live.Items().Items().empty() && armory.Balance() == 10, "stale native slot rejects without spending");
+    Check(saved.ApplyConsoleStars(100) && saved.ArmoryCredits() == 110, "test stars add to balance");
+    auto restored = Inventory::FromText(saved.ToText());
+    Check(restored && !restored->ApplyConsoleStars(100) && !restored->ApplyConsoleStars(99) &&
+          restored->ArmoryCredits() == 110 && restored->ApplyConsoleStars(1100) && restored->ArmoryCredits() == 1110,
+          "console cursor survives restart and cannot grant the same stars twice");
+}
+
 void HowlAndArmoryRotation()
 {
     auto schema = Schema::Load(R"("items_game" {
@@ -3611,6 +3656,7 @@ int main()
 {
     try
     {
+        NativeArmorySlotsAndConsoleStars(); std::cout << "PASS native Armory slots and console stars\n";
         NativePremier(); std::cout << "PASS native Premier placement/rating cache\n";
         HowlAndArmoryRotation(); std::cout << "PASS limited Howl and Armory rotation policy\n";
         ConfiguredRewardsAndPity(); std::cout << "PASS configured match rewards, pity and local transport\n";

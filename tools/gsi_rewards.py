@@ -16,8 +16,10 @@ import time
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gameplay_config import load as load_gameplay
+from console_controls import ConsoleControls
 import premier_rating
 from native_tradeups import prepare as prepare_native_tradeups
+from rotate_armory import prepare as prepare_armory_rotation
 from native_scoreboard import prepare as prepare_native_scoreboard
 from native_store import prepare as prepare_native_store
 from skip_container_confirm import prepare as prepare_container_confirm
@@ -243,11 +245,15 @@ def run_with_parent(args, parent):
                 atomic_text(config_path, content)
                 print('GSI config installed/updated. If this is the first setup, restart CS2 once to load it.', flush=True)
         try:
-            native_status = prepare_native_tradeups(args.proxy_dir, bool(rewards.config['mixed_stattrak_tradeups']))
+            native_status = prepare_native_tradeups(args.proxy_dir, bool(rewards.config['mixed_stattrak_tradeups']), rewards.config)
             print('Native trade-up UI: ' + native_status, flush=True)
         except (OSError, ValueError, KeyError) as error:
             # A changed schema or missing game file must not stop earned XP/stars.
             print('Native trade-up UI setup skipped: ' + str(error), flush=True)
+        try:
+            print('Native Armory rotation: ' + prepare_armory_rotation(args.proxy_dir, rewards.config), flush=True)
+        except (OSError, ValueError, KeyError) as error:
+            print('Native Armory rotation setup skipped: ' + str(error), flush=True)
         try:
             print('Native Premier scoreboard: ' + prepare_native_scoreboard(args.proxy_dir, rewards.config), flush=True)
         except (OSError, ValueError, KeyError) as error:
@@ -273,8 +279,11 @@ def run_with_parent(args, parent):
             write_difficulty()
             print('Local Premier bot config prepared. In the local server console: exec cs2_gc_premier_bots', flush=True)
         print('Local CS2 rewards bridge running' + (' in background; exits with CS2.' if args.parent_pid else ' in manual diagnostic mode.'), flush=True)
+        console = ConsoleControls(rewards, args.cfg_dir, args.parent_pid) if args.cfg_dir and args.parent_pid else None
+        if console: print('Console controls prepared: launch with -condebug, then exec cs2_gc_console in game.', flush=True)
         next_status = [time.monotonic() + 30]
         def after_request():
+            if console: console.poll()
             if args.cfg_dir and rewards.config['premier_enabled']:
                 write_difficulty()
             if time.monotonic() < next_status[0]: return

@@ -89,6 +89,7 @@ class NativeTradeUps(unittest.TestCase):
             native.atomic_write(info, GAMEINFO)
             source = proxy / 'items_game.txt'; source.write_text(schema_text())
             self.assertIn('RESTART', native.prepare(proxy))
+            self.assertIn('Mod\tcs2_gc_native', native.read_text(info))
             self.assertEqual(native.read_text(source), schema_text())
             self.assertEqual(native.read_text(info.with_name(info.name + '.cs2_gc_native_backup')), GAMEINFO)
             target = game / native.FOLDER / 'scripts/items/items_game.txt'
@@ -99,6 +100,7 @@ class NativeTradeUps(unittest.TestCase):
             native.atomic_write(info, mounted)
             self.assertIn('disabled', native.prepare(proxy, False))
             self.assertNotIn(native.MOUNT, native.read_text(info))
+            self.assertNotIn('Mod\tcs2_gc_native', native.read_text(info))
             self.assertIn('Game my_new_addon', native.read_text(info))
             self.assertEqual(native.read_text(source), schema_text())
 

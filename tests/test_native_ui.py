@@ -49,10 +49,10 @@ def resource(source, other=True):
     return bytes(result)
 
 
-def vpk(directory, payload, split=False, preload=0):
+def vpk(directory, payload, split=False, preload=0, extension='vjs_c', folder='panorama/scripts'):
     small, remainder = payload[:preload], payload[preload:]
     archive = 0 if split else 0x7fff
-    tree = (b'vjs_c\0panorama/scripts\0scoreboard\0' +
+    tree = (extension.encode() + b'\0' + folder.encode() + b'\0scoreboard\0' +
             struct.pack('<IHHIIH', zlib.crc32(payload), len(small), archive, 2, len(remainder), 0xffff) +
             small + b'\0\0\0')
     directory.write_bytes(struct.pack('<7I', 0x55aa1234, 2, len(tree), 0, 0, 0, 0) + tree +
@@ -61,6 +61,18 @@ def vpk(directory, payload, split=False, preload=0):
 
 
 class NativeUI(unittest.TestCase):
+    def test_raw_installed_js_alias_and_backslash_paths_are_not_compiled_resources(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder) / 'pak01_dir.vpk'
+            vpk(directory, SOURCE.encode(), extension='js', folder='panorama\\scripts')
+            original, actual = resources.vpk_file(directory, scoreboard.ASSET, aliases=True, with_path=True)
+            self.assertEqual(actual, 'panorama/scripts/scoreboard.js')
+            changed = resources.patch_installed_script(original, actual,
+                lambda source: scoreboard.patch(source, gameplay_config.DEFAULTS))
+            self.assertTrue(changed.startswith(b'//'))
+            self.assertIn(b'cs2_gc native Premier badges', changed)
+            self.assertNotEqual(changed, original)
+
     @unittest.skipUnless(shutil.which('node'), 'Node is optional for the executable confirmation fixture')
     def test_one_click_open_and_hidden_rent_apply_only_to_local_containers(self):
         source = '''

@@ -156,6 +156,32 @@ void LocalGameCoordinator::RefreshServerInventory()
     Reply(gc_msg::ESOMsg::k_ESOMsg_CacheSubscribed, cache.bytes());
 }
 
+bool LocalGameCoordinator::ApplyConsoleControl(std::uint64_t cumulativeStars, std::uint32_t rotationOffset,
+                                               const std::function<void()> &afterChange)
+{
+    std::lock_guard lock(m_mutex);
+    if (m_armory) m_armory->SetRotationOffset(rotationOffset);
+    if (!m_live || !m_live->ApplyConsoleStars(cumulativeStars)) return false;
+    const auto credits = m_live->Items().ArmoryCredits().value_or(0);
+    m_armoryCredits = credits;
+    if (m_armory) m_armory->SetBalance(credits);
+    {
+        std::lock_guard passLock(m_txnMutex);
+        if (auto pass = WithXpShopBalance(m_xpShop, credits))
+        {
+            m_xpShop = *pass;
+            SoSingleObject updated;
+            updated.typeId = static_cast<std::int32_t>(XpShopTypeId);
+            updated.data = *pass;
+            updated.version = ++m_soVersion;
+            updated.owner = m_config.owner;
+            Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+        }
+    }
+    if (afterChange) afterChange();
+    return true;
+}
+
 bool LocalGameCoordinator::ApplyEarnedXp(std::uint64_t cumulativeXp, const std::function<void()> &afterChange)
 {
     std::lock_guard lock(m_mutex);
@@ -736,7 +762,7 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
     if (!inventory)
         return;
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCAdjustEquipSlotsManual,
-               [inventory](const FrameView &frame, LocalGameCoordinator &gc) {
+               [inventory, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
                    const auto request = DecodeAdjustEquipSlots(frame.body);
                    if (!request)
                    {
@@ -756,6 +782,7 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
                    update.version = ++gc.m_soVersion;
                    update.owner = gc.m_config.owner;
                    gc.Reply(gc_msg::ESOMsg::k_ESOMsg_UpdateMultiple, EncodeSoMultipleObjects(update));
+                   if (afterChange) afterChange();
                });
 
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCApplySticker,

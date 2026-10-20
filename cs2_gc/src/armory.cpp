@@ -2,6 +2,7 @@
 #include <string_view>
 #include <algorithm>
 #include <ctime>
+#include <map>
 
 namespace cs2_gc
 {
@@ -33,7 +34,7 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
         return result;
     }
     const auto &config = inventory.Items().Gameplay();
-    if (isHowl || (config.armory_rotation_enabled && config.armory_rotation_enforce))
+    if (isHowl || (config.armory_rotation_enabled && (config.armory_rotation_enforce || !goods->rotationSlot.empty())))
     {
         const auto rotation = RotationAt(unixSeconds.value_or(static_cast<std::uint64_t>(std::time(nullptr))), config);
         if (std::find(rotation.redeemIds.begin(), rotation.redeemIds.end(), request.redeemId) == rotation.redeemIds.end())
@@ -61,6 +62,16 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
     {
         if (const auto howl = m_schema.ResolveLootItem(HowlEntry))
             item = MakeLootItem(*howl, m_schema.SkinRarity(howl->weaponDefIndex, howl->paintKitIndex).value_or(0), random, 0);
+    }
+    else if (goods->rotationSlot == "limited" && goods->itemName.starts_with(LootListPrefix))
+    {
+        std::vector<LootItem> fixed;
+        for (const auto &tier : m_schema.LootTiers(goods->itemName.substr(LootListPrefix.size())))
+            for (const auto &entry : tier.items)
+                if (auto resolved = m_schema.ResolveLootItem(entry)) fixed.push_back(*resolved);
+        if (fixed.size() == 1 && fixed.front().kind == LootKind::Skin)
+            if (auto rarity = m_schema.SkinRarity(fixed.front().weaponDefIndex, fixed.front().paintKitIndex))
+                item = MakeLootItem(fixed.front(), *rarity, random, 0);
     }
     else if (goods->itemName.starts_with(LootListPrefix))
     {
@@ -145,7 +156,7 @@ Armory::Rotation Armory::RotationAt(std::uint64_t unixSeconds, const GameplayCon
     for (const auto &good : m_schema.ArmoryRedeemables())
         if (good.campaignId == m_campaignId) all.push_back(&good);
     const auto howl = HowlOffer(config);
-    if (howl) all.push_back(&*howl);
+    if (howl && !m_schema.FindRedeemable(m_campaignId, howl->redeemId)) all.push_back(&*howl);
     std::sort(all.begin(), all.end(), [](const auto *a, const auto *b) { return a->itemName < b->itemName; });
     Rotation result;
     if (all.empty()) return result;
@@ -155,8 +166,19 @@ Armory::Rotation Armory::RotationAt(std::uint64_t unixSeconds, const GameplayCon
         return result;
     }
     const auto interval = config.armory_rotation_seconds;
-    const auto cycle = unixSeconds / interval;
+    const auto cycle = unixSeconds / interval + m_rotationOffset;
     result.endsAt = unixSeconds - unixSeconds % interval + interval;
+    // Native category slots rotate independently. A large capsule catalogue cannot
+    // crowd charms or cases out of their designated slots.
+    std::map<std::string, std::vector<const ArmoryRedeemable *>> slots;
+    for (const auto *good : all)
+        if (!good->rotationSlot.empty()) slots[good->rotationSlot].push_back(good);
+    if (!slots.empty())
+    {
+        for (const auto &[slot, entries] : slots)
+            result.redeemIds.push_back(entries[cycle % entries.size()]->redeemId);
+        return result;
+    }
     const auto count = std::min<std::size_t>(config.armory_rotation_slots, all.size());
     const auto start = ((cycle % all.size()) * count) % all.size();
     for (std::size_t i = 0; i < count; ++i)
@@ -175,8 +197,10 @@ std::optional<ArmoryRedeemable> Armory::HowlOffer(const GameplayConfig &config) 
         return std::nullopt;
     ArmoryRedeemable offer;
     offer.campaignId = m_campaignId;
-    offer.itemName = HowlEntry;
-    offer.redeemId = Crc32(HowlEntry);
+    // The generated native tile uses the existing single-item Howl loot list.
+    const auto native = m_schema.FindRedeemable(m_campaignId, Crc32("lootlist:removed_items"));
+    offer.itemName = native ? native->itemName : std::string{HowlEntry};
+    offer.redeemId = Crc32(offer.itemName);
     offer.points = config.armory_howl_star_price;
     return offer;
 }

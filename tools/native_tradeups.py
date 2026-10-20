@@ -1,7 +1,6 @@
-"""Prepare a narrowly scoped CS2 recipe override for the native trade-up screen.
+"""Prepare reversible native trade-up recipes and official-item Armory catalogue rows.
 
-Only existing trade-up input-quality conditions and duplicate StatTrak recipe enable
-flags change. The original schema is never edited. A dedicated search-path folder
+Item, paint-kit and loot-list definitions stay unchanged. The original schema is never edited. A dedicated search-path folder
 is mounted through the installed game's own gameinfo.gi, backed up before editing.
 """
 from dataclasses import dataclass
@@ -72,7 +71,7 @@ def parse(text):
             index += 1
             if raw == '{':
                 children = nodes(True, depth + 1)
-                result.append(Node(key, children=children, opening=end))
+                result.append(Node(key, children=children, opening=end, end=tokens[index - 1][2]))
             elif raw == '}': raise ValueError('Missing KeyValues value')
             else: result.append(Node(key, value, start=start, end=end))
         if block: raise ValueError('Unclosed KeyValues block')
@@ -132,20 +131,21 @@ def patch_recipes(source):
     return result, {'normal_recipes': normal, 'disabled_stattrak_recipes': tracked}
 
 
-def mount_gameinfo(source, enabled=True, folder=FOLDER, comment='cs2_gc native tradeups'):
+def mount_gameinfo(source, enabled=True, folder=FOLDER, comment='cs2_gc native tradeups', kind='Game'):
+    if kind not in ('Game', 'Mod'): raise ValueError('Unsupported search path kind')
     search = parse(source).one('GameInfo').one('FileSystem').one('SearchPaths')
-    owned = re.compile(r'\r?\n[ \t]*Game[ \t]+' + re.escape(folder) + r'[ \t]*// ' + re.escape(comment) + r'\r?\n')
+    owned = re.compile(r'\r?\n[ \t]*' + kind + r'[ \t]+' + re.escape(folder) + r'[ \t]*// ' + re.escape(comment) + r'\r?\n')
     if not enabled:
         return owned.sub('', source)
-    paths = [node for node in search.children or [] if node.key == 'Game' and node.value == folder]
+    paths = [node for node in search.children or [] if node.key == kind and node.value == folder]
     if paths:
         if len(paths) != 1 or len(owned.findall(source)) != 1:
             raise ValueError('Unowned or duplicate native search path; leaving gameinfo unchanged')
         return source
-    if not any(node.key == 'Game' and node.value == 'csgo' for node in search.children or []):
+    if not any(node.key == kind and node.value == 'csgo' for node in search.children or []):
         raise ValueError('Installed gameinfo does not contain the inspected CS2 base search path')
     newline = '\r\n' if '\r\n' in source else '\n'
-    insertion = newline + '\t\t\tGame\t' + folder + ' // ' + comment + newline
+    insertion = newline + '\t\t\t' + kind + '\t' + folder + ' // ' + comment + newline
     return source[:search.opening] + insertion + source[search.opening:]
 
 
@@ -167,7 +167,7 @@ def read_text(path):
         return source.read()
 
 
-def prepare(proxy_directory, enabled=True):
+def prepare(proxy_directory, enabled=True, config=None):
     proxy_directory = Path(proxy_directory).resolve()
     game = proxy_directory.parent.parent
     gameinfo = game / 'csgo/gameinfo.gi'
@@ -177,11 +177,13 @@ def prepare(proxy_directory, enabled=True):
     if not gameinfo.is_file():
         return 'unavailable: installed game/csgo/gameinfo.gi not found'
     current_gameinfo = read_text(gameinfo)
-    if not enabled:
+    catalogue_enabled = bool(config and config['armory_rotation_enabled'])
+    if not enabled and not catalogue_enabled:
         if not manifest_path.exists(): return 'disabled'
         manifest = json.loads(read_text(manifest_path))
         if manifest.get('owner') != OWNER: raise ValueError('Native folder is not owned by this feature')
         original = mount_gameinfo(current_gameinfo, False)
+        original = mount_gameinfo(original, False, kind='Mod')
         if original != current_gameinfo:
             atomic_write(gameinfo, original)
             return 'disabled; restart CS2 to restore native homogeneous recipes'
@@ -189,8 +191,13 @@ def prepare(proxy_directory, enabled=True):
     if not schema.is_file():
         return 'unavailable: items_game.txt is missing beside the proxy DLL'
     source = read_text(schema)
-    patched, details = patch_recipes(source)
+    patched, details = patch_recipes(source) if enabled else (source, {})
+    if catalogue_enabled:
+        from armory_rotation_catalog import patch_catalogue
+        patched, catalogue = patch_catalogue(patched, config)
+        details['armory_catalogue'] = catalogue
     mounted = mount_gameinfo(current_gameinfo)
+    mounted = mount_gameinfo(mounted, kind='Mod')
     existing = None
     if manifest_path.exists():
         existing = json.loads(read_text(manifest_path))
@@ -213,5 +220,8 @@ def prepare(proxy_directory, enabled=True):
             with backup.open('x', encoding='utf-8', newline='') as output:
                 output.write(current_gameinfo); output.flush(); os.fsync(output.fileno())
         atomic_write(gameinfo, mounted)
-    return ('prepared; RESTART CS2 ONCE to load native mixed trade-ups' if changed else
-            'installed: shared native normal/StatTrak recipes; live selection still needs verification')
+    import zlib
+    stamp = 'CS2_GC_NATIVE_V1 {} {}\n'.format(zlib.crc32(source.encode('utf-8')), zlib.crc32(patched.encode('utf-8')))
+    atomic_write(mod / 'cs2_gc_schema_stamp.txt', stamp)
+    return ('prepared; RESTART CS2 ONCE to load native recipes/catalogue' if changed else
+            'installed: native recipes/catalogue; live verification needed')

@@ -63,7 +63,14 @@ struct InventoryItem
     bool statTrakFromContract{}; // preserve intentional local mixed-contract variants across startup repair
 };
 
-// Local, in-memory inventory. Persistence and client sync are not wired yet.
+struct LoadoutSlot
+{
+    std::uint32_t classId{}, slotId{};
+    std::uint64_t itemId{};
+    std::uint32_t itemDefinition{};
+};
+
+// Local inventory and loadout, persisted together.
 class Inventory
 {
 public:
@@ -75,12 +82,15 @@ public:
     const InventoryItem *Find(std::uint64_t id) const;
     InventoryItem *Find(std::uint64_t id);
     const std::vector<InventoryItem> &Items() const { return m_items; }
+    const std::vector<LoadoutSlot> &Loadout() const { return m_loadout; }
+    std::vector<LoadoutSlot> &Loadout() { return m_loadout; }
 
     // The Armory passes the player has activated: one XP value each, saved with the items.
     const std::vector<std::uint32_t> &XpTracks() const { return m_xpTracks; }
     std::vector<std::uint32_t> &XpTracks() { return m_xpTracks; }
     std::optional<std::uint32_t> ArmoryCredits() const { return m_armoryCredits; }
     void SetArmoryCredits(std::uint32_t credits) { m_armoryCredits = credits; }
+    bool ApplyConsoleStars(std::uint64_t cumulative);
     const LocalProgress &Progress() const { return m_progress; }
     bool ApplyEarnedXp(std::uint64_t cumulativeXp);
     std::uint64_t MatchRewardTotal() const { return m_matchRewardTotal; }
@@ -117,10 +127,12 @@ private:
     GameplayConfig m_gameplay;
     std::uint32_t m_trackXpPerStar{400};
     std::vector<InventoryItem> m_items;
+    std::vector<LoadoutSlot> m_loadout;
     std::vector<std::uint32_t> m_xpTracks;
     std::optional<std::uint32_t> m_armoryCredits;
     LocalProgress m_progress;
     std::uint64_t m_matchRewardTotal{};
+    std::uint64_t m_consoleStarTotal{};
     std::uint32_t m_levelRewardTotal{}; // profile levels already rewarded, excluding starting level 1
     std::uint32_t m_casePity{};
     std::map<std::uint32_t, std::uint32_t> m_terminalPity;

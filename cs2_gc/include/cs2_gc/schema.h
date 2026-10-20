@@ -58,6 +58,7 @@ struct ArmoryRedeemable
     std::uint32_t points{};      // cost in Armory credits
     std::string itemName;        // an item name, or "lootlist:<client loot list>"
     std::uint32_t redeemId{};
+    std::string rotationSlot; // generated catalogue: case/capsule/charm/sticker/collection/limited
 };
 
 std::uint32_t Crc32(std::string_view text);

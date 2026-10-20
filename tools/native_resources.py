@@ -14,7 +14,7 @@ import zlib
 MAX_ASSET = 8 * 1024 * 1024
 
 
-def vpk_file(directory, wanted):
+def vpk_file(directory, wanted, *, aliases=False, with_path=False):
     directory = Path(directory)
     with directory.open('rb') as source:
         header = source.read(12)
@@ -36,6 +36,7 @@ def vpk_file(directory, wanted):
             return value
 
         found = None
+        nearby = []
         while True:
             extension = string()
             if not extension: break
@@ -51,12 +52,17 @@ def vpk_file(directory, wanted):
                     if end != 0xffff or position + preload > len(tree): raise ValueError('Invalid VPK entry')
                     small = tree[position:position + preload]; position += preload
                     path = ('' if folder == ' ' else folder + '/') + name + ('' if extension == ' ' else '.' + extension)
-                    if path == wanted:
-                        if found is not None: raise ValueError('Duplicate VPK asset')
+                    path = path.replace('\\', '/')
+                    if name.lower() == Path(wanted).stem.lower(): nearby.append(path)
+                    match = path.lower() == wanted.lower()
+                    alias = (aliases and path.rsplit('.', 1)[0].lower() == wanted.rsplit('.', 1)[0].lower()
+                             and extension.lower() in ('js', 'vjs', 'vjs_c', 'js_c'))
+                    if match or alias:
+                        if found is not None: raise ValueError('Ambiguous VPK script assets: ' + found[5] + ', ' + path)
                         if length + preload > MAX_ASSET: raise ValueError('VPK asset too large')
-                        found = (crc, small, archive, offset, length)
-        if found is None: raise ValueError('Installed VPK asset not found: ' + wanted)
-        crc, small, archive, offset, length = found
+                        found = (crc, small, archive, offset, length, path)
+        if found is None: raise ValueError('Installed VPK asset not found: ' + wanted + '; matching basenames: ' + ', '.join(nearby[:8]))
+        crc, small, archive, offset, length, actual = found
         if archive == 0x7fff:
             source.seek(header_size + tree_size + offset)
             result = small + source.read(length)
@@ -67,7 +73,7 @@ def vpk_file(directory, wanted):
                 data.seek(offset); result = small + data.read(length)
         if len(result) != len(small) + length or zlib.crc32(result) != crc:
             raise ValueError('Installed VPK asset checksum/length mismatch')
-        return result
+        return (result, actual) if with_path else result
 
 
 def script_blocks(resource):
@@ -109,13 +115,20 @@ def rewrite_script(resource, patch):
     return bytes(result)
 
 
+def patch_installed_script(resource, actual_path, patch):
+    # CS2 can store ordinary Panorama .js assets rather than a compiled .vjs_c.
+    # Match the installed filename and representation; never wrap raw JS as a resource.
+    if actual_path.endswith(('.js', '.vjs')):
+        return patch(resource.decode('utf-8')).encode('utf-8')
+    return rewrite_script(resource, patch)
+
+
 def install_override(proxy_directory, *, enabled, folder, comment, owner, asset, patch):
     proxy = Path(proxy_directory).resolve()
     game = proxy.parent.parent
     info = game / 'csgo/gameinfo.gi'
     mod = game / folder
     manifest_path = mod / 'cs2_gc_ui_manifest.json'
-    target = mod / asset
     if not info.is_file(): return 'unavailable: installed gameinfo.gi not found'
     current = read_text(info)
     previous = None
@@ -131,13 +144,14 @@ def install_override(proxy_directory, *, enabled, folder, comment, owner, asset,
         return 'disabled'
     directory = game / 'csgo/pak01_dir.vpk'
     if not directory.is_file(): return 'unavailable: installed csgo/pak01_dir.vpk not found'
-    original = vpk_file(directory, asset)
-    result = rewrite_script(original, patch)
+    original, actual = vpk_file(directory, asset, aliases=True, with_path=True)
+    target = mod / actual
+    result = patch_installed_script(original, actual, patch)
     output_hash = hashlib.sha256(result).hexdigest()
     if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest() not in (
             output_hash, (previous or {}).get('output_sha256')):
         raise ValueError('Native UI override was edited externally; leaving it unchanged')
-    manifest = dict(owner=owner, source_sha256=hashlib.sha256(original).hexdigest(), output_sha256=output_hash)
+    manifest = dict(owner=owner, asset_path=actual, source_sha256=hashlib.sha256(original).hexdigest(), output_sha256=output_hash)
     atomic_write(manifest_path, json.dumps(manifest, indent=2) + '\n')
     changed = not target.exists() or target.read_bytes() != result or mounted != current
     if not target.exists() or target.read_bytes() != result:
@@ -149,5 +163,5 @@ def install_override(proxy_directory, *, enabled, folder, comment, owner, asset,
         if not backup.exists():
             with backup.open('x', encoding='utf-8', newline='') as output: output.write(current)
         atomic_write(info, mounted)
-    return ('prepared; RESTART CS2 ONCE to load native UI override' if changed else
-            'installed: native UI override; live verification needed')
+    return (f'prepared from {actual}; RESTART CS2 ONCE to load native UI override' if changed else
+            f'installed: {actual}; live verification needed')

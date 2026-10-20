@@ -1,5 +1,6 @@
 #include "cs2_gc/inventory.h"
 #include "cs2_gc/keyvalues.h"
+#include "cs2_gc/econ_item.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -66,6 +67,9 @@ bool Inventory::Remove(std::uint64_t id)
     if (it == m_items.end())
         return false;
     m_items.erase(it);
+    std::erase_if(m_loadout, [id](const LoadoutSlot &slot) {
+        return slot.itemId > CustomItemIdBase && (slot.itemId >> 60) != 0xF && slot.itemId - CustomItemIdBase == id;
+    });
     return true;
 }
 
@@ -121,6 +125,7 @@ std::string Inventory::ToText() const
     out << "\"inventory\"\n{\n\t\"next_id\"\t\"" << m_nextId << "\"\n";
     out << "\t\"case_pity\"\t\"" << m_casePity << "\"\n";
     out << "\t\"match_reward_total\" \"" << m_matchRewardTotal << "\"\n";
+    out << "\t\"console_star_total\" \"" << m_consoleStarTotal << "\"\n";
     out << "\t\"level_reward_total\" \"" << m_levelRewardTotal << "\"\n";
     out << "\t\"track_xp_per_star\" \"" << m_trackXpPerStar << "\"\n";
     if (!m_terminalPity.empty())
@@ -132,6 +137,15 @@ std::string Inventory::ToText() const
     }
     if (m_armoryCredits)
         out << "\t\"armory_credits\"\t\"" << *m_armoryCredits << "\"\n";
+    if (!m_loadout.empty())
+    {
+        out << "\t\"loadout\" {\n";
+        std::size_t index = 0;
+        for (const auto &slot : m_loadout)
+            out << "\t\t\"" << index++ << "\" { \"class\" \"" << slot.classId << "\" \"slot\" \"" << slot.slotId
+                << "\" \"item_id\" \"" << slot.itemId << "\" \"definition\" \"" << slot.itemDefinition << "\" }\n";
+        out << "\t}\n";
+    }
     if (!m_armoryPity.empty())
     {
         out << "\t\"armory_pity\" {\n";
@@ -210,6 +224,9 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
 
     if (const auto *matches = root->Find("match_reward_total"))
         if (matches->block || !ParseNumber(matches->value, inventory.m_matchRewardTotal))
+            return std::nullopt;
+    if (const auto *stars = root->Find("console_star_total"))
+        if (stars->block || !ParseNumber(stars->value, inventory.m_consoleStarTotal))
             return std::nullopt;
 
     if (const auto *pities = root->Find("terminal_pity"))
@@ -380,6 +397,34 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
         }
         inventory.m_items.push_back(item);
     }
+    if (const auto *loadout = root->Find("loadout"))
+    {
+        if (!loadout->block) return std::nullopt;
+        std::set<std::pair<std::uint32_t, std::uint32_t>> slots;
+        for (const auto &entry : loadout->children)
+        {
+            LoadoutSlot slot;
+            if (!entry.block || entry.children.size() != 4 ||
+                !ParseNumber(entry.Value("class"), slot.classId) || !ParseNumber(entry.Value("slot"), slot.slotId) ||
+                !ParseNumber(entry.Value("item_id"), slot.itemId) || !ParseNumber(entry.Value("definition"), slot.itemDefinition) ||
+                !slots.emplace(slot.classId, slot.slotId).second) return std::nullopt;
+            if (!slot.itemId)
+            {
+                if (slot.itemDefinition) return std::nullopt;
+            }
+            else if ((slot.itemId >> 60) == 0xF)
+            {
+                const auto definition = static_cast<std::uint32_t>(slot.itemId);
+                if (!definition || definition != slot.itemDefinition) return std::nullopt;
+            }
+            else
+            {
+                const auto *item = slot.itemId > CustomItemIdBase ? inventory.Find(slot.itemId - CustomItemIdBase) : nullptr;
+                if (!item || item->defIndex != slot.itemDefinition) return std::nullopt;
+            }
+            inventory.m_loadout.push_back(slot);
+        }
+    }
     return inventory;
 }
 
@@ -417,5 +462,18 @@ std::optional<Inventory> Inventory::Load(const std::filesystem::path &path)
     std::ostringstream buffer;
     buffer << file.rdbuf();
     return FromText(buffer.str());
+}
+}
+
+namespace cs2_gc
+{
+bool Inventory::ApplyConsoleStars(std::uint64_t cumulative)
+{
+    if (cumulative <= m_consoleStarTotal) return false;
+    const auto delta = cumulative - m_consoleStarTotal;
+    const auto balance = static_cast<std::uint64_t>(m_armoryCredits.value_or(0));
+    m_armoryCredits = static_cast<std::uint32_t>(balance + std::min<std::uint64_t>(delta, UINT32_MAX - balance));
+    m_consoleStarTotal = cumulative;
+    return true;
 }
 }

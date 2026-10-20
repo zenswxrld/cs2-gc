@@ -1,3 +1,11 @@
+Build 05 status supersedes older implementation notes below: native per-category
+Armory catalogue/countdown preparation and in-game console test aliases now exist
+for live testing. Loadout slots persist. Latest build04 mixed native picker and
+terminal checkout still fail; build05 tests an additional schema Mod mount and
+raw-JS asset lookup. Store decode needs the actual2501.bin. Native end-of-match
+panels and the wider bot/achievement features remain pending. See TEST-BUILD.md
+and CLAUDE-HANDOFF.md for current evidence and limitations.
+
 # CS2 OfflineCS feature roadmap
 
 User-approved scope, 20 October 2026. The supplied “confirmed” labels refer to the

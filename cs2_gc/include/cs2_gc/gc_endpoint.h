@@ -92,6 +92,8 @@ public:
                           RandomSource random, std::function<void()> afterChange);
     // Consume cumulative XP from the local GSI bridge, idempotently, on the game's callback thread.
     bool ApplyEarnedXp(std::uint64_t cumulativeXp, const std::function<void()> &afterChange);
+    bool ApplyConsoleControl(std::uint64_t cumulativeStars, std::uint32_t rotationOffset,
+                             const std::function<void()> &afterChange);
     bool ApplyMatchRewards(std::uint64_t completed, const std::function<void()> &afterChange);
     bool ApplyLevelRewards(const std::function<void()> &afterChange);
     // Local helper fallback when the native terminal checkout sends no purchase request.

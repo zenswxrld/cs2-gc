@@ -212,6 +212,7 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
                         if (!ParseU32(good.Value("points"), armory.points) || armory.itemName.empty())
                             continue; // an unusable tile still occupies its position in the game's list
                         armory.redeemId = Crc32(armory.itemName);
+                        armory.rotationSlot = good.Value("local_rotation_slot");
                         schema.m_armoryRedeemables.push_back(std::move(armory));
                     }
                 }

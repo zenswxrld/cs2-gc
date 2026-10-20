@@ -21,6 +21,7 @@ public:
     std::uint32_t Balance() const { return m_balance; }
     void SetBalance(std::uint32_t credits) { m_balance = credits; }
     std::uint32_t CampaignId() const { return m_campaignId; }
+    void SetRotationOffset(std::uint32_t offset) { m_rotationOffset = offset; }
 
     enum class Status
     {
@@ -55,5 +56,6 @@ private:
     const Schema &m_schema;
     std::uint32_t m_campaignId;
     std::uint32_t m_balance;
+    std::uint32_t m_rotationOffset{};
 };
 }

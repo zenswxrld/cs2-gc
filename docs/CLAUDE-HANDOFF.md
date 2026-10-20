@@ -1,3 +1,60 @@
+# Build 05: current status (supersedes historical notes below)
+
+Validation: all13 Linux core/Python suites pass, Windows x64 core/proxy build passes.
+1,046 export names match supplied proxy; imports onlyKERNEL32/msvcrt. Generated
+25966348 catalogue resolves every item/list; all active goods redeemed over42
+rotation cycles in an external offline integration check. Generated full native
+xpshop.js passes Node syntax check. No native engine/UI validation claimed.
+
+User requests: every Armory category rotates within its matching native slot,
+including current/previous Armory collections, sticker sheets, charms, limited
+items; all standard keyed cases and curated popular/team capsules. In-game test
+commands for stars/rotation, no purchase/trade-up BAT workflows. Push all changes.
+
+Latest live evidence from build04: profile placement now says one win/nine left;
+stars persist. Mixed native picker still segregates after restart. Terminal Buy
+still fails. Helper logs: scoreboard/rental `.vjs_c` not found, Store setup
+`Corrupt input data`; native recipes prepared then installed. Latest2536 returns
+saved offer correctly, but no subsequent native Store checkout is proven. Need
+actual `cs2_gc_replay/2501.bin` to debug LZMA, not guessed decompression patches.
+End-of-match drops/XP/rank panels remain unimplemented despite inventory rewards.
+
+Build05 changes:
+- Loadout state moved from ephemeral LiveInventory slots to saved Inventory slots;
+  validate class/slot uniqueness and referenced definition, remove consumed slots,
+  save after native equip request. Restored welcome/server item state uses saved
+  slots. No reconstruction of selections absent from old saves.
+- VPK lookup accepts raw .js/.vjs and compiled .js_c/.vjs_c, normalizes slash/case,
+  uses actual installed path and representation. Ambiguity/CRC/layout rejects.
+  First04 failures were exact-extension assumptions. Live mount still unproven.
+- Native recipes additionally mount Mod alongside Game; this is a test adjustment,
+  not evidence that the native craft quality filter now accepts mixtures.
+- armory_rotation_catalog.py replaces only campaign11 shop rows, referencing real
+  existing definitions/lists. Active schema25966348 gives42cases/34capsules/
+  6collections/6stickerpacks/4charmpacks/5limiteditems. Limited four historic
+  set_xpshop_wpn_01..04 lists plus single-Howl removed_items. Item/paint/loot-list
+  definitions unchanged. AGENTS narrow exception updated for explicit user scope.
+- Helper prepares this schema plus recipes and both owned mounts, with backup,
+  hashes and manifest. CRC stamp validates original and generated text before
+  proxy loads same catalogue. First preparation requires full restart. UI receives
+  categories through generated settings, uses actual native shop indexes and
+  ActionRedeemOperationGoods. Source patch mounts xpshop via normal UI installer.
+- RotationAt and native JS independently sort names within categories and select
+  cycle%poolsize, one/category. Every pool advances900s, with timer. Stale native
+  inspect returns to main; stale backend buys reject before spending. Generated
+  category slots enforce automatically; legacy uncategorised rotation retains
+  config fallback. Howl native CRC now lootlist:removed_items, rarity7 preserved.
+- ConsoleControls generates session aliases: exec cs2_gc_console, then
+  cs2_gc_give_stars (+100), cs2_gc_give_stars_1000, cs2_gc_force_rotation.
+  Requires -condebug. Exact freshly appended nonce lines only, cumulative saved
+  stars cursor, PID-gated control snapshot, no direct inventory writes by Python.
+  Force increments user-info cs2_gc_rotation_offset; native JS reads via existing
+  GameInterfaceAPI.GetSettingString, GC polls offset. These aliases require live
+  validation. Setup CFG initializes offset, so exec once/launch, not mid-session.
+- TestBuild doc rewritten around current behavior/evidence; historical claims
+  below must not be read as current proof. Native UI/engine tests remain separate
+  from Linux core/Python/Node and Windows cross-compilation.
+
 # Build 04 additions after live build-03 test
 
 Supersedes older pending claims below. User supplied new logs: helper earned1314XP,

@@ -282,6 +282,13 @@ public:
         }
         PollTradeUpRequest();
         PollTerminalRequest();
+        {
+            std::ifstream control(m_rewardPath.parent_path() / "cs2_gc_console.txt");
+            std::uint64_t pid = 0, stars = 0, offset = 0; std::string extra;
+            if ((control >> pid >> stars >> offset) && !(control >> extra) && control.eof() &&
+                pid == GetCurrentProcessId() && offset <= 1000000)
+                m_gc.ApplyConsoleControl(stars, static_cast<std::uint32_t>(offset), m_afterReward);
+        }
         m_gc.ApplyLevelRewards(m_afterReward);
         {
             std::ifstream premier(m_rewardPath.parent_path() / "cs2_gc_premier.txt");
@@ -854,7 +861,28 @@ State &Init()
                 std::ifstream schemaFile(schemaPath, std::ios::binary);
                 std::ostringstream schemaText;
                 schemaText << schemaFile.rdbuf();
-                auto parsed = Schema::Load(schemaText.str());
+                std::string schemaSource = schemaText.str();
+                // The bridge prepares a reversible native catalogue for the next
+                // launch. Validate both files against its stamp before accepting
+                // it, so native shop indexes and local redeem identities agree.
+                const auto nativeDir = schemaPath.parent_path().parent_path().parent_path() / L"cs2_gc_native";
+                std::ifstream stampFile(nativeDir / L"cs2_gc_schema_stamp.txt");
+                std::string marker; std::uint64_t originalCrc = 0, outputCrc = 0;
+                if (stampFile >> marker >> originalCrc >> outputCrc && marker == "CS2_GC_NATIVE_V1" &&
+                    originalCrc == Crc32(schemaSource))
+                {
+                    std::ifstream nativeFile(nativeDir / L"scripts/items/items_game.txt", std::ios::binary);
+                    const std::string nativeSource((std::istreambuf_iterator<char>(nativeFile)), {});
+                    std::ifstream gameinfo(nativeDir.parent_path() / L"csgo/gameinfo.gi");
+                    const std::string mounts((std::istreambuf_iterator<char>(gameinfo)), {});
+                    if (!nativeSource.empty() && outputCrc == Crc32(nativeSource) &&
+                        mounts.find("Game\tcs2_gc_native // cs2_gc native tradeups") != std::string::npos)
+                    {
+                        schemaSource = nativeSource;
+                        s.log->Write("armory: validated mounted native catalogue loaded");
+                    }
+                }
+                auto parsed = Schema::Load(schemaSource);
                 if (!parsed)
                     s.log->Write("armory: items_game.txt could not be read; Armory purchases stay unanswered");
                 else
@@ -935,7 +963,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: codex-20261020-04");
+        s.log->Write("test build: codex-20261020-05");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");

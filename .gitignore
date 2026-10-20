@@ -35,3 +35,9 @@ cs2_gc_rewards.previous.log
 
 cs2_gc_native/
 *.cs2_gc_native_backup
+
+cs2_gc_console.txt
+cs2_gc_console.txt.tmp
+cs2_gc_console.cfg
+cs2_gc_armory/
+*.cs2_gc_armory_backup

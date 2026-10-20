@@ -118,6 +118,31 @@ class ConsoleControls(unittest.TestCase):
             next_game = ConsoleControls(Rewards(proxy), cfg, 101)
             self.assertEqual(next_game.offset, 0)
 
+    def test_game_console_prefix_is_accepted_but_alias_echoes_and_other_text_are_not(self):
+        # The game prints echo output as "[Console] CS2GC_<code> stars 100"; that exact format was seen in its console.
+        import tempfile
+        from console_controls import ConsoleControls
+        from gsi_rewards import Rewards
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            proxy = root / 'bin'; proxy.mkdir()
+            cfg = root / 'csgo/cfg'; cfg.mkdir(parents=True)
+            log = cfg.parent / 'console.log'
+            rewards = Rewards(proxy)
+            control = ConsoleControls(rewards, cfg, 100)
+            code = 'CS2GC_' + control.nonce
+            with log.open('ab') as output:
+                output.write(('[Console] ' + code + ' stars 100\n' +                       # a real command
+                              '[Console] ' + code + ' stars 1000\n' +                      # a real command
+                              '] alias a "echo ' + code + ' stars 100"\n' +                # an alias definition echo
+                              '[Console] ' + code + ' stars 100 extra\n' +                 # trailing text
+                              'x' + code + ' stars 100\n' +                                 # glued to other text
+                              '[Console] CS2GC_' + 'f' * 32 + ' stars 100\n' +             # another launch's code
+                              '[Console] ' + code + ' rotate\n').encode())
+            control.poll()
+            self.assertEqual(rewards.state['console_stars'], 1100)
+            self.assertEqual(control.offset, 1)
+
     def test_exact_session_lines_partial_reads_and_restart_do_not_replay_grants(self):
         import tempfile
         from console_controls import ConsoleControls

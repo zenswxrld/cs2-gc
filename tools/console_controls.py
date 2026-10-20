@@ -28,7 +28,10 @@ class ConsoleControls:
         rewards.state.setdefault('console_stars', int(old[1]) if len(old) == 3 and old[1].isdigit() else 0)
         if type(rewards.state['console_stars']) is not int or not 0 <= rewards.state['console_stars'] <= (1 << 64) - 1:
             raise ValueError('Invalid console star cursor')
-        self.pattern = re.compile(rb'^CS2GC_' + self.nonce.encode() + rb' (stars (100|1000)|rotate)$')
+        # The game prints echo output as '[Console] <text>', so the line may carry a tag before the code. The code is a
+        # random per-launch value; the line must end right after the command, so an echoed alias definition (which ends
+        # in a quote) or another command never matches.
+        self.pattern = re.compile(rb'(?:^|[\]\s])CS2GC_' + self.nonce.encode() + rb' (stars (100|1000)|rotate)$')
         self.polls = 0
         self.warned = set()
         print(f"Console controls watching {self.log} (exists={self.log.exists()}, size={self.position}); "
@@ -74,7 +77,7 @@ class ConsoleControls:
         if len(self.pending) > 4096: self.pending = b'!'
         changed = False
         for line in lines:
-            match = self.pattern.fullmatch(line.rstrip(b'\r'))
+            match = self.pattern.search(line.rstrip(b'\r'))
             if not match:
                 if b'CS2GC_' in line:
                     self.warn_once('nonce', 'saw a command line with a different launch code; an alias from an '

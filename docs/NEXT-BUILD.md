@@ -14,9 +14,8 @@ run in the live client yet; the checklist is how we find out.
   `xpshop` source. **Whether the engine loads the patched files is exactly what the checklist tests.**
 - **`premier_bonus_wins`** (new, `cs2_gc_gameplay.cfg`): a running total of extra placement wins. Raising it grants
   only the difference, once, and remembers it; lowering it removes nothing. Shipped set to 8.
-- **Console-control diagnostics** (`tools/console_controls.py`): the helper now logs which `console.log` it watches, warns
-  if that file never appears, and warns if it sees a command line with a different launch code. This does not fix the
-  commands; it tells us why they fail.
+- **Console commands** (`tools/console_controls.py`): fixed the match for the game's `[Console] ` tag (see C), and the helper
+  now logs which `console.log` it watches and warns if that file never appears or a line carries a different launch code.
 - **Terminal Store sheet decode** (`tools/price_sheet.py`): see F.
 - Regenerated the proxy export list from your original `steam_api64.dll` (1,046 exports, with the two bot-server
   exports intercepted). **The DLL and the helper files must be updated together**: the proxy rejects a gameplay config
@@ -45,14 +44,19 @@ Install: close CS2; copy everything in the ZIP into `game/bin/win64` (keep `stea
 4. Note if the match-end screens (XP bar, rank change) appear. They are **not implemented**; that is expected.
 
 ### C. Console commands (give stars, force rotation)
-1. Started through `cs2_gc_debug.exe`? In the console type `exec cs2_gc_console`: you should see
-   `Local GC commands loaded: cs2_gc_give_stars, …`.
-2. Type `cs2_gc_give_stars`. A line `CS2GC_<32 hex characters> stars 100` should print. Then check:
-   - line prints, rewards log shows `Console controls: test stars total=…` → working, balance rises (reopen Armory);
-   - line prints, nothing in the rewards log → send `cs2_gc_rewards.log` (the new warnings say why);
-   - `Unknown command` → the aliases were never defined; send the console output of step 1.
-3. `cs2_gc_force_rotation`, wait two seconds, open the Armory: the six pools should have advanced.
-4. Send the last 40 lines of `game/csgo/console.log` either way.
+Cause found from a console screenshot: the commands worked in the game (`cs2_gc_give_stars` printed
+`[Console] CS2GC_<code> stars 100`) but the helper never matched the line, because the game tags echo output with
+`[Console] ` and the helper only accepted a line starting with the code. Fixed: the tag is accepted; alias-definition
+echoes, trailing text, glued text and other launches' codes are still rejected (tested).
+1. Start through `cs2_gc_debug.exe`. In the console, `cs2_gc_give_stars`: the `[Console] CS2GC_… stars 100` line prints
+   and within a couple of seconds the rewards log shows `Console controls: test stars total=…`; the Armory balance rises
+   (re-open the Armory tab to refresh it).
+2. `cs2_gc_give_stars_1000` likewise.
+3. `cs2_gc_force_rotation`, wait two seconds, open the Armory: the six pools should have advanced. Also look in the console
+   for `Unknown command` lines mentioning `incrementvar` or `setinfo`: the Armory screen reads the rotation counter from a
+   user-info variable that the setup file creates with `setinfo`; if that command is unknown in CS2, the backend rotation
+   still advances but the on-screen tiles may not, and we need to know.
+4. Send the last 40 lines of `game/csgo/console.log` and `cs2_gc_rewards.log` either way.
 
 ### D. Armory
 Timer visible; six category tiles; buy one; stars drop; inventory gains the item; restart: stars and loadout persist.

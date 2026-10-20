@@ -52,6 +52,8 @@ In `...\Counter-Strike Global Offensive\game\bin\win64`:
 2. Copy the proxy's `steam_api64.dll` into the same folder.
 3. Optional: create `cs2_gc.cfg` next to it (see below).
 4. Launch CS2 with the launch option `-insecure`.
+5. Each run appends to `cs2_gc_log.txt` and marks the start with `---- new session ----`. Delete
+   the file before a run if you want a clean one.
 
 Without `-insecure` the proxy forwards everything to the real library and writes nothing.
 The log appears next to the DLL as `cs2_gc_log.txt` (capped at 8 MB).
@@ -63,7 +65,9 @@ Delete the proxy `steam_api64.dll`, rename `steam_api64_real.dll` back to `steam
 
 ## Capture mode: record what the real GC sends
 
-Set `mode = capture` in `cs2_gc.cfg` (still requires `-insecure`). The game then talks to
+Add the launch option `-cs2gc_capture` next to `-insecure`, or set `mode = capture` in
+`cs2_gc.cfg` (the launch option wins). It still requires `-insecure`. The log's first lines say
+which mode is running, for example `mode=capture`; if it says `mode=local`, capture is not on. The game then talks to
 Valve's real GC exactly as it normally would, and the proxy only records the traffic in both
 directions in `cs2_gc_log.txt`. This is how we learn what a real Welcome contains and what
 object type IDs the game uses, instead of guessing them.
@@ -78,6 +82,10 @@ object type IDs the game uses, instead of guessing them.
 - Nothing is changed in what the game sends or receives.
 
 ## Config (`cs2_gc.cfg`, optional)
+
+The file lives next to `steam_api64.dll`. Windows hides known file extensions, so make sure it is
+really named `cs2_gc.cfg` and not `cs2_gc.cfg.txt` (the proxy also accepts the `.txt` name).
+The log says whether the file was found.
 
 ```
 # mode = local (default) or capture

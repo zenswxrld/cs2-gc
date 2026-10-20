@@ -419,9 +419,18 @@ State &Init()
             return s;
 
         s.log = new Logger(std::filesystem::path(s.directory + L"cs2_gc_log.txt"));
+        s.log->Write("---- new session ----");
         ProxyConfig proxy;
+        // Windows hides known extensions, so "cs2_gc.cfg" is easily saved as "cs2_gc.cfg.txt".
         std::ifstream cfg(std::filesystem::path(s.directory + L"cs2_gc.cfg"), std::ios::binary);
-        std::string note = "config: defaults";
+        std::string configName = "cs2_gc.cfg";
+        if (!cfg)
+        {
+            cfg.clear();
+            cfg.open(std::filesystem::path(s.directory + L"cs2_gc.cfg.txt"), std::ios::binary);
+            configName = "cs2_gc.cfg.txt";
+        }
+        std::string note = "config: no cs2_gc.cfg next to steam_api64.dll, using defaults";
         if (cfg)
         {
             std::ostringstream text;
@@ -429,10 +438,16 @@ State &Init()
             if (const auto parsed = ParseProxyConfig(text.str()))
             {
                 proxy = *parsed;
-                note = "config: cs2_gc.cfg loaded";
+                note = "config: " + configName + " loaded";
             }
             else
-                note = "config: cs2_gc.cfg is invalid, using defaults";
+                note = "config: " + configName + " is invalid, using defaults";
+        }
+        // A launch option is easier to get right than a file, and takes precedence over it.
+        if (CommandLineHasArgument(Narrow(GetCommandLineW()), "-cs2gc_capture"))
+        {
+            proxy.mode = ProxyMode::Capture;
+            note += "; -cs2gc_capture launch option set";
         }
 
         s.mode = proxy.mode;

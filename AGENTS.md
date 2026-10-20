@@ -15,8 +15,8 @@ qualities and disable their duplicate StatTrak recipes; do not edit original ite
 paint-kit, collection or case definitions. Additional user-authorised exception:
 generate native Armory catalogue rows referencing existing official items and
 loot lists, for per-category rotation of Armory collections, charms, stickers,
-limited items, cases and curated capsules. Do not create or alter item/loot-list
-definitions. Load the same generated catalogue in the client and local GC.
+limited items, cases, curated capsules and official tradable agents. Do not create
+or alter item/loot-list definitions. Load the same generated catalogue in the client and local GC.
 Back up gameinfo.gi before adding the
 owned native search path and preserve other addons. The store must live in CS2's native Armory page, with category tabs
 and pagination for the catalogue. Do not bring back the legacy Riptide store.

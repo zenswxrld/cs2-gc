@@ -201,7 +201,7 @@ std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, c
     for (const auto &crate : schema.Crates())
         if (crate.kind == CrateKind::Case && crate.keyDefIndex && !schema.LootTiers(crate.lootListName).empty())
             cases.push_back(crate.defIndex);
-    auto skins = schema.MatchRewardSkins();
+    auto skins = schema.MatchRewardSkins(config.match_weekly_pool_only != 0);
     std::erase_if(skins, [&](const auto &skin) {
         return schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex).value_or(0) < config.match_skin_min_rarity;
     });

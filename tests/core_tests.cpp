@@ -14,6 +14,7 @@
 #include "cs2_gc/message_queue.h"
 #include "cs2_gc/progression.h"
 #include "cs2_gc/schema.h"
+#include "cs2_gc/item_sales.h"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -3410,6 +3411,10 @@ void NativeArmorySlotsAndConsoleStars()
     auto schema = Schema::Load(text);
     Check(schema && schema->ArmoryRedeemables().size() == 12, "generated native catalogue loads every row");
     GameplayConfig config;
+    Check(Armory(*schema, 11, 10).RotationAt(0, config).redeemIds.size() == 11,
+          "expanded default groups expose multiple goods per category");
+    config.armory_case_slots = config.armory_capsule_slots = config.armory_charm_slots =
+        config.armory_sticker_slots = config.armory_collection_slots = config.armory_limited_slots = 1;
     Armory armory(*schema, 11, 10);
     const auto first = armory.RotationAt(0, config), next = armory.RotationAt(900, config);
     Check(first.redeemIds.size() == 6 && next.redeemIds.size() == 6, "every category has its own active slot");
@@ -3457,7 +3462,7 @@ void HowlAndArmoryRotation()
           inventory.Items().ToText() == before && armory.Balance() == 100, "expired Howl offer cannot spend stars");
     const auto bought = armory.Redeem(request, inventory, [] { return 0ull; }, {}, 0);
     Check(bought.status == Armory::Status::Ok && bought.item.paintKitIndex == 309 && bought.item.rarity == 7 &&
-          !bought.item.statTrak && bought.item.wear <= .4f && armory.Balance() == 60 && inventory.Items().ArmoryCredits() == 60u,
+          !bought.item.statTrak && bought.item.ownerCertificate && bought.item.wear <= .4f && armory.Balance() == 60 && inventory.Items().ArmoryCredits() == 60u,
           "active Howl offer grants the existing skin and spends the configured stars");
     config.armory_howl_enabled = 0;
     Check(!armory.HowlOffer(config) && armory.RotationAt(0, config).redeemIds.size() == 1, "Howl can be disabled");
@@ -3513,7 +3518,7 @@ void ConfiguredRewardsAndPity()
       }
       "paint_kits" { "10" { "name" "blue" } "11" { "name" "red" } "20" { "name" "gold" } }
       "paint_kits_rarity" { "blue" "rare" "red" "ancient" }
-      "item_sets" { "set_test" { "items" { "[blue]weapon_test" "1" "[red]weapon_test" "1" } } }
+      "item_sets" { "set_timed_drops_test" { "items" { "[blue]weapon_test" "1" "[red]weapon_test" "1" } } }
       "revolving_loot_lists" { "1" "rewards" }
       "client_loot_lists" { "rewards" { "rewards_rare" "1" "rewards_ancient" "1" }
         "rewards_rare" { "[blue]weapon_test" "1" } "rewards_ancient" { "[red]weapon_test" "1" } }
@@ -3653,10 +3658,82 @@ void NativePremier()
           "native rank event uses the captured 9194 message");
 }
 
+void WeeklyPoolAndItemSales()
+{
+    auto schema = Schema::Load(R"("items_game" {
+      "rarities" { "common" { "value" "1" } "rare" { "value" "3" } "ancient" { "value" "6" } }
+      "prefabs" { "weapon_case_base" {} "weapon_case" { "prefab" "weapon_case_base" "associated_item" "50" }
+        "operator" { "flexible_loadout_category" "customplayer" "item_quality" "unique" "model_player" "official.vmdl" } }
+      "items" { "7" { "name" "weapon_test" "item_rarity" "common" } "8" { "name" "weapon_knife_test" "item_class" "weapon_knife" }
+        "50" { "name" "key" } "60" { "name" "crate_test" "prefab" "weapon_case"
+          "attributes" { "set supply crate series" { "value" "1" } } }
+        "100" { "name" "customplayer_test" "prefab" "operator" }
+        "1209" { "name" "sticker" } "1201" { "name" "coupon_test" } }
+      "paint_kits" { "10" { "name" "weekly_blue" } "11" { "name" "case_blue" } "12" { "name" "weekly_grey" } }
+      "paint_kits_rarity" { "weekly_blue" "rare" "case_blue" "rare" "weekly_grey" "common" }
+      "item_sets" { "set_timed_drops_test" { "items" { "[weekly_blue]weapon_test" "1" "[weekly_grey]weapon_test" "1" } }
+        "set_case_test" { "items" { "[case_blue]weapon_test" "1" } } }
+      "client_loot_lists" { "case_list" { "[case_blue]weapon_test" "1" } }
+      "revolving_loot_lists" { "1" "case_list" }
+    })");
+    Check(schema && schema->AgentDefinitions() == std::vector<std::uint32_t>{100}, "only official eligible agents resolve");
+    const auto weekly = schema->MatchRewardSkins();
+    Check(weekly.size() == 1 && weekly[0].paintKitIndex == 10 && schema->MatchRewardSkins(false).size() == 2,
+          "weekly-only pool excludes case collections and below-blue weekly finishes");
+    GameplayConfig config;
+    config.match_case_percent = 0;
+    for (unsigned i = 0; i < 20; ++i) {
+        const auto drops = RollMatchDrops(*schema, [i] { return std::uint64_t{i}; }, config);
+        Check(drops && drops->size() == 3 && (*drops)[0].paintKitIndex == 10,
+              "all-weapon rewards draw from the non-case weekly pool");
+    }
+    InventoryItem skin; skin.defIndex = 7; skin.paintKitIndex = 10; skin.rarity = 3;
+    Check(ItemSaleValue(*schema, config, skin) == 5, "OfflineCS blue sale price");
+    skin.statTrak = true;
+    Check(ItemSaleValue(*schema, config, skin) == 5, "StatTrak has the same OfflineCS base sale value");
+    InventoryItem agent; agent.defIndex = 100;
+    Check(ItemSaleValue(*schema, config, agent) == 25, "agent buyback uses half of configured price");
+    InventoryItem sticker; sticker.defIndex = 1209; sticker.stickerKit = 1; sticker.rarity = 6;
+    Check(ItemSaleValue(*schema, config, sticker) == 25, "sticker buyback uses half of rarity price");
+    InventoryItem crate; crate.defIndex = 60;
+    Check(ItemSaleValue(*schema, config, crate) == 1, "containers use percentage with minimum one star");
+    InventoryItem knife = skin; knife.defIndex = 8;
+    Check(ItemSaleValue(*schema, config, knife) == 150, "knife sale price matches OfflineCS");
+    skin.storedIn = 8;
+    Check(ItemSaleValue(*schema, config, skin) == 0, "stored items cannot be sold separately");
+    skin.storedIn = 0;
+    Inventory saved; saved.SetArmoryCredits(7); saved.SetGameplay(config);
+    const auto id = saved.Add(skin);
+    saved.Loadout().push_back({2, 15, CustomItemIdBase + id, 7});
+    auto live = std::make_shared<LiveInventory>(saved);
+    auto shared = std::shared_ptr<const Schema>(&*schema, [](const Schema *) {});
+    LocalGameCoordinator endpoint({}); int saves = 0;
+    endpoint.EnableContainers(live, shared, [] { return 0ull; }, [&] { ++saves; });
+    const auto send = [&](const PbWriter &body) {
+        std::vector<std::uint8_t> bytes;
+        WriteProtobufFrame(gc_msg::EGCItemMsg::k_EMsgGCDelete, {}, body.bytes(), bytes);
+        endpoint.SendMessage(gc_msg::EGCItemMsg::k_EMsgGCDelete | ProtobufMask, bytes.data(), bytes.size());
+    };
+    PbWriter malformed; malformed.Varint(1, CustomItemIdBase + id); malformed.Varint(2, 50);
+    send(malformed);
+    Check(live->Items().Find(id) && live->Items().ArmoryCredits() == 7 && saves == 0, "malformed sale cannot remove or pay");
+    PbWriter sale; sale.Varint(1, CustomItemIdBase + id);
+    send(sale); send(sale);
+    Check(!live->Items().Find(id) && live->Items().Loadout().empty() && live->Items().ArmoryCredits() == 12 && saves == 1,
+          "native sale removes item and loadout, credits once and saves atomically");
+    auto restored = Inventory::FromText(live->Items().ToText());
+    Check(restored && restored->ArmoryCredits() == 12 && restored->Items().empty(), "sale balance and inventory survive restart");
+    const auto overflowItem = live->AddItem(skin);
+    live->SetArmoryCredits(UINT32_MAX);
+    PbWriter overflow; overflow.Varint(1, CustomItemIdBase + overflowItem.id); send(overflow);
+    Check(live->Items().Find(overflowItem.id) && saves == 1, "overflow sale retains item");
+}
+
 int main()
 {
     try
     {
+        WeeklyPoolAndItemSales(); std::cout << "PASS weekly pool and native item sales\n";
         NativeArmorySlotsAndConsoleStars(); std::cout << "PASS native Armory slots and console stars\n";
         NativePremier(); std::cout << "PASS native Premier placement/rating cache\n";
         HowlAndArmoryRotation(); std::cout << "PASS limited Howl and Armory rotation policy\n";

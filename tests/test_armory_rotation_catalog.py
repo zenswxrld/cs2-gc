@@ -72,13 +72,26 @@ class ArmoryRotation(unittest.TestCase):
     }
     function buy(ShopEntry) { MissionsAPI.ActionRedeemOperationGoods(m_nTrack, ShopEntry.shop_index, 1); }
 '''
+        source += """
+    function carousel() {
+                    let elLimitedCarousel = $.CreatePanel('Carousel', elTile, '');
+                    elLimitedCarousel.BLoadLayoutSnippet('limited-item-carousel');
+                    elLimitedCarousel.hittest = false;
+                    elLimitedCarousel.hittestchildren = false;
+    }
+    function grid() {
+                let elModel = elShopTile.FindChild('id-grid-item-model');
+    }
+    function CreateShopTile(elTilesContainer, itemId, ShopEntry) {}
+"""
         categories = {'case_a': 'case', 'case_b': 'case', 'charm_a': 'charm', 'charm_b': 'charm', 'capsule': 'capsule'}
         script = '''const assert = require('assert'); let now = 0, closed = 0;
 Date.now = () => now * 1000;
 const tiles = {}, navs = {}; const label = {};
 const parent = {FindChildInLayoutFile: () => label};
+const balance = {GetParent: () => parent};
 const root = {IsValid: () => true, FindChildInLayoutFile: id =>
- id === 'id-xpshop-top-nav' ? parent : tiles[id] || navs[id] || {}};
+ id === 'id-xpshop-balance' ? balance : id === 'id-xpshop-top-nav' ? parent : tiles[id] || navs[id] || {}};
 const GameInterfaceAPI = {GetSettingString: () => '0'};
 const $ = {Msg: () => {}, GetContextPanel: () => root, Schedule: () => 1, CancelScheduled: () => {}, DispatchEvent: () => {}};
 const aShopItemsData = ['case_a', 'case_b', 'charm_a', 'charm_b', 'capsule'].map(item_name => ({item_name}));
@@ -86,7 +99,7 @@ function _MakeShopTile(e) { tiles[e.item_name] = {}; }
 function _MakeNavButton(e) { navs[e.item_name + '-nav'] = {}; }
 function _DeleteInspectGrid() { closed++; }
 function _CancelTimeoutForRewardItem() {}
-''' + rotate_armory.patch(source, gameplay_config.DEFAULTS, categories) + '''
+''' + rotate_armory.patch(source, dict(gameplay_config.DEFAULTS, armory_case_slots=1, armory_charm_slots=1), categories) + '''
 _UpdateShopGoods(11);
 const visible = () => Object.keys(tiles).filter(k => tiles[k].visible).sort();
 assert.deepEqual(visible(), ['capsule', 'case_a', 'charm_a']);

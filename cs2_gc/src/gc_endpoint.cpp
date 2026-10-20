@@ -1,5 +1,6 @@
 #include "cs2_gc/gc_endpoint.h"
 #include "cs2_gc/econ_item.h"
+#include "cs2_gc/item_sales.h"
 #include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/protobuf.h"
 #include <utility>
@@ -82,15 +83,15 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
     }
 }
 
-void LocalGameCoordinator::ReplyLocalPremier()
+void LocalGameCoordinator::ReplyLocalPremier(std::int32_t change)
 {
     if (!m_premier || !m_config.owner.id) return;
     const auto id = gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate;
     std::span<const std::uint8_t> recorded;
     if (m_replay)
         if (const auto *body = m_replay->Find(id)) recorded = *body;
-    auto body = WithPremierRankUpdate(recorded, *m_premier, static_cast<std::uint32_t>(m_config.owner.id));
-    if (!body) body = WithPremierRankUpdate({}, *m_premier, static_cast<std::uint32_t>(m_config.owner.id));
+    auto body = WithPremierRankUpdate(recorded, *m_premier, static_cast<std::uint32_t>(m_config.owner.id), change);
+    if (!body) body = WithPremierRankUpdate({}, *m_premier, static_cast<std::uint32_t>(m_config.owner.id), change);
     Reply(id, *body);
 }
 
@@ -109,8 +110,10 @@ bool LocalGameCoordinator::SetLocalPremier(const LocalPremier &rank)
     std::lock_guard lock(m_mutex);
     if (!m_premier || *m_premier == rank || rank.rating > 99999 || rank.placementWins < 1 || rank.placementWins > 100)
         return false;
+    const auto old = m_premier->wins >= m_premier->placementWins ? m_premier->rating : 0;
+    const auto next = rank.wins >= rank.placementWins ? rank.rating : 0;
     m_premier = rank;
-    ReplyLocalPremier();
+    ReplyLocalPremier(old && next ? static_cast<std::int32_t>(next) - static_cast<std::int32_t>(old) : 0);
     if (m_config.diagnostic) m_config.diagnostic("Premier: local rating/placement update queued for native rank cache");
     return true;
 }
@@ -515,6 +518,39 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
         m_schema = schema;
         m_rewardRandom = random;
     }
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCDelete,
+               [inventory, schema, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
+                   PbReader reader(frame.body); PbField field;
+                   std::uint64_t id = 0; bool valid = true;
+                   while (reader.Next(field)) {
+                       if (field.number == 1 && field.wire == 0 && !id) id = field.value;
+                       else valid = false;
+                   }
+                   const auto *item = id > CustomItemIdBase && id < 2 * CustomItemIdBase ? inventory->Items().Find(id - CustomItemIdBase) : nullptr;
+                   const auto value = item && valid && !reader.Failed() ? ItemSaleValue(*schema, inventory->Items().Gameplay(), *item) : 0;
+                   const auto balance = inventory->Items().ArmoryCredits().value_or(0);
+                   if (!value || value > UINT32_MAX - balance) { ++gc.m_ignored; return; }
+                   SoSingleObject removed;
+                   removed.typeId = static_cast<std::int32_t>(ItemTypeId);
+                   removed.data = BuildEconItem(*item, static_cast<std::uint32_t>(gc.m_config.owner.id), id, ItemPositionBase);
+                   if (!inventory->RemoveItem(id)) { ++gc.m_ignored; return; }
+                   inventory->SetArmoryCredits(balance + value);
+                   gc.m_armoryCredits = balance + value;
+                   if (gc.m_armory) gc.m_armory->SetBalance(balance + value);
+                   removed.version = ++gc.m_soVersion; removed.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(removed));
+                   {
+                       std::lock_guard lock(gc.m_txnMutex);
+                       if (auto pass = WithXpShopBalance(gc.m_xpShop, balance + value)) {
+                           gc.m_xpShop = *pass;
+                           SoSingleObject updated; updated.typeId = static_cast<std::int32_t>(XpShopTypeId);
+                           updated.data = *pass; updated.version = ++gc.m_soVersion; updated.owner = gc.m_config.owner;
+                           gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+                       }
+                   }
+                   if (afterChange) afterChange();
+                   if (gc.m_config.diagnostic) gc.m_config.diagnostic("item sold: +" + std::to_string(value) + " stars; item and balance saved together");
+               });
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCOpenCrate,
                [inventory, schema, random, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
                    const auto request = DecodeOpenCrateRequest(frame.body);

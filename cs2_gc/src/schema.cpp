@@ -604,11 +604,13 @@ std::optional<std::uint32_t> Schema::SkinRarity(std::uint32_t weaponDefIndex, st
 
 namespace cs2_gc
 {
-std::vector<SkinRef> Schema::MatchRewardSkins() const
+std::vector<SkinRef> Schema::MatchRewardSkins(bool weeklyOnly) const
 {
     std::vector<SkinRef> result;
     std::unordered_set<std::uint64_t> seen;
     for (const auto &[name, skins] : m_collectionSkins)
+    {
+        if (weeklyOnly && !name.starts_with("set_timed_drops_")) continue;
         for (const auto &skin : skins)
         {
             const auto rarity = SkinRarity(skin.weaponDefIndex, skin.paintKitIndex);
@@ -618,10 +620,29 @@ std::vector<SkinRef> Schema::MatchRewardSkins() const
                 seen.insert((std::uint64_t{skin.weaponDefIndex} << 32) | skin.paintKitIndex).second)
                 result.push_back(skin);
         }
+    }
     std::sort(result.begin(), result.end(), [](const auto &a, const auto &b) {
         return a.weaponDefIndex < b.weaponDefIndex ||
             (a.weaponDefIndex == b.weaponDefIndex && a.paintKitIndex < b.paintKitIndex);
     });
+    return result;
+}
+}
+
+namespace cs2_gc {
+std::string Schema::ItemName(std::uint32_t definition) const
+{
+    const auto item = m_itemsByIndex.find(definition);
+    return item == m_itemsByIndex.end() ? std::string{} : std::string{item->second->Value("name")};
+}
+std::vector<std::uint32_t> Schema::AgentDefinitions() const
+{
+    std::vector<std::uint32_t> result;
+    for (const auto &[definition, item] : m_itemsByIndex)
+        if (ResolveValue(*item, "flexible_loadout_category", m_prefabs) == "customplayer" &&
+            ResolveValue(*item, "item_quality", m_prefabs) == "unique" &&
+            !ResolveValue(*item, "model_player", m_prefabs).empty()) result.push_back(definition);
+    std::sort(result.begin(), result.end());
     return result;
 }
 }

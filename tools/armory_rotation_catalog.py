@@ -9,14 +9,16 @@ from price_sheet import find_case_items
 
 ARMORY_COLLECTIONS = ('set_graphic_design', 'set_overpass_2024', 'set_realism_camo',
                       'set_spy_tech', 'set_arabesque', 'set_train_2025')
-TOURNAMENTS = ('kat2014', 'cologne2014', 'eslkatowice2015', 'eslcologne2015',
+TOURNAMENTS = ('kat2014', 'cologne2014', 'eslkatowice2015', 'eslcologne2015', 'cluj2015', 'columbus2016', 'cologne2016',
+               'atlanta2017', 'boston2018', 'katowice2019', 'berlin2019', 'rio2022',
                'stockh2021', 'antwerp2022', 'paris2023', 'cph2024', 'sha2024',
                'aus2025', 'bud2025')
 # Team capsules only; exclude individual team packs, souvenir packages and coupons.
 TOURNAMENT_GROUPS = ('01', '02', 'legends', 'challengers', 'contenders')
 COMMUNITY_CAPSULES = ('crate_sticker_pack_cs20_capsule', 'crate_sticker_pack_csgo10_capsule',
                       'crate_sticker_pack_halo_capsule', 'crate_sticker_pack_hlalyx_capsule',
-                      'crate_sticker_pack_skillgroup_capsule')
+                      'crate_sticker_pack_skillgroup_capsule', 'crate_sticker_pack_enfu_capsule',
+                      'crate_sticker_pack_community01')
 LIMITED_LISTS = ('set_xpshop_wpn_01', 'set_xpshop_wpn_02', 'set_xpshop_wpn_03',
                  'set_xpshop_wpn_04')
 
@@ -35,7 +37,7 @@ def catalogue(source, config):
         if name in goods: return
         values = dict(template or {})
         values.update(item_name=name, points=str(cost), local_rotation_slot=slot)
-        values['ui_order'] = {'collection': '2', 'charm': '1', 'sticker': '3', 'case': '3', 'capsule': '3', 'limited': '2'}[slot]
+        values['ui_order'] = {'collection': '2', 'charm': '1', 'sticker': '3', 'case': '3', 'capsule': '3', 'limited': '2', 'agent': '1'}[slot]
         values.pop('bidding_cycle', None)
         if slot == 'limited': values['limited_until'] = '2147483647'
         goods[name] = values
@@ -45,7 +47,7 @@ def catalogue(source, config):
         data = as_dict(value); name = data['item_name']
         if name == 'lootlist:removed_items' and not config['armory_howl_enabled']: continue
         if not all(isinstance(v, str) for v in data.values()): raise ValueError('Unknown nested Armory goods field')
-        if data.get('local_rotation_slot') in ('collection', 'charm', 'sticker', 'case', 'capsule', 'limited'):
+        if data.get('local_rotation_slot') in ('collection', 'charm', 'sticker', 'case', 'capsule', 'limited', 'agent'):
             slot = data['local_rotation_slot']
         elif name.startswith('lootlist:keychain_pack_'): slot = 'charm'
         elif name.startswith('lootlist:sticker_pack_'): slot = 'sticker'
@@ -79,6 +81,9 @@ def catalogue(source, config):
     wanted.update('crate_sticker_pack_' + event + '_' + group for event in TOURNAMENTS for group in TOURNAMENT_GROUPS)
     for name in sorted(wanted & items.keys()): add(name, 'capsule', 1)
     for name in LIMITED_LISTS: loot(name, 'limited', 25)
+    agent_lists = sorted(name for name in lists if name.startswith('lootlist_character_operator_dossier_'))
+    if config.get('armory_agent_slots', 1) and agent_lists:
+        add('lootlist:' + agent_lists[0], 'agent', config.get('armory_agent_price', 50), {'callout': 'Random Agent'})
     if config['armory_howl_enabled']:
         howl = lists.get('removed_items')
         if isinstance(howl, list) and [(k, v) for k, v in howl if k != 'public_list_contents'] == [('[cu_m4a1_howling]weapon_m4a1', '1')]:
@@ -108,3 +113,20 @@ def patch_catalogue(source, config):
     edits.append((campaign.end - 1, campaign.end - 1, rows))
     for start, end, value in sorted(edits, reverse=True): source = source[:start] + value + source[end:]
     return source, {name: value['local_rotation_slot'] for name, value in goods.items()}
+
+
+def agent_names(source):
+    sections = collect(parse(source))
+    prefabs = sections.get('prefabs', {})
+    def resolve(node, prop, depth=0):
+        values = as_dict(node)
+        if prop in values: return values[prop]
+        if depth > 8: return None
+        for name in values.get('prefab', '').split():
+            if name in prefabs:
+                value = resolve(prefabs[name], prop, depth + 1)
+                if value is not None: return value
+        return None
+    return sorted(as_dict(node)['name'] for node in sections.get('items', {}).values() if isinstance(node, list)
+                  and resolve(node, 'flexible_loadout_category') == 'customplayer'
+                  and resolve(node, 'item_quality') == 'unique' and resolve(node, 'model_player'))

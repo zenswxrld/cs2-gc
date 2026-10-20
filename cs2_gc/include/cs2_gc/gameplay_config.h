@@ -8,6 +8,30 @@ namespace cs2_gc
 // Runtime policy only: inventory balances/counters remain in the saved inventory.
 struct GameplayConfig
 {
+    std::uint32_t armory_collection_slots{3};
+    std::uint32_t armory_charm_slots{2};
+    std::uint32_t armory_sticker_slots{2};
+    std::uint32_t armory_case_slots{2};
+    std::uint32_t armory_capsule_slots{2};
+    std::uint32_t armory_limited_slots{1};
+    std::uint32_t armory_agent_slots{1};
+    std::uint32_t armory_agent_price{50};
+    std::uint32_t match_weekly_pool_only{1};
+    std::uint32_t item_sales_enabled{1};
+    std::uint32_t sell_consumer{1};
+    std::uint32_t sell_industrial{2};
+    std::uint32_t sell_mil_spec{5};
+    std::uint32_t sell_restricted{10};
+    std::uint32_t sell_classified{25};
+    std::uint32_t sell_covert{50};
+    std::uint32_t sell_knife_glove{150};
+    std::uint32_t sell_sticker_percent{50};
+    std::uint32_t sell_music_kit{10};
+    std::uint32_t sell_container_percent{30};
+    std::uint32_t sell_agent_percent{50};
+    std::uint32_t premier_rating_variation{79};
+    std::uint32_t premier_bot_spread{1200};
+    std::uint32_t end_match_screens{1};
     std::uint32_t rewards_auto_start{1};
     std::uint32_t xp_enabled{1}, stars_enabled{1};
     std::uint32_t armory_xp_per_star{400};

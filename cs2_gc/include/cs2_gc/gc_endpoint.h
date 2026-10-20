@@ -126,7 +126,7 @@ public:
 
 private:
     void OnClientHello(const FrameView &frame);
-    void ReplyLocalPremier(); // caller holds m_mutex
+    void ReplyLocalPremier(std::int32_t change = 0); // caller holds m_mutex
     void NotifyRewardDrops(const std::vector<InventoryItem> &drops); // caller holds m_mutex
     std::optional<std::uint64_t> AcceptTerminalLocked(std::uint64_t gameId);
 

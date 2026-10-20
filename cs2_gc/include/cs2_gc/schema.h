@@ -112,7 +112,9 @@ public:
     std::vector<SkinRef> GoldOutcomes(const std::string &collection, bool statTrak) const;
     std::vector<SkinRef> CrateGoldOutcomes(std::uint32_t defIndex) const;
     bool IsKnife(std::uint32_t defIndex) const;
-    std::vector<SkinRef> MatchRewardSkins() const;
+    std::vector<SkinRef> MatchRewardSkins(bool weeklyOnly = true) const;
+    std::vector<std::uint32_t> AgentDefinitions() const;
+    std::string ItemName(std::uint32_t definition) const;
 
     // A skin as a loot entry (finish name and wear range) so a trade-up can mint it. Nothing if the
     // weapon or finish is unknown.

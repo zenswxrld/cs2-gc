@@ -63,6 +63,20 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
         if (const auto howl = m_schema.ResolveLootItem(HowlEntry))
             item = MakeLootItem(*howl, m_schema.SkinRarity(howl->weaponDefIndex, howl->paintKitIndex).value_or(0), random, 0);
     }
+    else if (goods->rotationSlot == "agent")
+    {
+        const auto agents = m_schema.AgentDefinitions();
+        if (!agents.empty())
+        {
+            const auto limit = UINT64_MAX - UINT64_MAX % agents.size();
+            std::uint64_t value;
+            do { value = random(); } while (value >= limit);
+            InventoryItem agent;
+            agent.defIndex = agents[value % agents.size()];
+            agent.rarity = m_schema.ItemRarity(agent.defIndex);
+            item = agent;
+        }
+    }
     else if (goods->rotationSlot == "limited" && goods->itemName.starts_with(LootListPrefix))
     {
         std::vector<LootItem> fixed;
@@ -141,6 +155,7 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
 
     m_balance -= goods->points;
     inventory.SetArmoryCredits(m_balance);
+    if (isHowl || goods->rotationSlot == "limited") item->ownerCertificate = true;
     result.item = inventory.AddItem(*item);
     if (rolledCollection)
         inventory.SetArmoryPity(*rolledCollection, topReward ? 0u : std::min(inventory.Items().ArmoryPity(*rolledCollection) + 1, 99u));
@@ -176,7 +191,15 @@ Armory::Rotation Armory::RotationAt(std::uint64_t unixSeconds, const GameplayCon
     if (!slots.empty())
     {
         for (const auto &[slot, entries] : slots)
-            result.redeemIds.push_back(entries[cycle % entries.size()]->redeemId);
+        {
+            const auto wanted = slot == "collection" ? config.armory_collection_slots :
+                slot == "charm" ? config.armory_charm_slots : slot == "sticker" ? config.armory_sticker_slots :
+                slot == "case" ? config.armory_case_slots : slot == "capsule" ? config.armory_capsule_slots :
+                slot == "limited" ? config.armory_limited_slots : slot == "agent" ? config.armory_agent_slots : 0u;
+            const auto count = std::min<std::size_t>(wanted, entries.size());
+            const auto start = ((cycle % entries.size()) * count) % entries.size();
+            for (std::size_t i = 0; i < count; ++i) result.redeemIds.push_back(entries[(start + i) % entries.size()]->redeemId);
+        }
         return result;
     }
     const auto count = std::min<std::size_t>(config.armory_rotation_slots, all.size());

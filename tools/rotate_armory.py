@@ -35,7 +35,9 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
         if (Object.keys(pools).length) {
             Object.keys(pools).sort().forEach(slot => {
                 const pool = pools[slot];
-                active.push(pool[cycle % pool.length].item_name);
+                const count = Math.min(m_localRotation.counts[slot] === undefined ? 1 : m_localRotation.counts[slot], pool.length);
+                const start = ((cycle % pool.length) * count) % pool.length;
+                for (let i = 0; i < count; ++i) active.push(pool[(start + i) % pool.length].item_name);
             });
         } else {
             const count = Math.min(m_localRotation.slots, entries.length);
@@ -55,12 +57,25 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
             }
             if (nav) nav.visible = show;
         });
-        const parent = root.FindChildInLayoutFile('id-xpshop-top-nav');
-        let label = parent.FindChildInLayoutFile('id-local-rotation-countdown');
-        if (!label) label = $.CreatePanel('Label', parent, 'id-local-rotation-countdown');
         const remaining = m_localRotation.seconds - now % m_localRotation.seconds;
         m_localRotationActive = active;
-        label.text = 'Armory refresh: ' + Math.floor(remaining / 60) + ':' + ('0' + remaining % 60).slice(-2);
+        const text = 'Armory refresh: ' + Math.floor(remaining / 60) + ':' + ('0' + remaining % 60).slice(-2);
+        const balance = root.FindChildInLayoutFile('id-xpshop-balance');
+        const parents = [root.FindChildInLayoutFile('id-xpshop-top-nav'), balance && balance.GetParent()];
+        parents.forEach((parent, index) => {
+            if (!parent) return;
+            const id = index ? 'id-local-rotation-countdown-main' : 'id-local-rotation-countdown';
+            let label = parent.FindChildInLayoutFile(id);
+            if (!label) {
+                label = $.CreatePanel('Label', parent, id);
+                label.style.fontSize = index ? '18px' : '15px';
+                label.style.color = '#e8d8a0';
+                label.style.margin = index ? '6px 0px 0px 0px' : '0px 12px';
+                if (index) { label.style.horizontalAlign = 'right'; label.style.marginTop = '8px'; }
+                else { label.style.verticalAlign = 'center'; label.style.horizontalAlign = 'left'; label.style.marginLeft = '20px'; }
+            }
+            label.text = text;
+        });
         if (m_localRotationCycle !== -1 && m_localRotationCycle !== cycle) {
             _DeleteInspectGrid();
             _CancelTimeoutForRewardItem();
@@ -73,7 +88,67 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
 '''
 
 
-def patch(source, config, categories=None):
+PREPARE = '''        // Resolve each tile from its own native row, without inherited thumbnails or shared model artwork.
+        aShopItemsData.forEach(entry => {
+            const slot = m_localRotation.categories[entry.item_name];
+            if (slot === 'agent') {
+                entry.lootlist = m_localRotation.agents.map(name => InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
+                    InventoryAPI.GetItemDefinitionIndexFromDefinitionName(name), 0));
+                entry.local_agent = true;
+                entry.entry_type = 'lootlist'; entry.lootlist_item_type = 'agent';
+                entry.tile_width = 160; entry.tile_height = 160;
+            }
+            if (!entry.callout && entry.lootlist && entry.lootlist.length === 1)
+                entry.callout = InventoryAPI.GetItemName(entry.lootlist[0]);
+        });
+'''
+
+
+def patch_previews(source):
+    carousel = '''                    let elLimitedCarousel = $.CreatePanel('Carousel', elTile, '');
+                    elLimitedCarousel.BLoadLayoutSnippet('limited-item-carousel');
+                    elLimitedCarousel.hittest = false;
+                    elLimitedCarousel.hittestchildren = false;'''
+    if source.count(carousel) != 1: raise ValueError('Changed limited-item carousel layout')
+    source = source.replace(carousel, "                    elTile.FindChildInLayoutFile('id-xpshop-tile-single-image').itemid = ShopEntry.lootlist[0];", 1)
+    # Avoid old map scenes retaining another entry's model: the inspect grid uses
+    # the existing native InspectModelImage path for fixed/limited goods.
+    grid = "                let elModel = elShopTile.FindChild('id-grid-item-model');"
+    if source.count(grid) != 1: raise ValueError('Changed native inspect grid layout')
+    source = source.replace(grid, "                if (ShopEntry.local_agent) return;\n" + grid, 1)
+    create = "    function CreateShopTile(elTilesContainer, itemId, ShopEntry) {"
+    agent = '''
+        if (ShopEntry.local_agent) {
+            const panel = $.CreatePanel('Panel', elTilesContainer, itemId, {class:'xpshop__inspect-grid__tile'});
+            panel.style.width = '160px'; panel.style.height = '160px';
+            $.CreatePanel('ItemImage', panel, '', {itemid:itemId, style:'width:100%;height:100%;'});
+            MakeShopTileInfoElements(panel, itemId, ShopEntry);
+            return panel;
+        }'''
+    source = source.replace(create, create + agent, 1)
+    source = source.replace('shuffledArray[iScrollingTile];', 'shuffledArray[iScrollingTile % shuffledArray.length];')
+    # Rebind callbacks when stock UI reuses panels after a catalogue refresh.
+    source = source.replace("        elTile.FindChildInLayoutFile('id-new-item-tag')", "        elTile.SetPanelEvent('onactivate', () => _UpdateInspectGrid(ShopEntry));\n        elTile.FindChildInLayoutFile('id-new-item-tag')", 1)
+    nav_end = "    function _CancelTimeoutForRewardItem() {"
+    nav_binding = "        elBtn.SetPanelEvent('onactivate', () => _UpdateInspectGrid(ShopEntry));\n"
+    previous = "        }\n    }\n" + nav_end
+    source = source.replace(previous, "        }\n" + nav_binding + "    }\n" + nav_end, 1)
+    # Fallback icons are actual native item images, not guessed item-set SVG names.
+    end = '''            _MakeNavButton(element);
+        });'''
+    icons = '''
+            if (!element.ui_set_image && element.lootlist && element.lootlist.length) {
+                const nav = $.GetContextPanel().FindChildInLayoutFile(element.item_name + '-nav');
+                const stock = nav && nav.FindChild('id-xpshop-nav-btn-img');
+                if (stock) stock.visible = false;
+                if (nav && !nav.FindChild('local-item-icon'))
+                    $.CreatePanel('ItemImage', nav, 'local-item-icon', {itemid:element.lootlist[0], style:'width:36px;height:36px;'});
+            }'''
+    source = source.replace(end, "            _MakeNavButton(element);" + icons + "\n        });", 1)
+    return source
+
+
+def patch(source, config, categories=None, agents=None):
     if config['armory_howl_enabled'] and not categories:
         raise ValueError('Howl requires the matching generated native catalogue')
     if source.count(ANCHOR) != 1 or source.count(END) != 1 or 'const m_elContentPanel =' not in source:
@@ -81,9 +156,12 @@ def patch(source, config, categories=None):
     if 'm_localRotation' in source: raise ValueError('Source is already patched')
     settings = {'enabled': bool(config['armory_rotation_enabled']),
                 'seconds': config['armory_rotation_seconds'], 'slots': config['armory_rotation_slots'],
-                'categories': categories or {}}
+                'categories': categories or {}, 'agents': agents or [],
+                'counts': {slot: config.get('armory_' + slot + '_slots', 1) for slot in
+                           ('collection', 'case', 'capsule', 'charm', 'sticker', 'limited', 'agent')}}
     source = source.replace('    function _UpdateShopGoods(m_nTrack) {',
                             INSERT.replace('__SETTINGS__', json.dumps(settings)) + '    function _UpdateShopGoods(m_nTrack) {', 1)
+    source = source.replace(ANCHOR, PREPARE + ANCHOR, 1) if categories else source
     source = source.replace(END, END + '''
         m_localRotationItems = aShopItemsData;
         if (m_localRotationTick) $.CancelScheduled(m_localRotationTick);
@@ -92,7 +170,8 @@ def patch(source, config, categories=None):
     if categories:
         if source.count(purchase) != 1: raise ValueError('Changed native Armory redemption handler')
         source = source.replace(purchase, "if (m_localRotation.enabled && m_localRotationActive.indexOf(ShopEntry.item_name) === -1) return;\n                " + purchase, 1)
-        source = source.replace('element.items_in_row = itemsInRows[element.ui_order];', 'element.items_in_row = 1;')
+        source = source.replace('element.items_in_row = itemsInRows[element.ui_order];', 'element.items_in_row = 6;')
+        source = patch_previews(source)
         source = source.replace("elTile.SetDialogVariable('name', ShopEntry.callout ? $.Localize(ShopEntry.callout) : ShopEntry.item_name);",
             "elTile.SetDialogVariable('name', ShopEntry.callout ? $.Localize(ShopEntry.callout) : (ShopEntry.lootlist.length === 1 ? InventoryAPI.GetItemName(ShopEntry.lootlist[0]) : ShopEntry.item_name.replace('lootlist:', '')));")
     return source
@@ -109,9 +188,11 @@ def prepare(proxy_directory, config):
         if data.get('owner') != OWNER or not data.get('armory_catalogue'):
             raise ValueError('Matching native Armory catalogue is not prepared')
         categories = data['armory_catalogue']
+    from armory_rotation_catalog import agent_names
+    agents = agent_names((proxy / 'items_game.txt').read_text(encoding='utf-8-sig')) if categories else []
     return install_override(proxy, enabled=config['armory_rotation_enabled'], folder='cs2_gc_armory',
         comment='cs2_gc native armory', owner='cs2-gc-armory-ui-v1',
-        asset='panorama/scripts/xpshop.vjs_c', patch=lambda source: patch(source, config, categories))
+        asset='panorama/scripts/xpshop.vjs_c', patch=lambda source: patch(source, config, categories, agents))
 
 
 if __name__ == '__main__':

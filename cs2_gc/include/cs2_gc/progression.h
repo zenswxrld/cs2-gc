@@ -22,9 +22,9 @@ struct LocalPremier
     bool operator==(const LocalPremier &) const = default;
 };
 // Rank type 11 and these fields are present in the supplied CS2 capture/protobuf.
-std::vector<std::uint8_t> EncodePremierRank(const LocalPremier &rank, std::uint32_t accountId);
+std::vector<std::uint8_t> EncodePremierRank(const LocalPremier &rank, std::uint32_t accountId, std::int32_t change = 0);
 std::optional<std::vector<std::uint8_t>> WithPremierRankUpdate(std::span<const std::uint8_t> body,
-                                                            const LocalPremier &rank, std::uint32_t accountId);
+                                                            const LocalPremier &rank, std::uint32_t accountId, std::int32_t change = 0);
 std::optional<std::vector<std::uint8_t>> WithLocalProfile(std::span<const std::uint8_t> body,
                                                        const LocalProgress &profile,
                                                        const LocalPremier *premier = nullptr, std::uint32_t accountId = 0);

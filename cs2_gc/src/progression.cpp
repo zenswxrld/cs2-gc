@@ -1,3 +1,4 @@
+#include <bit>
 #include "cs2_gc/progression.h"
 #include <algorithm>
 #include <limits>
@@ -59,17 +60,18 @@ void CopyField(PbWriter &out, const PbField &field)
     }
 }
 }
-std::vector<std::uint8_t> EncodePremierRank(const LocalPremier &rank, std::uint32_t accountId)
+std::vector<std::uint8_t> EncodePremierRank(const LocalPremier &rank, std::uint32_t accountId, std::int32_t change)
 {
     PbWriter out;
     out.Varint(1, accountId);
     out.Varint(2, rank.wins >= rank.placementWins ? rank.rating : 0);
     out.Varint(3, rank.wins);
+    out.Fixed32(4, std::bit_cast<std::uint32_t>(static_cast<float>(change)));
     out.Varint(6, 11);
     return out.bytes();
 }
 std::optional<std::vector<std::uint8_t>> WithPremierRankUpdate(std::span<const std::uint8_t> body,
-                                                            const LocalPremier &rank, std::uint32_t accountId)
+                                                            const LocalPremier &rank, std::uint32_t accountId, std::int32_t change)
 {
     PbWriter out;
     PbReader reader(body);
@@ -88,7 +90,7 @@ std::optional<std::vector<std::uint8_t>> WithPremierRankUpdate(std::span<const s
         if (!premier) CopyField(out, field);
     }
     if (reader.Failed()) return std::nullopt;
-    out.Bytes(1, EncodePremierRank(rank, accountId));
+    out.Bytes(1, EncodePremierRank(rank, accountId, change));
     return out.bytes();
 }
 std::optional<std::vector<std::uint8_t>> WithLocalProfile(std::span<const std::uint8_t> body,

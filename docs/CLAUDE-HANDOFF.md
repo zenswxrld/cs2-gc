@@ -1,3 +1,17 @@
+# Current handoff: Codex build 15 (20 October 2026)
+
+Branch: `codex/armory-agents-weekly-drops-and-match-screens`, based on your `schema-loader` at `e6f93092f28f0664e479fd5b29080abdc876b44d`. See [TEST-BUILD.md](TEST-BUILD.md) for exact behavior and live checklist.
+
+This update adds configurable multi-group rotation, the official random-agent offer, expanded OfflineCS capsule choices, native limited artwork and certificates, a balance-area timer, weekly-only blue+ weapon rewards, varied local/bot Premier ratings, OfflineCS-style native sales and a native offline end-match rewards/rating tab. `item_sales.cpp` owns pricing and validation; the Panorama menu submits existing CMsgDeleteItem 1004, with the same native delete-to-sell approach as OfflineCS. Container refunds use CS2 Armory costs, not higher old shop prices. The test ZIP must include **all** Python modules, notably new `native_item_sales.py`, `native_endmatch.py`, and your `vpk_pack.py` / `vpk_signatures.py` / `native_offer_numbers.py`.
+
+Preserve your working `.vts_c` / resource-version-2 loader, VPK + signatures mechanism, mixed recipe fix, native trade-ups, terminal certificates and held-skin path. No new item/paint/loot-list definitions are created. Agent shop rows reference an existing official agent list; the backend chooses among the same 63 eligible official agents shown by the UI.
+
+Verified: 15 test suites; real-schema redemption of all 120 catalogue rows, including one agent row and five limited certificates; 40 blue+ weekly finishes; actual native script patch syntax; Windows debug/release cross-builds. New live-client behavior remains unverified. The end-match tab shows actual cached rating/profile level/new unacknowledged drops. It does **not** claim to fix stock XP animation/data-ready flags. It needs a pre-reward inventory baseline and deliberately avoids presenting older unacknowledged items as fresh rewards.
+
+Still open: stock XP animation and stock rank screen data readiness; target-client render/layout and native delete request verification; console echo lines missing from console.log; terminal monetary price cap must not be treated as an offer count. Bot names/chat/personality are outside this update. Existing history below is archival and can contain superseded failures/limits.
+
+---
+
 # Build 05: current status (supersedes historical notes below)
 
 Latest steering: automatic debug launch flags AND exec, disabled for release.

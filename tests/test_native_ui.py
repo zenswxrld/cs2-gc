@@ -196,7 +196,7 @@ const badge = { visible: false, IsValid: () => true };
 const $ = { Msg: () => {} };
 const MyPersonaAPI = { GetXuid: () => 'me' };
 const MockAdapter = { GetGameModeInternalName: () => mode, IsFakePlayer: id => id === 'bot' };
-const GameStateAPI = { IsQueuedMatchmakingMode_Team: () => queued, IsDemoOrHltv: () => false };
+const GameStateAPI = { GetPlayerName: id => 'Bot ' + id, IsQueuedMatchmakingMode_Team: () => queued, IsDemoOrHltv: () => false };
 const FriendsListAPI = { GetFriendCompetitiveRank: () => score, GetFriendCompetitiveWins: () => wins };
 const RatingEmblem = { SetXuid: options => calls.push(options) };
 const player = id => ({m_xuid:id, m_elPlayer:{m_elSkillGroup:badge}, m_oStats:{}, GetGameStat:() => -1});

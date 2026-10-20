@@ -31,6 +31,12 @@ INJECT = '''
                             score = Number.isFinite(score) && score >= 0 ? score : 0;
                             wins = Number.isFinite(wins) && wins >= 0 ? wins : 0;
                             if (wins < __PLACEMENTS__) score = 0;
+                            if (isBot && score > 0 && __SPREAD__ > 0) {
+                                const identity = String(oPlayer.m_xuid) + ':' + GameStateAPI.GetPlayerName(oPlayer.m_xuid);
+                                let hash = 2166136261;
+                                for (let i = 0; i < identity.length; ++i) hash = Math.imul(hash ^ identity.charCodeAt(i), 16777619) >>> 0;
+                                score = Math.max(1, Math.min(99999, score + hash % (__SPREAD__ * 2 + 1) - __SPREAD__));
+                            }
                             const badgeKey = 'localPremier:' + score + ':' + wins;
                             nativeBadge.visible = true;
                             if (oPlayer.m_oStats[stat] !== badgeKey) {
@@ -67,6 +73,7 @@ def patch(source, config):
     source = ROW_ANCHOR.sub(lambda match: match.group(0) + ROW_INJECT, source, count=1)
     insert = INJECT.replace('__BOTS__', 'true' if config['premier_bot_badges'] else 'false')
     insert = insert.replace('__PLACEMENTS__', str(config['premier_placement_wins']))
+    insert = insert.replace('__SPREAD__', str(config.get('premier_bot_spread', 0)))
     return anchor.sub(lambda match: match.group(0) + insert, source, count=1)
 
 

@@ -2589,6 +2589,40 @@ void SlabsScrapesAndCoupons()
         request(m::EGCItemMsg::k_EMsgGCStorePurchaseFinalize, finalize);
         drain();
     }
+    // A slab that an earlier build wrote a sticker onto is repaired; a weapon's stickers are not touched.
+    {
+        Inventory bad;
+        InventoryItem brokenSlab;
+        brokenSlab.defIndex = 4000;
+        AppliedSticker wrong;
+        wrong.slot = 0;
+        wrong.kit = 9456;
+        brokenSlab.stickers.push_back(wrong);
+        bad.Add(brokenSlab);
+        InventoryItem armed;
+        armed.defIndex = 7;
+        armed.stickers.push_back(wrong);
+        bad.Add(armed);
+        LiveInventory repairable(bad);
+        Check(repairable.RepairSlabs(*schema) == 1 && repairable.Items().Items()[0].stickers.empty() &&
+                  repairable.Items().Items()[1].stickers.size() == 1 && repairable.RepairSlabs(*schema) == 0,
+              "a slab with a sticker written on it is repaired, a weapon is left alone");
+    }
+    // Something that is not a sticker can never be applied to a slab, and nothing is written onto the slab.
+    {
+        const std::size_t before = live->Items().Items().size();
+        InventoryItem freshSlab;
+        freshSlab.defIndex = 4000;
+        const InventoryItem added = live->AddItem(freshSlab);
+        PbWriter bogus;
+        bogus.Varint(1, weaponId);
+        bogus.Varint(2, CustomItemIdBase + added.id);
+        request(m::EGCItemMsg::k_EMsgGCApplySticker, bogus);
+        Check(drain().empty() && live->Items().Items().size() == before + 1 &&
+                  live->Items().Find(added.id)->stickers.empty(),
+              "a failed seal leaves the slab untouched");
+        live->RemoveItem(CustomItemIdBase + added.id);
+    }
     const auto &items = live->Items().Items();
     Check(items.size() == 3 && items[1].defIndex == DefinitionSticker && items[1].stickerKit == 300 && items[2].defIndex == 20002,
           "a single-sticker coupon grants the sticker, a container coupon stays a coupon");

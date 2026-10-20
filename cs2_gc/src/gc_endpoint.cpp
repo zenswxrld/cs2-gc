@@ -549,6 +549,14 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
                                afterChange();
                            return;
                        }
+                   // A slab is never a weapon: if sealing did not take, change nothing.
+                   if (request && schema)
+                       if (const auto target = inventory->DefinitionOf(request->targetItemId);
+                           target && schema->SlabKeychainIndex(*target))
+                       {
+                           ++gc.m_ignored;
+                           return;
+                       }
                    const auto applied = request ? inventory->ApplySticker(*request) : std::nullopt;
                    if (!applied)
                    {

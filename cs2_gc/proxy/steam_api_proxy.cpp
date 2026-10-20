@@ -604,6 +604,13 @@ State &Init()
                     Schema *schema = new Schema(std::move(*parsed)); // lives as long as the process
                     // Store purchases are free and local: any item the schema defines can be bought, so the
                     // Store's own price sheet decides what is offered. The game checks the Armory pass etc. itself.
+                    if (const std::size_t repaired = live->RepairSlabs(*schema))
+                    {
+                        s.log->Write("inventory: removed stickers or charms from " + std::to_string(repaired) +
+                                     " Sticker Slab item(s), written there by an earlier build");
+                        if (inventoryFileUsable && !live->Save(inventoryPath))
+                            s.log->Write("could not save cs2_gc_inventory.txt");
+                    }
                     s.coordinator->EnableStorePurchases(
                         live, [schema](std::uint32_t defIndex) { return schema->HasItem(defIndex); },
                         [live, inventoryPath, inventoryFileUsable, saveLog] {

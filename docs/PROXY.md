@@ -177,6 +177,10 @@ in this session's view of the inventory: nothing is stored on Valve's side.
   one charm of keychain 37 holding the sticker (attributes 299 and 321) and sends EncapsulateSticker (1055).
   This is a best guess at what the real GC does, not confirmed; an earlier build treated the slab as a weapon
   and the game crashed. An attached slab keeps its sticker.
+- **Repairing slabs.** An early build wrote a sticker onto a slab item and saved it; the game crashed on that item, and
+  kept crashing on the slab screen each session afterwards, since the file reloads it. The proxy now strips
+  stickers and charms from slab items when it loads the inventory (log line: "removed stickers or charms from N
+  Sticker Slab item(s)") and refuses to apply anything to a slab except by sealing.
 - **Scraping stickers**: an `ApplySticker` with no sticker item raises that slot's wear by a ninth; past 1 the
   sticker is removed and RemoveSticker (1053) is sent (the CS:GO fork's rule).
 - **Naming items** (`NameItem` 1006: item and name) sets the custom name attribute (111) and notifies; the name

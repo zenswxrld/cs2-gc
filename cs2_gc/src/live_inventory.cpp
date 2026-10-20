@@ -33,6 +33,21 @@ std::optional<std::uint32_t> LiveInventory::DefinitionOf(std::uint64_t itemId) c
     return item ? std::optional<std::uint32_t>{item->defIndex} : std::nullopt;
 }
 
+std::size_t LiveInventory::RepairSlabs(const Schema &schema)
+{
+    std::size_t repaired = 0;
+    for (const InventoryItem &listed : m_inventory.Items())
+    {
+        if (!schema.SlabKeychainIndex(listed.defIndex) || (listed.stickers.empty() && !listed.charm))
+            continue;
+        InventoryItem *item = m_inventory.Find(listed.id);
+        item->stickers.clear();
+        item->charm.reset();
+        ++repaired;
+    }
+    return repaired;
+}
+
 std::optional<LiveInventory::Scraped> LiveInventory::ScrapeSticker(std::uint64_t itemId, std::uint32_t slot)
 {
     if (itemId <= CustomItemIdBase)

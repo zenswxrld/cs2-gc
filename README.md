@@ -20,6 +20,16 @@ CS:GO binaries into CS2.**
 - An Armory catalogue model with categories, ASCII-insensitive search and paging.
   It accepts schema-derived goods; it does not include an invented item list or
   execute purchases. Full localization-aware search remains future work.
+- A KeyValues parser and `items_game.txt` schema loader: standard cases, their keys and
+  loot tiers, resolved from the real schema (tested offline against a synthetic fixture).
+- An in-memory inventory with strict, atomic file persistence, and offline case opening that
+  consumes the case and key and grants an item as one step. The special (knife/glove) tier
+  is not resolved yet.
+- GC message IDs derived from the protobuf descriptors embedded in the target `client.dll`
+  (`tools/extract_gc_protocol.py` generates `gc_msg_ids.h`), plus a record of the target
+  build's file hashes. In this build cases open through `k_EMsgGCOpenCrate`
+  (`CMsgOpenCrate`), not the deprecated `UnlockCrate`; which field is the key and which the
+  case is inferred from the field names and is unverified.
 - A read-only Windows CS2 build inspector and automated core checks.
 
 ## Store direction
@@ -75,9 +85,9 @@ verify the Steam/GC bridge and mount the shop controls on the native Armory page
 | Area | Current state / acceptance check |
 | --- | --- |
 | Core envelope and queue | Offline tests; no live message exchange yet |
-| Client adapter | Pending; prove Hello/Welcome and SOCache initialization in the identified CS2 client |
-| Inventory and loadouts | Pending; show, equip, persist and reload a standard item in CS2 |
-| Standard case opening | Pending; schema-derived contents, previews and atomic item/key consumption |
+| Client adapter | Message IDs extracted for build 25947352; interface and Hello/Welcome/SOCache still pending in the identified CS2 client |
+| Inventory and loadouts | Offline model and persistence tested; show, equip and reload in CS2 pending |
+| Standard case opening | Offline logic tested against the real schema; client message handling, previews and the knife/glove tier pending |
 | Armory shop | Catalogue paging tested; native UI and redemption bridge pending |
 | XP/stars | Pure reward rules tested; match-event bridge and persistence pending |
 | Ranks, drops, achievements and career | Reference logic preserved; CS2 integration pending |

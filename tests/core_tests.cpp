@@ -1,5 +1,7 @@
 #include "cs2_gc/armory_catalog.h"
 #include "cs2_gc/case_opening.h"
+#include "cs2_gc/client_fingerprint.h"
+#include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/message_queue.h"
 #include "cs2_gc/progression.h"
 #include "cs2_gc/schema.h"
@@ -418,6 +420,21 @@ void InventoryPersistence()
     std::filesystem::remove_all(dir);
 }
 
+void GcMessageIds()
+{
+    // Values extracted from the target client's embedded descriptors; they must stay
+    // consistent with the wire tests above, which already use 4004 for the welcome.
+    namespace m = cs2_gc::gc_msg;
+    Check(m::EGCBaseClientMsg::k_EMsgGCClientWelcome == 4004 && m::EGCBaseClientMsg::k_EMsgGCClientHello == 4006,
+          "hello and welcome");
+    Check(m::ESOMsg::k_ESOMsg_Create == 21 && m::ESOMsg::k_ESOMsg_CacheSubscribed == 24, "SO cache messages");
+    Check(m::EGCItemMsg::k_EMsgGCOpenCrate == 2534, "this build opens cases with OpenCrate");
+    Check(m::GCConnectionStatus::GCConnectionStatus_HAVE_SESSION == 0, "connection status");
+    Check(TargetSteamBuildId == "25947352" && TargetClientDllSha256.size() == 64 &&
+              TargetEngine2DllSha256.size() == 64 && TargetSteamApiDllSha256.size() == 64,
+          "fingerprint record");
+}
+
 int main()
 {
     try
@@ -430,6 +447,7 @@ int main()
         SchemaCrates(); std::cout << "PASS schema crates, keys and loot tiers\n";
         CaseOpening(); std::cout << "PASS case opening odds and atomic consumption\n";
         InventoryPersistence(); std::cout << "PASS inventory persistence and strict loading\n";
+        GcMessageIds(); std::cout << "PASS extracted GC message IDs and build fingerprint\n";
         return 0;
     }
     catch (const std::exception &error)

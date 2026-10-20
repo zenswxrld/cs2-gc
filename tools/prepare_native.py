@@ -12,6 +12,7 @@ from skip_container_confirm import prepare as confirmation
 from native_item_sales import prepare as sales
 from native_endmatch import prepare as results
 from native_offer_numbers import prepare as offers
+from native_bot_names import prepare as bot_names
 from native_resources import ensure_first_game_path
 from vpk_signatures import update as signatures
 
@@ -23,6 +24,8 @@ def prepare(directory):
                          ('Opening confirmation', confirmation), ('Item sales', sales),
                          ('Match results', results), ('Terminal offers', offers)]:
         print(name + ': ' + action(directory, config), flush=True)
+    try: print('Bot names: ' + bot_names(directory, config, reshuffle=True), flush=True)
+    except (OSError, ValueError, KeyError) as error: print('Bot names skipped (bots keep their normal names): ' + str(error), flush=True)
     print(ensure_first_game_path(directory), flush=True)
     print(signatures(directory), flush=True)
     print('Native preparation complete; safe to start CS2.', flush=True)

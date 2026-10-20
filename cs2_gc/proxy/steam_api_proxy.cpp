@@ -904,6 +904,12 @@ State &Init()
                         if (inventoryFileUsable && !live->Save(inventoryPath))
                             s.log->Write("could not save cs2_gc_inventory.txt");
                     }
+                    if (const auto keys = live->EnsureCaseKeys(*schema); !keys.empty())
+                    {
+                        s.log->Write("inventory: added " + std::to_string(keys.size()) +
+                                     " free case key(s) (free_case_keys = 1; keys are never used up)");
+                        if (inventoryFileUsable && !live->Save(inventoryPath)) s.log->Write("could not save cs2_gc_inventory.txt");
+                    }
                     // Store purchases are free and local: any item the schema defines can be bought, so the
                     // Store's own price sheet decides what is offered. The game checks the Armory pass etc. itself.
                     if (const std::size_t repaired = live->RepairStoreCoupons(*schema))

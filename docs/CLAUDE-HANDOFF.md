@@ -391,3 +391,20 @@ Full build-25966348 schema loaded successfully, all supplementary rare pools val
   from the capsule crate's own loot list (`FindCrate(...)->lootListName`, StatTrak off), falling back to the
   capsule item only if the loot list can't be resolved. Core test added. Requested by the user after seeing the
   capsule itself granted; the client "Received from Armory" popup should show the sticker (not yet verified).
+
+### Build 17g (Claude)
+
+- `free_case_keys = 1` (new, default on): `LiveInventory::EnsureCaseKeys` keeps one matching key for every keyed
+  case type owned (at startup and after Armory/Store/match-drop grants, sent as SO creates), and `OpenCase` no
+  longer consumes the key while the option is on. No key purchase is needed. `0` restores normal keys.
+- `bot_fake_ping = 1`: the scoreboard override (`native_scoreboard.py`, needs `premier_scoreboard`) shows a steady
+  per-bot fake ping (15-75 ms, +-3 ms drift) and drops the `bot` row class / BOT ping label. Applied to the user's
+  real scoreboard script cleanly; not verified live.
+- `bot_random_names = 1`: new `native_bot_names.py` overrides `botprofile.db` in its own `cs2_gc_bots` folder,
+  renaming only the profile header names (`Template[+Template] Name`); the launcher reshuffles names on each start
+  (seed in `cs2_gc_bot_names_seed.txt`), the helper reuses the seed so it never changes the VPK while CS2 runs.
+  An unexpected file layout is refused and logged as "Bot names skipped" without blocking the launch. The CS2
+  botprofile.db layout itself has not been inspected; check cs2_gc_prepare.log.
+- "Buggy until restart": the user's logs show the launcher prepared everything ("installed", nothing changed by the
+  helper) and the GC sessions before/after a restart are identical. Cause still unknown; need concrete symptoms.
+  Killfeed/chat "BOT" prefixes are not changed (no script for them inspected).

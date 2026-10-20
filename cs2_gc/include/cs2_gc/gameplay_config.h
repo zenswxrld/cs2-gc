@@ -10,6 +10,7 @@ struct GameplayConfig
 {
     std::uint32_t armory_collection_slots{3};
     std::uint32_t armory_charm_slots{3};
+    std::uint32_t free_case_keys{1}; // keep one never-consumed key for every case type owned
     std::uint32_t armory_sticker_slots{2};
     std::uint32_t armory_case_slots{2};
     std::uint32_t armory_capsule_slots{2};
@@ -50,6 +51,7 @@ struct GameplayConfig
     // Local Premier model is owned by the GSI bridge until native UI/server integration is verified.
     std::uint32_t premier_enabled{1}, premier_placement_wins{10}, premier_start_rating{1000};
     std::uint32_t premier_scoreboard{1}, premier_bot_badges{1};
+    std::uint32_t bot_fake_ping{1}, bot_random_names{1}; // native UI/bot profile overrides prepared by the helper
     std::uint32_t level_drops_enabled{1}, level_drop_count{3};
     std::uint32_t skip_container_confirmation{1};
     std::uint32_t hide_rent_button{1};

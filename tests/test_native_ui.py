@@ -35,6 +35,10 @@ function draw(oPlayer, stat) {
   const options = {};
   if (old > 0) RatingEmblem.SetXuid(options);
  } break;
+ case 'ping': {
+                    oPlayer.m_elPlayer?.SetHasClass('bot', oPlayer.GetGameStat('is_fake_player'));
+                    let szCustomLabel = _GetCustomStatTextValue('ping', oPlayer);
+ } break;
  }
 }
 '''
@@ -83,6 +87,29 @@ class NativeUI(unittest.TestCase):
         row = patched[patched.index('function _GetPlayerRowForGameMode'):patched.index('function draw')]
         self.assertIn("row--premier", row)
         self.assertIn("mode === 'competitive'", row)
+
+    @unittest.skipUnless(shutil.which('node'), 'Node required for the scoreboard ping fixture')
+    def test_bots_show_a_steady_fake_ping_instead_of_the_bot_tag(self):
+        patched = scoreboard.patch(SOURCE, gameplay_config.DEFAULTS)
+        script = patched + '''
+const assert = require('assert');
+const classes = {}, label = {SetHasClass: (name, on) => { classes['label:' + name] = on; }};
+let shown = [];
+function _GetCustomStatTextValue() { return null; }
+function _GenericUpdateStatDirect(player, stat, value) { shown.push(value); }
+function bot(fake) { return {m_xuid: fake ? '0' : '765', m_elPlayer: {SetHasClass: (name, on) => { classes[name] = on; }},
+                     GetGameStat: name => name === 'is_fake_player' ? fake : name === 'slot' ? 3 : 0}; }
+globalThis.elLabel = label;
+for (let i = 0; i < 20; ++i) draw(bot(true), 'ping');
+assert.equal(classes.bot, false);
+assert.equal(classes['label:sb-row__cell--ping__label--bot'], false);
+assert(shown.every(ping => ping >= 12 && ping <= 78));
+assert(Math.max(...shown) - Math.min(...shown) <= 6);
+'''
+        result = subprocess.run(['node', '-e', script.replace('const m_localBotSeed = Math.floor(Math.random() * 4294967296) >>> 0;', 'var m_localBotSeed = 7;')],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('_LocalBotPing', scoreboard.patch(SOURCE, dict(gameplay_config.DEFAULTS, bot_fake_ping=0)))
 
     def test_installed_vts_c_version2_resource_is_found_patched_and_keeps_its_layout(self):
         # The real game names these scripts .vts_c and writes resource version 2; the lookup and parser used to

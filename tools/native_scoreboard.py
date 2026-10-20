@@ -63,6 +63,32 @@ ROW_INJECT = '''
             return 'snippet_scoreboard-classic__row--premier';'''
 
 
+PING_ANCHOR = ("                    oPlayer.m_elPlayer?.SetHasClass('bot', oPlayer.GetGameStat('is_fake_player'));\n"
+               "                    let szCustomLabel = _GetCustomStatTextValue('ping', oPlayer);\n")
+PING_INJECT = (
+    "                    // cs2_gc: bots show a steady fake ping instead of the BOT tag.\n"
+    "                    oPlayer.m_elPlayer?.SetHasClass('bot', false);\n"
+    "                    let szCustomLabel = _GetCustomStatTextValue('ping', oPlayer);\n"
+    "                    if (!szCustomLabel && oPlayer.GetGameStat('is_fake_player')) {\n"
+    "                        elLabel.SetHasClass('sb-row__cell--ping__label--bot', false);\n"
+    "                        _GenericUpdateStatDirect(oPlayer, stat, _LocalBotPing(oPlayer), true);\n"
+    "                        break;\n"
+    "                    }\n")
+PING_HELPER = '''
+    const m_localBotPings = {};
+    function _LocalBotPing(oPlayer) {
+        // A per-bot base of 15-75 ms that drifts by a few ms, like a real connection.
+        const identity = String(oPlayer.m_xuid) + ':' + oPlayer.GetGameStat('slot');
+        if (m_localBotPings[identity] === undefined) {
+            let hash = 2166136261;
+            for (let i = 0; i < identity.length; ++i) hash = Math.imul(hash ^ identity.charCodeAt(i), 16777619) >>> 0;
+            m_localBotPings[identity] = 15 + ((hash ^ m_localBotSeed) >>> 0) % 61;
+        }
+        return Math.max(5, m_localBotPings[identity] + Math.floor(Math.random() * 7) - 3);
+    }
+'''
+
+
 def patch(source, config):
     if 'cs2_gc native Premier badges' in source: raise ValueError('Scoreboard is already patched')
     # Require the actual inspected API shape; fail without affecting native files if it changes.
@@ -74,6 +100,10 @@ def patch(source, config):
     if len(ROW_ANCHOR.findall(source)) != 1: raise ValueError('Ambiguous scoreboard row selector')
     source = source.replace('function _GetPlayerRowForGameMode()', 'const m_localBotRatings = {};\n    const m_localBotSeed = Math.floor(Math.random() * 4294967296) >>> 0;\n    function _GetPlayerRowForGameMode()', 1)
     source = ROW_ANCHOR.sub(lambda match: match.group(0) + ROW_INJECT, source, count=1)
+    if config.get('bot_fake_ping', 1):
+        if source.count(PING_ANCHOR) != 1: raise ValueError('Installed scoreboard ping layout has changed')
+        source = source.replace(PING_ANCHOR, PING_INJECT, 1)
+        source = source.replace('    function _GetPlayerRowForGameMode()', PING_HELPER + '    function _GetPlayerRowForGameMode()', 1)
     insert = INJECT.replace('__BOTS__', 'true' if config['premier_bot_badges'] else 'false')
     insert = insert.replace('__PLACEMENTS__', str(config['premier_placement_wins']))
     insert = insert.replace('__MAX__', str(config['premier_max_rating']))

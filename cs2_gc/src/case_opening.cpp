@@ -192,7 +192,7 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
 
     // Nothing above mutated the inventory; consume and grant together.
     inventory.Remove(crateId);
-    if (!keyless)
+    if (!keyless && !inventory.Gameplay().free_case_keys)
         inventory.Remove(keyId);
     item.id = inventory.Add(item);
     result.item = item;

@@ -26,6 +26,7 @@ from skip_container_confirm import prepare as prepare_container_confirm
 from native_endmatch import prepare as prepare_endmatch
 from native_item_sales import prepare as prepare_item_sales
 from native_offer_numbers import prepare as prepare_offer_numbers
+from native_bot_names import prepare as prepare_bot_names
 from native_resources import ensure_first_game_path
 from rewards_runtime import InstanceLock, ParentProcess, serve_until_parent_exits
 import contextlib
@@ -293,6 +294,10 @@ def run_with_parent(args, parent):
             print('Native terminal offer numbers: ' + prepare_offer_numbers(args.proxy_dir, rewards.config), flush=True)
         except (OSError, ValueError, KeyError) as error:
             print('Native terminal offer numbers setup skipped: ' + str(error), flush=True)
+        try:
+            print('Native bot names: ' + prepare_bot_names(args.proxy_dir, rewards.config), flush=True)
+        except (OSError, ValueError, KeyError) as error:
+            print('Native bot names setup skipped: ' + str(error), flush=True)
         try:
             print('Native write-path placeholder: ' + ensure_first_game_path(args.proxy_dir), flush=True)
         except (OSError, ValueError, KeyError) as error:

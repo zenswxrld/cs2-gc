@@ -75,6 +75,8 @@ public:
     // Adds an item to the inventory and returns it with its new id (the game sees it as
     // CustomItemIdBase + id).
     InventoryItem AddItem(InventoryItem item);
+    // free_case_keys: one matching key for every keyed case type owned. Returns the keys added.
+    std::vector<InventoryItem> EnsureCaseKeys(const Schema &schema);
 
     // Writes the items to a file in the inventory's own text format; false if that failed.
     bool Save(const std::filesystem::path &path) const { return m_inventory.Save(path); }

@@ -121,7 +121,7 @@ def rewrite_script(resource, patch):
 def patch_installed_script(resource, actual_path, patch):
     # CS2 can store ordinary Panorama .js assets rather than a compiled .vjs_c.
     # Match the installed filename and representation; never wrap raw JS as a resource.
-    if actual_path.endswith(('.js', '.vjs')):
+    if actual_path.endswith(('.js', '.vjs', '.db')):
         return patch(resource.decode('utf-8')).encode('utf-8')
     return rewrite_script(resource, patch)
 

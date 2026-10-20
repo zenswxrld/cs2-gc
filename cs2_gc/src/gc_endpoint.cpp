@@ -296,6 +296,7 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                    created.version = ++gc.m_soVersion;
                    created.owner = gc.m_config.owner;
                    gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
+                   gc.SendMissingCaseKeys();
 
                    std::optional<std::vector<std::uint8_t>> pass;
                    {
@@ -500,6 +501,7 @@ void LocalGameCoordinator::EnableStorePurchases(std::shared_ptr<LiveInventory> i
                            gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
                            itemIds.push_back(CustomItemIdBase + item.id);
                        }
+                   gc.SendMissingCaseKeys();
                    response.Varint(1, ResultOk);
                    for (const std::uint64_t id : itemIds)
                        response.Varint(2, id);
@@ -1218,6 +1220,27 @@ bool LocalGameCoordinator::ApplyLevelRewards(const std::function<void()> &afterC
     return true;
 }
 
+void LocalGameCoordinator::SendMissingCaseKeys()
+{
+    std::shared_ptr<const Schema> schema;
+    {
+        std::lock_guard lock(m_txnMutex);
+        schema = m_schema;
+    }
+    if (!m_live || !schema)
+        return;
+    const auto account = static_cast<std::uint32_t>(m_config.owner.id & 0xFFFFFFFFull);
+    for (const auto &key : m_live->EnsureCaseKeys(*schema))
+    {
+        SoSingleObject object;
+        object.typeId = static_cast<std::int32_t>(ItemTypeId);
+        object.data = BuildEconItem(key, account, CustomItemIdBase + key.id, ItemPositionBase);
+        object.version = ++m_soVersion;
+        object.owner = m_config.owner;
+        Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(object));
+    }
+}
+
 void LocalGameCoordinator::NotifyRewardDrops(const std::vector<InventoryItem> &drops)
 {
     const auto account = static_cast<std::uint32_t>(m_config.owner.id);
@@ -1237,6 +1260,6 @@ void LocalGameCoordinator::NotifyRewardDrops(const std::vector<InventoryItem> &d
         preview.Varint(7, std::bit_cast<std::uint32_t>(item.wear)); preview.Varint(8, item.seed);
         PbWriter notification; notification.Message(6, preview);
         Reply(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, notification.bytes());
-    }
+    }    SendMissingCaseKeys();
 }
 }

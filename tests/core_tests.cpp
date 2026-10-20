@@ -328,6 +328,20 @@ void CaseOpening()
     Check(OpenCase(inventory, *schema, crate, 999, random).error == OpenError::NoSuchKey, "unknown key");
     Check(OpenCase(inventory, *schema, crate, wrong, random).error == OpenError::WrongKey, "wrong key");
     Check(inventory.Items().size() == 4, "failed opens change nothing");
+    {
+        // free_case_keys (default): one key per case type is added and opening never uses it up.
+        LiveInventory live(Inventory{});
+        live.AddItem({0, 60});
+        live.AddItem({0, 60});
+        const auto keys = live.EnsureCaseKeys(*schema);
+        Check(keys.size() == 1 && keys.front().defIndex == 50 && live.EnsureCaseKeys(*schema).empty(),
+              "free_case_keys adds one matching key per case type, once");
+        Inventory inv;
+        const auto c = inv.Add({0, 60});
+        const auto k = inv.Add({0, 50});
+        Check(OpenCase(inv, *schema, c, k, random).error == OpenError::None && !inv.Find(c) && inv.Find(k),
+              "free_case_keys: the case is opened and the key is kept");
+    }
 
     // Statistical check on many opens, each with a fresh crate and key.
     std::array<int, 4> counts{};
@@ -336,6 +350,9 @@ void CaseOpening()
     for (int i = 0; i < Opens; ++i)
     {
         Inventory inv;
+        GameplayConfig paidKeys;
+        paidKeys.free_case_keys = 0;
+        inv.SetGameplay(paidKeys);
         const auto c = inv.Add({0, 60});
         const auto k = inv.Add({0, 50});
         const OpenResult result = OpenCase(inv, *schema, c, k, random);
@@ -3598,8 +3615,12 @@ void ConfiguredRewardsAndPity()
         std::vector<std::uint8_t> bytes(size); std::uint32_t type = 0, got = 0;
         endpoint.RetrieveMessage(&type, bytes.data(), size, &got); types.push_back(type & ~ProtobufMask);
     }
-    Check(types == std::vector<std::uint32_t>{21, 9137, 21, 9137, 21, 9137} && saves == 1,
-          "native match drop notifications follow each created item and save once");
+    // A dropped case also brings its free key (free_case_keys), created after the drop notifications.
+    const bool droppedCase = std::any_of(live->Items().Items().begin(), live->Items().Items().end(),
+                                         [](const InventoryItem &item) { return item.defIndex == 60; });
+    auto expectedTypes = std::vector<std::uint32_t>{21, 9137, 21, 9137, 21, 9137};
+    if (droppedCase) expectedTypes.push_back(21);
+    Check(types == expectedTypes && saves == 1, "native match drop notifications follow each created item and save once");
     Inventory levelInventory;
     GameplayConfig levelConfig;
     levelConfig.match_drops_enabled = 0;

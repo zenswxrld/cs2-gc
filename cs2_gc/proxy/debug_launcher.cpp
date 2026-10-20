@@ -58,6 +58,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     config << "// Debug launcher generated controls; no persistent autoexec edits.\n"
            << "setinfo cs2_gc_rotation_offset 0\n"
            << "bot_prefix \"\"\n" // no "[BOT]" before bot names (bots that join afterwards)
+           << "exec cs2_gc_premier_bots\n" // bot difficulty from the local rating (written by the helper last session)
            << "alias cs2_gc_give_stars \"echo CS2GC_" << nonce << " stars 100\"\n"
            << "alias cs2_gc_give_stars_1000 \"echo CS2GC_" << nonce << " stars 1000\"\n"
            << "alias cs2_gc_force_rotation \"incrementvar cs2_gc_rotation_offset 0 1000000 1; echo CS2GC_" << nonce << " rotate\"\n"

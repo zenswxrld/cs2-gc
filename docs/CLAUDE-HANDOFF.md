@@ -1,3 +1,67 @@
+# Current follow-up: build 02 (20 October 2026)
+
+This section supersedes the build-01 implementation details below. Source remains on
+`codex/bot-progression-terminals-and-test-build`, PR #5 against `schema-loader`.
+
+User priorities: finish current inventory/progression/terminal fixes, then port the
+OfflineCS bot/career/achievement features, easier first. Native Store/Armory only;
+no legacy Star Shop. Use **Premier-style numeric CS Rating**, not Competitive
+Silver-to-Global ranks, hidden until 10 placement wins. See FEATURE-ROADMAP.md.
+
+Implemented this follow-up:
+
+- Mixed StatTrak trade-ups use exact input fraction, including five-Coverts. Gold
+  StatTrak rolls use compatible knife pools. Mixed glove-only outcomes stay normal;
+  all-StatTrak glove-only contracts refuse atomically. Contract-origin StatTrak is
+  explicitly saved so legacy collection repair does not erase intentional outputs.
+- Case gold rolls now use validated pools. Saved case pity starts soft on opening
+  10, hard on 100; separate per-definition terminal pity advances on reveals only,
+  targeting golds where present and highest weapon tier otherwise. Configuration
+  and counters persist; failure/stale requests do not consume or reroll.
+- Authenticated loopback GSI bridge now publishes a separate completed-match cursor.
+  Three independent 50/50 case/blue-through-red skin drops per observed completion;
+  LocalGC queues SO creates plus 9137 preview notifications. Inventory completion
+  cursor saves with the items; one backlog completion processed per poll.
+- Runtime gameplay config is separate from existing proxy/account config:
+  examples/cs2_gc_gameplay.cfg. Strict C++ and Python parsing; knobs for XP/stars,
+  pass XP/star, drops, mixed contracts, pity, terminals, rotation, Premier and Howl.
+  Pass units are stored and rescaled when config changes, then converted to native
+  400-unit display; fixed profile levels remain 5000 XP, cap40, pass cap40, max5.
+- Optional mixed_tradeup.cmd sends real local Craft messages through a tokenized
+  local pending/processing/result transport. terminal_purchase.cmd invokes the
+  same displayed-offer acceptance path used by normal Store finalization, without
+  requiring the broken native checkout. Neither edits live inventory text.
+- Latest user log (build01 session) has terminal offers but zero PurchaseInit
+  messages. Native checkout not fixed; helper is a workaround. User save has
+  rank1/XP0/reward_total0 and five tracks at1. No gameplay rewards were applied.
+  Diagnose start_rewards.cmd/GSI delivery with new received/waiting/earned logs;
+  do not claim the zero-star issue is proven fixed just from offline tests.
+- Local Premier model in premier_rating.py: competitive-mode final team scores,
+  +300/-100, initial1000, cap35000 by default; hidden until10wins. Persisted in
+  bridge state alongside completion dedup. start_rewards writes a dedicated
+  bot_difficulty cfg (0/1/2/3 at <5k/<10k/<15k/above); manual exec before bots
+  spawn. Native profile/rating display, automatic server difficulty and end-match
+  XP/rank screens remain pending. CS2 XpUpdate/ServerRankUpdate are server user
+  messages, so queueing an arbitrary GC message is not a verified substitute.
+- Armory rotation backend: stable name-sorted roster, six-slot windows, UTC900s.
+  Enforcement defaults off until UI ready. rotate_armory.py prepares only the
+  inspected xpshop.js source override with live countdown/hiding/expiry refresh.
+  It has not been compiled/mounted/live-tested. Do not enable enforcement early.
+- Howl resolves actual [cu_m4a1_howling]weapon_m4a1 from supplied schema; local
+  rotating offer costs40 configurable stars, normal, valid wear, Contraband7.
+  Schema and Python skin rarity now preserve explicit Contraband; Howl cannot
+  enter Covert trade-ups. Backend timed purchase tested. Native API redemption
+  is by schema shop_index, so Howl tile/purchase bridge remains pending. The UI
+  generator refuses enabled Howl until that bridge exists, avoiding roster
+  mismatch. No invented item IDs, schema edits or added custom finish.
+
+Build02 docs clearly separate offline regression/Windows compile from live-client
+validation. Keep uploaded logs/inventory/schema/binaries out of git and packages.
+The ZIP contains no user's inventory, tokens or original game DLL. New helpers
+and gameplay config must accompany the DLL; restart helper AND CS2 after edits.
+
+---
+
 # Handoff: Codex test 2026-10-20-01
 
 Based on `schema-loader` commit `42150481ac7db513a64f4b6704cd3c0a1b8349c0` (PR #4). User authorized changes and asked that all source changes be pushed so Claude can continue. See [TEST-BUILD.md](TEST-BUILD.md) for installation, exact reward rules, limitations and verification.

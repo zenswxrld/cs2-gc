@@ -18,9 +18,10 @@ InventoryItem LiveInventory::AddItem(InventoryItem item)
 
 bool LiveInventory::AddXpTrack(std::uint32_t xp)
 {
-    if (xp == 0 || xp > ArmoryPassMaxXp)
+    const auto maxPassXp = 40 * m_inventory.Gameplay().armory_xp_per_star;
+    if (xp == 0 || xp > maxPassXp)
         return false;
-    std::erase_if(m_inventory.XpTracks(), [](auto track) { return track >= ArmoryPassMaxXp; });
+    std::erase_if(m_inventory.XpTracks(), [maxPassXp](auto track) { return track >= maxPassXp; });
     if (m_inventory.XpTracks().size() >= MaxXpTracks)
         return false;
     m_inventory.XpTracks().push_back(xp);
@@ -64,7 +65,7 @@ std::size_t LiveInventory::RepairCollectionStatTrak(const Schema &schema)
 {
     std::size_t repaired = 0;
     for (const InventoryItem &item : m_inventory.Items())
-        if (item.statTrak && !schema.CollectionsOf(item.defIndex, item.paintKitIndex).empty() &&
+        if (item.statTrak && !item.statTrakFromContract && !schema.CollectionsOf(item.defIndex, item.paintKitIndex).empty() &&
             !schema.CanBeStatTrak(item.defIndex, item.paintKitIndex))
         {
             m_inventory.Find(item.id)->statTrak = false;

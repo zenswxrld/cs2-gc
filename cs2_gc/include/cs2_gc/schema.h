@@ -109,7 +109,9 @@ public:
     // Supplement server-only rare pools with a versioned catalogue, validating every definition/finish.
     bool LoadGoldPools(std::string_view text);
     std::vector<SkinRef> GoldOutcomes(const std::string &collection, bool statTrak) const;
+    std::vector<SkinRef> CrateGoldOutcomes(std::uint32_t defIndex) const;
     bool IsKnife(std::uint32_t defIndex) const;
+    std::vector<SkinRef> MatchRewardSkins() const;
 
     // A skin as a loot entry (finish name and wear range) so a trade-up can mint it. Nothing if the
     // weapon or finish is unknown.
@@ -138,7 +140,7 @@ public:
     std::optional<std::uint32_t> ItemDefIndex(std::string_view name) const;
 
     // Rarity value of a paint-kit weapon as the game shows it: the finish's rarity plus the
-    // weapon's base rarity minus one, capped at 6 (Covert). Checked against the target build:
+    // weapon's base rarity minus one, capped at 6 (Covert), except explicit Contraband finish rarity is retained. Checked against the target build:
     // AK-47 (base 2) with a rarity-4 finish is Classified (5), with a rarity-5 finish Covert (6).
     // Nothing if the weapon, finish or either rarity is missing from the schema.
     std::optional<std::uint32_t> SkinRarity(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;

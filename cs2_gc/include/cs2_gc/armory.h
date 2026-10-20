@@ -29,6 +29,7 @@ public:
         UnknownGoods,
         CostMismatch,    // the client's cost is not the schema's
         NotEnoughCredits,
+        NotInRotation,
         NothingToGrant,  // the goods resolve to no item
     };
 
@@ -38,8 +39,17 @@ public:
         InventoryItem item; // the granted item, already added to `inventory`, on success
     };
 
+    struct Rotation
+    {
+        std::uint64_t endsAt{};
+        std::vector<std::uint32_t> redeemIds;
+    };
+    // Existing CS2 Howl finish, a local offer identity derived from its schema loot-entry name.
+    static constexpr std::string_view HowlEntry = "[cu_m4a1_howling]weapon_m4a1";
+    std::optional<ArmoryRedeemable> HowlOffer(const GameplayConfig &config) const;
+    Rotation RotationAt(std::uint64_t unixSeconds, const GameplayConfig &config) const;
     Result Redeem(const RedeemRequest &request, LiveInventory &inventory, const RandomSource &random,
-                  const CaseOdds &odds = {});
+                  const CaseOdds &odds = {}, std::optional<std::uint64_t> unixSeconds = std::nullopt);
 
 private:
     const Schema &m_schema;

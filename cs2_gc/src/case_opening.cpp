@@ -59,8 +59,24 @@ InventoryItem MakeLootItem(const LootItem &drop, std::uint32_t rarity, const Ran
     return item;
 }
 
+std::uint32_t CaseGoldChance(std::uint32_t previousMisses)
+{
+    return PityChance(previousMisses, 26);
+}
+
+std::uint32_t PityChance(std::uint32_t previousMisses, std::uint32_t baseChance, const GameplayConfig &config)
+{
+    const auto base = std::min(baseChance, 10000u);
+    if (!config.pity_enabled || previousMisses + 1 < config.pity_soft_at)
+        return base;
+    if (previousMisses + 1 >= config.pity_hard_at)
+        return 10000;
+    return base + (10000 - base) * (previousMisses + 2 - config.pity_soft_at) /
+        (config.pity_hard_at - config.pity_soft_at + 1);
+}
+
 std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view lootListName,
-                                          const RandomSource &random, const CaseOdds &odds)
+                                          const RandomSource &random, const CaseOdds &odds, std::uint32_t excludedRarity)
 {
     struct Tier
     {
@@ -79,6 +95,8 @@ std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view
     std::uint64_t totalWeight = 0;
     for (std::size_t rank = 0; rank < listed.size(); ++rank)
     {
+        if (excludedRarity && listed[rank].rarity == excludedRarity)
+            continue;
         const std::uint32_t weight = WeightForRank(rank, odds);
         Tier resolved{weight, listed[rank].rarity, {}};
         for (const std::string &entry : listed[rank].items)
@@ -137,13 +155,30 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
         }
     }
 
-    auto rolled = RollLootList(schema, crate->lootListName, random, odds);
+    std::optional<InventoryItem> rolled;
+    const auto golds = crate->kind == CrateKind::Case ? schema.CrateGoldOutcomes(crate->defIndex) : std::vector<SkinRef>{};
+    if (!golds.empty() && Below(random, 10000) < PityChance(inventory.CasePity(), inventory.Gameplay().case_gold_per_10000, inventory.Gameplay()))
+    {
+        const auto &gold = golds[Below(random, golds.size())];
+        if (const auto loot = schema.SkinAsLootItem(gold.weaponDefIndex, gold.paintKitIndex))
+        {
+            rolled = MakeLootItem(*loot, 6, random, schema.IsKnife(gold.weaponDefIndex) ? odds.statTrakPerMille : 0);
+            rolled->unusual = true;
+            // Vanilla knives use Plain loot and need their StatTrak roll separately.
+            if (!gold.paintKitIndex && schema.IsKnife(gold.weaponDefIndex))
+                rolled->statTrak = Below(random, 1000) < odds.statTrakPerMille;
+        }
+    }
+    else
+        rolled = RollLootList(schema, crate->lootListName, random, odds);
     if (!rolled)
     {
         result.error = OpenError::EmptyLootList;
         return result;
     }
     InventoryItem item = *rolled;
+    if (!golds.empty())
+        inventory.SetCasePity(item.unusual ? 0 : std::min(inventory.CasePity() + 1, 99u));
 
     // Nothing above mutated the inventory; consume and grant together.
     inventory.Remove(crateId);
@@ -151,6 +186,40 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
         inventory.Remove(keyId);
     item.id = inventory.Add(item);
     result.item = item;
+    return result;
+}
+}
+
+namespace cs2_gc
+{
+std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, const RandomSource &random, const GameplayConfig &config)
+{
+    if (!config.match_drops_enabled) return std::nullopt;
+    std::vector<std::uint32_t> cases;
+    for (const auto &crate : schema.Crates())
+        if (crate.kind == CrateKind::Case && crate.keyDefIndex && !schema.LootTiers(crate.lootListName).empty())
+            cases.push_back(crate.defIndex);
+    auto skins = schema.MatchRewardSkins();
+    std::erase_if(skins, [&](const auto &skin) {
+        return schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex).value_or(0) < config.match_skin_min_rarity;
+    });
+    if ((config.match_case_percent && cases.empty()) || (config.match_case_percent < 100 && skins.empty()))
+        return std::nullopt;
+    std::vector<InventoryItem> result;
+    for (std::uint32_t i = 0; i < config.match_drop_count; ++i)
+    {
+        InventoryItem item;
+        if (Below(random, 100) < config.match_case_percent)
+            item.defIndex = cases[Below(random, cases.size())];
+        else
+        {
+            const auto &skin = skins[Below(random, skins.size())];
+            const auto loot = schema.SkinAsLootItem(skin.weaponDefIndex, skin.paintKitIndex);
+            if (!loot) return std::nullopt;
+            item = MakeLootItem(*loot, *schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex), random, 0);
+        }
+        result.push_back(item);
+    }
     return result;
 }
 }

@@ -10,6 +10,9 @@
 namespace cs2_gc
 {
 using RandomSource = std::function<std::uint64_t()>; // uniform 64-bit values
+// Consecutive eligible case misses: 0.26% initially; linear soft pity on opening 10, hard pity on 100.
+std::uint32_t CaseGoldChance(std::uint32_t previousMisses);
+std::uint32_t PityChance(std::uint32_t previousMisses, std::uint32_t baseChance, const GameplayConfig &config = {});
 
 enum class OpenError
 {
@@ -45,7 +48,12 @@ struct CaseOdds
 // ancient) and a collection (uncommon to legendary) are treated alike. Tiers with nothing resolvable
 // are skipped and the rest renormalised. Nothing when no tier has an item.
 std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view lootListName,
-                                          const RandomSource &random, const CaseOdds &odds = {});
+                                          const RandomSource &random, const CaseOdds &odds = {},
+                                          std::uint32_t excludedRarity = 0);
+
+// Three independent 50% case / 50% blue-or-better weapon drops; atomic on missing pools.
+std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, const RandomSource &random,
+                                                               const GameplayConfig &config = {});
 
 // Cases need their key; capsules and graffiti boxes open without one (the key id is ignored).
 // Atomic: the crate and key are consumed and the item added together, or the

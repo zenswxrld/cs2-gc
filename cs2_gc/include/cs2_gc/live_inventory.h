@@ -33,6 +33,21 @@ public:
     std::optional<InventoryItem> TerminalOffer(const Schema &schema, std::uint64_t gameId) const;
     std::optional<TerminalChange> AcceptTerminal(const Schema &schema, std::uint64_t gameId);
     void SetArmoryCredits(std::uint32_t credits) { m_inventory.SetArmoryCredits(credits); }
+    std::optional<std::vector<InventoryItem>> GrantMatchRewards(const Schema &schema, std::uint64_t completed,
+                                                               const RandomSource &random)
+    {
+        if (completed <= m_inventory.MatchRewardTotal()) return std::nullopt;
+        if (!m_inventory.Gameplay().match_drops_enabled)
+        {
+            m_inventory.MarkMatchRewarded();
+            return std::vector<InventoryItem>{};
+        }
+        auto drops = RollMatchDrops(schema, random, m_inventory.Gameplay());
+        if (!drops) return std::nullopt;
+        for (auto &item : *drops) item = AddItem(item);
+        m_inventory.MarkMatchRewarded();
+        return drops;
+    }
     bool ApplyEarnedXp(std::uint64_t cumulativeXp) { return m_inventory.ApplyEarnedXp(cumulativeXp); }
 
     // Activates one more Armory Pass, starting at `xp`; false when MaxXpTracks are already active.

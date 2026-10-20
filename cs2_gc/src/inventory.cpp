@@ -10,22 +10,43 @@
 
 namespace cs2_gc
 {
+void Inventory::SetGameplay(const GameplayConfig &config)
+{
+    for (auto &track : m_xpTracks)
+        track = std::max(1u, static_cast<std::uint32_t>(std::min<std::uint64_t>(
+            std::uint64_t{track} * config.armory_xp_per_star / m_trackXpPerStar,
+            std::uint64_t{40} * config.armory_xp_per_star)));
+    m_trackXpPerStar = config.armory_xp_per_star;
+    m_gameplay = config;
+}
+
+std::vector<std::uint32_t> Inventory::DisplayXpTracks() const
+{
+    std::vector<std::uint32_t> result;
+    for (const auto track : m_xpTracks)
+        result.push_back(std::max(1u, static_cast<std::uint32_t>(std::min<std::uint64_t>(
+            std::uint64_t{track} * ArmoryStarXp / m_trackXpPerStar, ArmoryPassMaxXp))));
+    return result;
+}
+
 bool Inventory::ApplyEarnedXp(std::uint64_t cumulativeXp)
 {
     if (cumulativeXp <= m_progress.rewardTotal)
         return false;
     const auto delta = cumulativeXp - m_progress.rewardTotal;
     m_progress.rewardTotal = cumulativeXp;
+    const auto profileDelta = m_gameplay.xp_enabled ? delta : 0;
     const auto needed = std::uint64_t{40 - m_progress.level} * ProfileLevelXp;
-    const auto xp = std::uint64_t{m_progress.xp} + std::min(delta, needed);
+    const auto xp = std::uint64_t{m_progress.xp} + std::min(profileDelta, needed);
     m_progress.level += static_cast<std::uint32_t>(std::min<std::uint64_t>(xp / ProfileLevelXp, 40 - m_progress.level));
     m_progress.xp = m_progress.level == 40 ? 0 : static_cast<std::uint32_t>(xp % ProfileLevelXp);
+    const auto maxPassXp = 40 * m_trackXpPerStar;
     std::uint64_t stars = m_armoryCredits.value_or(0);
     for (auto &track : m_xpTracks)
     {
-        const auto previous = std::min(track, ArmoryPassMaxXp);
-        track = previous + static_cast<std::uint32_t>(std::min<std::uint64_t>(delta, ArmoryPassMaxXp - previous));
-        stars += track / ArmoryStarXp - previous / ArmoryStarXp;
+        const auto previous = std::min(track, maxPassXp);
+        track = previous + static_cast<std::uint32_t>(std::min<std::uint64_t>(m_gameplay.stars_enabled ? delta : 0, maxPassXp - previous));
+        stars += track / m_trackXpPerStar - previous / m_trackXpPerStar;
     }
     m_armoryCredits = static_cast<std::uint32_t>(std::min<std::uint64_t>(stars, UINT32_MAX));
     return true;
@@ -97,6 +118,16 @@ std::string Inventory::ToText() const
 {
     std::ostringstream out;
     out << "\"inventory\"\n{\n\t\"next_id\"\t\"" << m_nextId << "\"\n";
+    out << "\t\"case_pity\"\t\"" << m_casePity << "\"\n";
+    out << "\t\"match_reward_total\" \"" << m_matchRewardTotal << "\"\n";
+    out << "\t\"track_xp_per_star\" \"" << m_trackXpPerStar << "\"\n";
+    if (!m_terminalPity.empty())
+    {
+        out << "\t\"terminal_pity\" {\n";
+        for (const auto &[definition, failures] : m_terminalPity)
+            out << "\t\t\"" << definition << "\" \"" << failures << "\"\n";
+        out << "\t}\n";
+    }
     if (m_armoryCredits)
         out << "\t\"armory_credits\"\t\"" << *m_armoryCredits << "\"\n";
     out << "\t\"progression\" { \"level\" \"" << m_progress.level << "\" \"xp\" \"" << m_progress.xp
@@ -122,6 +153,8 @@ std::string Inventory::ToText() const
             << "\t\t\t\"keychain\"\t\"" << item.keychain << "\"\n";
         if (!item.customName.empty())
             out << "\t\t\t\"custom_name\"\t\"" << item.customName << "\"\n";
+        if (item.statTrakFromContract)
+            out << "\t\t\t\"contract_stattrak\"\t\"1\"\n";
         if (item.unusual)
             out << "\t\t\t\"unusual\"\t\"1\"\n";
         if (item.terminalRemaining)
@@ -162,6 +195,28 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
     if (!ParseNumber(root->Value("next_id"), inventory.m_nextId) || inventory.m_nextId == 0)
         return std::nullopt;
 
+    if (const auto *pity = root->Find("case_pity"))
+        if (pity->block || !ParseNumber(pity->value, inventory.m_casePity) || inventory.m_casePity > 99)
+            return std::nullopt;
+
+    if (const auto *matches = root->Find("match_reward_total"))
+        if (matches->block || !ParseNumber(matches->value, inventory.m_matchRewardTotal))
+            return std::nullopt;
+
+    if (const auto *pities = root->Find("terminal_pity"))
+    {
+        if (!pities->block)
+            return std::nullopt;
+        for (const auto &entry : pities->children)
+        {
+            std::uint32_t definition = 0, failures = 0;
+            if (entry.block || !ParseNumber(entry.key, definition) || !definition ||
+                !ParseNumber(entry.value, failures) || failures > 99 ||
+                !inventory.m_terminalPity.emplace(definition, failures).second)
+                return std::nullopt;
+        }
+    }
+
     if (const KvNode *progress = root->Find("progression"))
     {
         if (!progress->block || !ParseNumber(progress->Value("level"), inventory.m_progress.level) ||
@@ -180,6 +235,11 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
         inventory.m_armoryCredits = value;
     }
 
+    if (const auto *unit = root->Find("track_xp_per_star"))
+        if (unit->block || !ParseNumber(unit->value, inventory.m_trackXpPerStar) ||
+            !inventory.m_trackXpPerStar || inventory.m_trackXpPerStar > 100000)
+            return std::nullopt;
+    inventory.m_gameplay.armory_xp_per_star = inventory.m_trackXpPerStar;
     if (const KvNode *tracks = root->Find("xp_tracks"))
     {
         std::string_view text = tracks->value;
@@ -207,6 +267,11 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             item.wear > 1.0f || !ParseNumber(entry.Value("seed"), item.seed) || item.seed > 1000 ||
             !ParseNumber(entry.Value("stattrak"), statTrak) || statTrak > 1)
             return std::nullopt;
+        if (const auto *contract = entry.Find("contract_stattrak"))
+        {
+            if (contract->block || contract->value != "1" || statTrak != 1) return std::nullopt;
+            item.statTrakFromContract = true;
+        }
         // Optional so files written before the field existed still load.
         if (entry.Find("rarity") && (!ParseNumber(entry.Value("rarity"), item.rarity) || item.rarity > 99))
             return std::nullopt;

@@ -3,6 +3,8 @@
 #include <charconv>
 #include <iterator>
 #include <limits>
+#include <set>
+#include "cs2_gc/gameplay_config.h"
 
 namespace cs2_gc
 {
@@ -175,6 +177,56 @@ std::optional<ProxyConfig> ParseProxyConfig(std::string_view text)
         else
             return std::nullopt;
     }
+    return config;
+}
+}
+
+namespace cs2_gc
+{
+std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text)
+{
+    GameplayConfig config;
+    std::set<std::string> seen;
+    while (!text.empty())
+    {
+        const auto end = text.find('\n');
+        auto line = text.substr(0, end);
+        text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
+        line = Trim(line.substr(0, line.find('#')));
+        if (line.empty()) continue;
+        const auto equal = line.find('=');
+        if (equal == std::string_view::npos) return std::nullopt;
+        const auto key = Trim(line.substr(0, equal)), value = Trim(line.substr(equal + 1));
+        if (!seen.insert(std::string(key)).second) return std::nullopt;
+        std::uint32_t number = 0;
+        if (!Number(value, number)) return std::nullopt;
+        std::uint32_t *target = nullptr, minimum = 0, maximum = 1;
+#define BOOL_OPTION(name) if (key == #name) target = &config.name; else
+#define NUMBER_OPTION(name, low, high) if (key == #name) { target = &config.name; minimum = low; maximum = high; } else
+        BOOL_OPTION(xp_enabled) BOOL_OPTION(stars_enabled) BOOL_OPTION(match_drops_enabled)
+        BOOL_OPTION(mixed_stattrak_tradeups) BOOL_OPTION(pity_enabled) BOOL_OPTION(terminals_enabled)
+        BOOL_OPTION(terminal_helper_enabled) BOOL_OPTION(armory_rotation_enabled) BOOL_OPTION(armory_rotation_enforce) BOOL_OPTION(premier_enabled) BOOL_OPTION(armory_howl_enabled)
+        NUMBER_OPTION(armory_howl_star_price, 1, 1000000)
+        NUMBER_OPTION(premier_placement_wins, 1, 100) NUMBER_OPTION(premier_start_rating, 0, 99999)
+        NUMBER_OPTION(premier_win_rating, 0, 10000) NUMBER_OPTION(premier_loss_rating, 0, 10000)
+        NUMBER_OPTION(premier_max_rating, 1, 99999)
+        NUMBER_OPTION(armory_rotation_seconds, 10, 86400) NUMBER_OPTION(armory_rotation_slots, 1, 60)
+        NUMBER_OPTION(armory_xp_per_star, 1, 100000)
+        NUMBER_OPTION(kill_xp, 0, 1000000) NUMBER_OPTION(headshot_xp, 0, 1000000)
+        NUMBER_OPTION(mvp_xp, 0, 1000000) NUMBER_OPTION(match_complete_xp, 0, 1000000)
+        NUMBER_OPTION(match_drop_count, 1, 20) NUMBER_OPTION(match_case_percent, 0, 100)
+        NUMBER_OPTION(match_skin_min_rarity, 3, 6)
+        NUMBER_OPTION(pity_soft_at, 2, 99) NUMBER_OPTION(pity_hard_at, 3, 100)
+        NUMBER_OPTION(case_gold_per_10000, 0, 10000) NUMBER_OPTION(terminal_top_per_10000, 0, 10000)
+        NUMBER_OPTION(terminal_default_offers, 1, 100) NUMBER_OPTION(terminal_lifetime_days, 1, 365)
+        return std::nullopt;
+#undef BOOL_OPTION
+#undef NUMBER_OPTION
+        if (number < minimum || number > maximum) return std::nullopt;
+        *target = number;
+    }
+    if (config.premier_start_rating > config.premier_max_rating) return std::nullopt;
+    if (config.pity_soft_at >= config.pity_hard_at) return std::nullopt;
     return config;
 }
 }

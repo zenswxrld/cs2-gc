@@ -1,5 +1,6 @@
 #pragma once
 #include "cs2_gc/progression.h"
+#include "cs2_gc/gameplay_config.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -7,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <map>
 
 namespace cs2_gc
 {
@@ -58,12 +60,16 @@ struct InventoryItem
     std::optional<std::uint32_t> terminalRemaining;
     std::uint32_t expiration{};
     std::optional<std::uint32_t> purchasePrice;
+    bool statTrakFromContract{}; // preserve intentional local mixed-contract variants across startup repair
 };
 
 // Local, in-memory inventory. Persistence and client sync are not wired yet.
 class Inventory
 {
 public:
+    const GameplayConfig &Gameplay() const { return m_gameplay; }
+    void SetGameplay(const GameplayConfig &config);
+    std::vector<std::uint32_t> DisplayXpTracks() const;
     std::uint64_t Add(InventoryItem item); // assigns and returns a fresh id
     bool Remove(std::uint64_t id);
     const InventoryItem *Find(std::uint64_t id) const;
@@ -77,6 +83,16 @@ public:
     void SetArmoryCredits(std::uint32_t credits) { m_armoryCredits = credits; }
     const LocalProgress &Progress() const { return m_progress; }
     bool ApplyEarnedXp(std::uint64_t cumulativeXp);
+    std::uint64_t MatchRewardTotal() const { return m_matchRewardTotal; }
+    void MarkMatchRewarded() { ++m_matchRewardTotal; }
+    std::uint32_t CasePity() const { return m_casePity; }
+    void SetCasePity(std::uint32_t failures) { m_casePity = failures; }
+    std::uint32_t TerminalPity(std::uint32_t defIndex) const
+    {
+        const auto found = m_terminalPity.find(defIndex);
+        return found == m_terminalPity.end() ? 0 : found->second;
+    }
+    void SetTerminalPity(std::uint32_t defIndex, std::uint32_t failures) { m_terminalPity[defIndex] = failures; }
 
     // KeyValues text, so the file stays hand-editable. FromText is strict: any
     // malformed, duplicate or out-of-range entry rejects the whole file rather
@@ -90,10 +106,15 @@ public:
     static std::optional<Inventory> Load(const std::filesystem::path &path);
 
 private:
+    GameplayConfig m_gameplay;
+    std::uint32_t m_trackXpPerStar{400};
     std::vector<InventoryItem> m_items;
     std::vector<std::uint32_t> m_xpTracks;
     std::optional<std::uint32_t> m_armoryCredits;
     LocalProgress m_progress;
+    std::uint64_t m_matchRewardTotal{};
+    std::uint32_t m_casePity{};
+    std::map<std::uint32_t, std::uint32_t> m_terminalPity;
     std::uint64_t m_nextId{1};
 };
 }

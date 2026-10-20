@@ -13,3 +13,11 @@ cs2_gc_inventory.txt
 cs2_gc_rewards.txt
 cs2_gc_gsi_state.json
 gamestate_integration_cs2_gc.cfg
+
+cs2_gc_matches.txt
+cs2_gc_tradeup_*.txt
+cs2_gc_tradeup_*.txt.tmp
+cs2_gc_terminal_*.txt
+cs2_gc_terminal_*.txt.tmp
+
+cs2_gc_premier_bots.cfg

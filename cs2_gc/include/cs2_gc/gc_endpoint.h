@@ -89,6 +89,9 @@ public:
                           RandomSource random, std::function<void()> afterChange);
     // Consume cumulative XP from the local GSI bridge, idempotently, on the game's callback thread.
     bool ApplyEarnedXp(std::uint64_t cumulativeXp, const std::function<void()> &afterChange);
+    bool ApplyMatchRewards(std::uint64_t completed, const std::function<void()> &afterChange);
+    // Local helper fallback when the native terminal checkout sends no purchase request.
+    bool AcceptLocalTerminal(std::uint64_t gameId, const std::function<void()> &afterChange);
 
     // Sell items for free. A valid purchase (every line an item `canSell` accepts, a sane quantity)
     // is answered with a transaction id; the proxy then reports the authorisation through the
@@ -117,6 +120,7 @@ public:
 
 private:
     void OnClientHello(const FrameView &frame);
+    std::optional<std::uint64_t> AcceptTerminalLocked(std::uint64_t gameId);
 
     GcEndpointConfig m_config;
     std::shared_ptr<const ReplayStore> m_replay;
@@ -140,6 +144,7 @@ private:
         std::vector<StorePurchaseRequest::Line> lines;
     };
     std::mutex m_txnMutex;
+    RandomSource m_rewardRandom;
     std::shared_ptr<const Schema> m_schema; // set by EnableContainers; the sticker handler uses it for slabs
     std::vector<std::uint8_t> m_xpShop; // the current Armory pass object (credits and activated passes)
     std::optional<Transaction> m_txn;

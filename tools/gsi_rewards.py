@@ -10,6 +10,11 @@ import json
 import os
 from pathlib import Path
 import secrets
+import time
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gameplay_config import load as load_gameplay
+import premier_rating
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 MAX_TOTAL = (1 << 64) - 1
@@ -31,6 +36,7 @@ def atomic_text(path, text):
 class Rewards:
     def __init__(self, directory):
         self.directory = Path(directory)
+        self.config = load_gameplay(self.directory)
         self.path = self.directory / 'cs2_gc_gsi_state.json'
         if self.path.exists():
             self.state = json.loads(self.path.read_text(encoding='utf-8'))
@@ -45,12 +51,24 @@ class Rewards:
             if not 0 <= total <= MAX_TOTAL:
                 raise ValueError('Invalid reward cursor')
             self.state = {'token': secrets.token_hex(32), 'total': total, 'last': None}
+        match_cursor = self.directory / 'cs2_gc_matches.txt'
+        if 'matches' not in self.state:
+            self.state['matches'] = int(match_cursor.read_text().strip()) if match_cursor.exists() else 0
+        if type(self.state['matches']) is not int or not 0 <= self.state['matches'] <= MAX_TOTAL:
+            raise ValueError('Invalid completed-match counter')
+        self.state.setdefault('premier', premier_rating.initial(self.config))
+        premier = self.state['premier']
+        if not isinstance(premier, dict) or any(type(premier.get(key)) is not int or premier[key] < 0
+                for key in ('rating', 'wins', 'losses', 'ties')) or premier['rating'] > 99999:
+            raise ValueError('Invalid local Premier state')
+        self.last_received = None
         self.save()
 
     def save(self):
         # Commit deduplication and cumulative XP together before publishing the cursor.
         atomic_text(self.path, json.dumps(self.state, separators=(',', ':')) + '\n')
         atomic_text(self.directory / 'cs2_gc_rewards.txt', str(self.state['total']) + '\n')
+        atomic_text(self.directory / 'cs2_gc_matches.txt', str(self.state['matches']) + '\n')
 
     def accept(self, packet):
         if not isinstance(packet, dict):
@@ -60,13 +78,17 @@ class Rewards:
             return False
         if not hmac.compare_digest(auth['token'], self.state['token']):
             return False
+        if self.last_received is None:
+            print('Game data received. Waiting for local-player live match statistics.', flush=True)
+        self.last_received = time.monotonic()
         provider, player, game_map = (packet.get(k) or {} for k in ('provider', 'player', 'map'))
         if not all(isinstance(v, dict) for v in (provider, player, game_map)):
             return False
         # Spectating a bot must not turn the bot's kills into the local player's rewards.
         if (provider.get('appid') != 730 or not provider.get('steamid')
                 or player.get('steamid') != provider['steamid']
-                or player.get('team') not in ('T', 'CT') or player.get('activity') != 'playing'):
+                or player.get('team') not in ('T', 'CT')
+                or (player.get('activity') != 'playing' and game_map.get('phase') != 'gameover')):
             return True
         stats, state = player.get('match_stats') or {}, player.get('state') or {}
         if not isinstance(stats, dict) or not isinstance(state, dict):
@@ -87,18 +109,25 @@ class Rewards:
                 and current['round'] >= last['round'] and current['kills'] >= last['kills']
                 and current['mvps'] >= last['mvps'])
         if same and current['phase'] in ('live', 'gameover') and last['phase'] == 'live':
-            earned += (current['kills'] - last['kills']) * 5
-            earned += (current['mvps'] - last['mvps']) * 25
+            earned += (current['kills'] - last['kills']) * self.config['kill_xp']
+            earned += (current['mvps'] - last['mvps']) * self.config['mvp_xp']
             old_hs = last['headshots'] if current['round'] == last['round'] else 0
-            earned += max(0, current['headshots'] - old_hs) * 3
+            earned += max(0, current['headshots'] - old_hs) * self.config['headshot_xp']
             if current['phase'] == 'gameover' and not last.get('finished'):
-                earned += 600
+                earned += self.config['match_complete_xp']
+                self.state['matches'] = min(MAX_TOTAL, self.state['matches'] + 1)
+                result = premier_rating.outcome(game_map, player.get('team'))
+                if result and self.config['premier_enabled']:
+                    self.state['premier'] = premier_rating.apply(self.state['premier'], result, self.config)
+                    print(premier_rating.status(self.state['premier'], self.config), flush=True)
         if same and current['phase'] == 'gameover':
             current['finished'] = True
         # First snapshot/reconnect/restart only establishes a baseline, never pays old scoreboard stats.
         self.state['last'] = current
         self.state['total'] = min(MAX_TOTAL, self.state['total'] + earned)
         self.save()
+        if earned:
+            print(f"Earned {earned} XP; total {self.state['total']}; completed matches {self.state['matches']}.", flush=True)
         return True
 
 
@@ -162,8 +191,26 @@ def main():
         atomic_text(args.cfg_dir / 'gamestate_integration_cs2_gc.cfg', config_text(rewards.state['token'], args.port))
     with HTTPServer(('127.0.0.1', args.port), handler_for(rewards)) as server:
         server.timeout = 5
+        if args.cfg_dir and rewards.config['premier_enabled']:
+            difficulty_path = args.cfg_dir / 'cs2_gc_premier_bots.cfg'
+            last_difficulty = [-1]
+            def write_difficulty():
+                difficulty = premier_rating.bot_difficulty(rewards.state['premier'])
+                if difficulty == last_difficulty[0]: return
+                atomic_text(difficulty_path, '// Local Premier bot difficulty; execute before spawning bots.\n'
+                            + f'bot_difficulty {difficulty}\n')
+                last_difficulty[0] = difficulty
+            write_difficulty()
+            print('Local Premier bot config prepared. In the local server console: exec cs2_gc_premier_bots', flush=True)
         print('Local CS2 XP bridge listening. Keep this window open while playing bot matches.')
-        server.serve_forever()
+        while True:
+            server.handle_request()
+            if args.cfg_dir and rewards.config['premier_enabled']:
+                write_difficulty()
+            if rewards.last_received is None:
+                print('Waiting for CS2: restart the game after starting this helper; then enter a bot match.', flush=True)
+            elif time.monotonic() - rewards.last_received > 30:
+                print('No game data for 30 seconds. Check that CS2 is running with the installed GSI config.', flush=True)
 
 
 if __name__ == '__main__':

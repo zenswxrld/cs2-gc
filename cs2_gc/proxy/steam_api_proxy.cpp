@@ -23,6 +23,7 @@
 #include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/gc_summary.h"
 #include "cs2_gc/protobuf_dump.h"
+#include "cs2_gc/protobuf.h"
 #include "cs2_gc/proxy_support.h"
 #include "cs2_gc/replay.h"
 
@@ -227,6 +228,7 @@ public:
     {
         m_rewardPath = std::move(rewardPath);
         m_afterReward = std::move(afterReward);
+        m_log.Write("progression: run start_rewards.cmd before launching CS2; it must remain open during bot matches");
     }
     void PollProgression()
     {
@@ -243,6 +245,17 @@ public:
         const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), total);
         if (input && error == std::errc{} && end == text.data() + text.size())
             m_gc.ApplyEarnedXp(total, m_afterReward);
+        {
+            std::ifstream matches(m_rewardPath.parent_path() / "cs2_gc_matches.txt");
+            std::string count;
+            std::getline(matches, count);
+            std::uint64_t completed = 0;
+            const auto [last, ec] = std::from_chars(count.data(), count.data() + count.size(), completed);
+            if (matches && ec == std::errc{} && last == count.data() + count.size())
+                m_gc.ApplyMatchRewards(completed, m_afterReward);
+        }
+        PollTradeUpRequest();
+        PollTerminalRequest();
     }
     void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange)
     {
@@ -282,6 +295,73 @@ public:
     }
 
 private:
+    void PollTerminalRequest()
+    {
+        const auto dir = m_rewardPath.parent_path();
+        const auto pending = dir / "cs2_gc_terminal_request.txt";
+        const auto processing = dir / "cs2_gc_terminal_processing.txt";
+        std::error_code ec;
+        if (std::filesystem::exists(processing, ec) || !std::filesystem::exists(pending, ec)) return;
+        std::filesystem::rename(pending, processing, ec);
+        if (ec) return;
+        std::ifstream input(processing);
+        std::string line; std::getline(input, line); input.close();
+        // Reuse the strict token/ID decoder; repeat one ID only to share the transport shape.
+        const auto request = DecodeLocalTradeUpRequest(line);
+        bool valid = request && request->itemIds.size() == 5;
+        if (valid)
+            for (const auto id : request->itemIds) valid = valid && id == request->itemIds.front();
+        const bool accepted = valid && m_gc.AcceptLocalTerminal(request->itemIds.front(), m_afterReward);
+        if (request)
+        {
+            const auto temporary = dir / "cs2_gc_terminal_result.txt.tmp";
+            std::ofstream output(temporary);
+            output << request->token << "\n" << (accepted ? "success" : "rejected; check cs2_gc_log.txt") << "\n";
+            output.close();
+            std::filesystem::remove(dir / "cs2_gc_terminal_result.txt", ec);
+            std::filesystem::rename(temporary, dir / "cs2_gc_terminal_result.txt", ec);
+        }
+        std::filesystem::remove(processing, ec);
+    }
+    void PollTradeUpRequest()
+    {
+        const auto directory = m_rewardPath.parent_path();
+        const auto pending = directory / "cs2_gc_tradeup_request.txt";
+        const auto processing = directory / "cs2_gc_tradeup_processing.txt";
+        std::error_code ec;
+        if (std::filesystem::exists(processing, ec) || !std::filesystem::exists(pending, ec))
+            return;
+        std::filesystem::rename(pending, processing, ec);
+        if (ec)
+            return;
+        std::ifstream input(processing);
+        std::string line;
+        std::getline(input, line);
+        input.close();
+        const auto request = DecodeLocalTradeUpRequest(line);
+        if (request)
+        {
+            PbWriter body;
+            body.Varint(1, 1);
+            for (const auto id : request->itemIds)
+                body.Varint(2, id);
+            std::vector<std::uint8_t> frame;
+            WriteProtobufFrame(gc_msg::EGCItemMsg::k_EMsgGCCraft, {}, body.bytes(), frame);
+            const auto ignored = m_gc.IgnoredMessages();
+            const auto result = SendMessage(gc_msg::EGCItemMsg::k_EMsgGCCraft | ProtobufMask, frame.data(),
+                                             static_cast<std::uint32_t>(frame.size()));
+            const bool success = result == GCResult::OK && ignored == m_gc.IgnoredMessages();
+            const auto temporary = directory / "cs2_gc_tradeup_result.tmp";
+            std::ofstream output(temporary, std::ios::trunc);
+            output << request->token << '\n' << (success ? "success" : "rejected; check cs2_gc_log.txt") << '\n';
+            output.close();
+            if (output)
+                std::filesystem::rename(temporary, directory / "cs2_gc_tradeup_result.txt", ec);
+        }
+        else
+            m_log.Write("local trade-up helper: invalid request; nothing consumed");
+        std::filesystem::remove(processing, ec);
+    }
     LocalGameCoordinator m_gc;
     std::filesystem::path m_rewardPath;
     std::function<void()> m_afterReward;
@@ -598,6 +678,19 @@ State &Init()
                 s.log->Write("custom inventory: cs2_gc_inventory.txt is invalid, starting empty and not saving over it");
                 loaded = Inventory{};
             }
+            std::ifstream gameplayFile(std::filesystem::path(s.directory + L"cs2_gc_gameplay.cfg"));
+            if (gameplayFile)
+            {
+                std::ostringstream contents; contents << gameplayFile.rdbuf();
+                if (const auto gameplay = ParseGameplayConfig(contents.str()))
+                {
+                    loaded->SetGameplay(*gameplay);
+                    s.log->Write("gameplay: cs2_gc_gameplay.cfg loaded (restart game/helper after edits)");
+                }
+                else
+                    s.log->Write("ERROR: cs2_gc_gameplay.cfg invalid; using documented default gameplay settings");
+            }
+            else s.log->Write("gameplay: no cs2_gc_gameplay.cfg; using documented defaults");
             auto live = std::make_shared<LiveInventory>(std::move(*loaded));
             s.serverCoordinator->EnableServerInventory(live);
             Logger *saveLog = s.log;
@@ -721,7 +814,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: codex-20261020-01");
+        s.log->Write("test build: codex-20261020-02");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");

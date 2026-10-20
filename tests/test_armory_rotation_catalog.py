@@ -91,15 +91,17 @@ const tiles = {}, navs = {}; const label = {};
 const parent = {FindChildInLayoutFile: () => label};
 const balance = {GetParent: () => parent};
 const root = {IsValid: () => true, FindChildInLayoutFile: id =>
- id === 'id-xpshop-balance' ? balance : id === 'id-xpshop-top-nav' ? parent : tiles[id] || navs[id] || {}};
+ id === 'id-xpshop-balance' ? balance : id === 'id-xpshop-top-nav' ? parent : tiles[id] || navs[id] || null};
 const GameInterfaceAPI = {GetSettingString: () => '0'};
 const $ = {Msg: () => {}, GetContextPanel: () => root, Schedule: () => 1, CancelScheduled: () => {}, DispatchEvent: () => {}};
-const aShopItemsData = ['case_a', 'case_b', 'charm_a', 'charm_b', 'capsule'].map(item_name => ({item_name}));
-function _MakeShopTile(e) { tiles[e.item_name] = {}; }
-function _MakeNavButton(e) { navs[e.item_name + '-nav'] = {}; }
+const aShopItemsData = ['case_a', 'case_b', 'charm_a', 'charm_b', 'capsule'].map(item_name => ({item_name, ui_order:'3'}));
+function _MakeShopTile(e) { tiles[e.item_name] = {SetPanelEvent:()=>{}}; }
+function _MakeNavButton(e) { navs[e.item_name + '-nav'] = {SetPanelEvent:()=>{}}; }
 function _DeleteInspectGrid() { closed++; }
 function _CancelTimeoutForRewardItem() {}
 ''' + rotate_armory.patch(source, dict(gameplay_config.DEFAULTS, armory_case_slots=1, armory_charm_slots=1), categories) + '''
+function _LocalCatalogueControls() {}
+function _LocalCataloguePage(entries,active) {return active;}
 _UpdateShopGoods(11);
 const visible = () => Object.keys(tiles).filter(k => tiles[k].visible).sort();
 assert.deepEqual(visible(), ['capsule', 'case_a', 'charm_a']);
@@ -110,7 +112,51 @@ assert.equal(label.text, 'Armory refresh: 15:00');
 now = 1800; _LocalRotationRefresh();
 assert.deepEqual(visible(), ['capsule', 'case_a', 'charm_a']);
 '''
-        subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+    @unittest.skipUnless(shutil.which('node'), 'Node required for native layout fixture')
+    def test_native_category_paging_and_countdown_keep_stock_rows(self):
+        import json
+        script = '''const assert = require('assert');
+const nodes={};
+function panel(id,parent) {
+ const p={id,style:{},visible:true,IsValid:()=>true,FindChildInLayoutFile:id=>nodes[id]||null,
+  FindChildTraverse:id=>null,GetParent:()=>parent,SetPanelEvent:(event,fn)=>p.activate=fn,
+  SetHasClass:()=>{}};
+ if(id)nodes[id]=p;return p;
+}
+const root=panel('root'), rows=panel('rows');
+['1','2','3'].forEach(row=>panel('id-xpshop-row-'+row,rows));
+const m_elContentPanel=root;
+const $={GetContextPanel:()=>root,CreatePanel:(kind,parent,id,props)=>panel(id,parent),
+ Msg:()=>{},Schedule:()=>1,CancelScheduled:()=>{},DispatchEvent:()=>{}};
+const GameInterfaceAPI={GetSettingString:()=> '0'};
+function _DeleteInspectGrid() {} function _CancelTimeoutForRewardItem() {}
+Date.now=()=>0;
+''' + rotate_armory.INSERT.replace('__SETTINGS__',json.dumps({
+            'enabled':True,'seconds':900,'slots':6,'categories':{
+                **{'c'+str(i):'collection' for i in range(3)},'limited':'limited',
+                'charm':'charm','case':'case','capsule':'capsule'},
+            'counts':{'collection':3,'limited':1,'charm':1,'case':1,'capsule':1}})) + '''
+m_localRotationItems=['c0','c1','c2','limited','charm','case','capsule'].map(item_name=>({
+ item_name,ui_order:item_name[0]==='c' && item_name.length===2 || item_name==='limited' ? '2' : '3'}));
+m_localRotationItems.forEach(e=>panel(e.item_name));
+_LocalRotationRefresh();
+assert.equal(nodes['cs2gc-page-number'].text,'1 / 2');
+assert.equal(m_localRotationActive.length,7);
+assert.equal(m_localRotationItems.filter(e=>nodes[e.item_name].visible).length,6);
+nodes['cs2gc-page-next'].activate();
+assert.equal(nodes['cs2gc-page-number'].text,'2 / 2');
+assert.equal(nodes.limited.visible,true);
+nodes['cs2gc-category-capsule'].activate();
+assert.equal(nodes.capsule.visible,true);assert.equal(nodes.charm.visible,false);
+assert.equal(nodes['cs2gc-page-number'].text,'1 / 1');
+assert.equal(nodes['cs2gc-armory-clock'].text,'Armory refresh: 15:00');
+assert.equal(rows.style.marginTop,'44px');
+'''
+        result=subprocess.run(['node','-e',script],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
 
 
 class ConsoleControls(unittest.TestCase):

@@ -1,57 +1,47 @@
-# Codex test build 2026-10-20-15
-
-Built on Claude's `schema-loader` commit `e6f93092f28f0664e479fd5b29080abdc876b44d`.
-Working mixed trade-ups, held skins, native resource mounting and existing inventory are preserved.
-New features below are verified offline; target-client checks remain necessary.
+# Codex test build 2026-10-20-16
 
 ## Install
 
-1. Fully close CS2. Back up your proxy DLL, inventory and gameplay config.
-2. Copy this ZIP into `game/bin/win64`. Keep your original `steam_api64_real.dll`, `items_game.txt`, replay folder, proxy config and inventory.
-3. Merge desired gameplay settings into your existing `cs2_gc_gameplay.cfg`, or use the supplied defaults. The DLL and Python helpers must be updated together.
-4. Launch `cs2_gc_debug.exe`, wait for preparation, then fully close CS2 and launch once more to mount the new native overrides.
+1. Fully close CS2. Back up the proxy DLL, `cs2_gc_inventory.txt` and gameplay config.
+2. Extract **all** ZIP contents into `game/bin/win64`. Preserve your original `steam_api64_real.dll`, schema, replay folder, proxy config and saved inventory. The ZIP supplies `cs2_gc_gameplay.example.cfg`; it does not overwrite your live gameplay config. New settings use their defaults when omitted.
+3. Start the **updated `cs2_gc_debug.exe`**. It prepares the native files while CS2 is closed, then starts Steam/CS2 with the debugging flags. No second launch is needed for files prepared this way.
+4. If preparation fails, read `cs2_gc_prepare.log` beside the launcher. The launcher leaves CS2 closed so its VPKs remain unlocked. Python 3 is required, as before.
 
-Python 3 must already be installed. The helper starts quietly and closes with CS2.
-This is the debug test package; normal release builds disable test console controls.
+Do not use the old launcher or start through Steam first when installing this update: Windows locks already-mounted VPKs. Build 15's logs show exactly this failure, leaving old Armory/scoreboard resources mounted against the new coordinator catalogue. The background helper remains for rewards; it should find the prebuilt native packs unchanged.
+
+## User-confirmed working before this update
+
+Selling pays stars; newer weekly-collection weapon drops arrive; hiding Open to Rent and skipping the opening confirmation work. The rewards/rating tab appears and shows rating changes. Existing mixed trade-ups, held skins, certificates and rotation were also reported working earlier. These paths are retained. The missing end-match cards and poor layout are separate from the successful inventory rewards.
 
 ## Changes to check
 
-- **Expanded Armory:** 3 collection groups, 2 charm groups, 2 sticker groups, 2 cases, 2 capsules, 1 limited offer and 1 random-agent offer by default. All rotate on the shared 15-minute cycle. Counts are configurable.
-- **Agents:** random choice from the 63 eligible official agents in the inspected schema; default cost 50 stars.
-- **Capsules:** 56 curated capsule options, including the historical team capsules used in OfflineCS. These are a curated selection, not a live popularity ranking.
-- **Tiles:** actual limited-item image replaces the stock hardcoded weapon carousel; short preview lists wrap safely; nav images fall back to actual items; reused tile/nav callbacks bind to the current offer.
-- **Main-page timer:** countdown also appears below the credit balance.
-- **Limited certificates:** limited Armory purchases, including Howl, receive the existing Original Owner Certificate attribute. Existing terminal certificate behavior remains.
-- **Weapon reward pool:** match and level weapons default to the five schema `set_timed_drops_*` collections. The inspected schema supplies 40 blue-or-better eligible finishes. Case skins are excluded. Three rewards and the independent 50% case / 50% weapon split remain.
-- **Selling:** inventory context menu offers Sell for Stars through the native deletion request, with confirmation. Item removal and stars persist together; repeat, malformed or overflowing requests do not pay. Equipped sales clear the saved loadout reference. Stored items, storage units with contents, pending terminal offers and temporary items are excluded.
-- **Premier variation:** win/loss gains vary by up to 79 rating around configured values; win gains remain positive and loss gains negative. Bot badges use stable individual offsets up to 1,200 from your displayed rating. Placements still hide the rating until the configured wins.
-- **Native results tab:** REWARDS & RATING joins CS2's end-of-match sequence after the victory card for offline matches. It reads actual cached rating, profile level and new unacknowledged reward items. It does not grant or acknowledge rewards.
+- **Pre-launch preparation:** fixes the logged Windows `Access is denied` errors when replacing `pak01_000.vpk`. Updates the client catalogue, Armory, scoreboard and results before those files can be mounted. This also addresses stale tiles attempting purchases that the newer coordinator correctly rejected.
+- **Sales menu:** removes Community Market sell/listing actions for local inventory items, and puts Sell for Stars at the bottom with a separator. The working native sale request and confirmation are retained.
+- **Armory:** retains the native tile/inspect style, adds visible category filters, a main-page countdown and paging. Native rows hold at most 4 / 3 / 4 offers, closer to the user's reference; a longer row gets another page. Rotation still controls eligible goods and purchases.
+- **Correct artwork/routing:** limited tiles explicitly hide the old hardcoded artwork and display the actual offer. Tile/nav callbacks rebind to their own current entry. Optional preview variations no longer disable the entire rotation patch. Failed coordinator redeems now log the reason code, cost and balance.
+- **Bot ratings:** removes the unverified player-name API call. Each bot gets its own cached rating within the configured spread, keyed by its actual scoreboard slot and identity. The value stays fixed rather than following each later player-rating change. A fresh UI session randomizes the set.
+- **Results layout:** fixes the native `id-eom-layout` 300-pixel height limit that clipped profile level and drop cards. The tab gets full height, a centered results card, smaller headings and opaque background; other tabs retain their stock height.
+- **Drop presentation:** captures new unacknowledged rewards on inventory updates and retains their IDs after acknowledgement, so an inventory popup cannot erase the results tab's detected cards. It never grants or acknowledges items itself.
+- **More time:** results tab displays for 20 seconds; local match restart delay is set to 45 seconds. Both settings are configurable. This needs confirmation in the target server/client.
+- **Music:** parses installed `music_definitions`, writes and saves music-id attribute 166, opens flat keyless music capsule lists, and respects their guaranteed StatTrak metadata. Music StatTrak uses the MVP counter type. Fixed music item definitions with a schema music ID also resolve correctly.
+- **Existing envelopes:** converts owned single-item guaranteed Store offers to their actual sticker/container/music item at startup, preserving item IDs and storage membership. Repeated launches do not add duplicates. New purchases resolve guaranteed contents directly. Ambiguous bundles remain unchanged; missing historical music IDs cannot be reconstructed from an empty generic item.
 
-The results tab needs live verification. It requires an inventory baseline before rewards arrive and cannot reconstruct drops already acknowledged elsewhere. The stock XP progress animation still depends on engine-owned data-ready flags; this build displays the current profile level rather than claiming that animation is fixed.
+## Useful settings
 
-## OfflineCS sale values
+`end_match_duration=20`, `match_end_delay=45`, `premier_bot_spread=1200`.
+Armory group counts and OfflineCS sale values remain in the gameplay config. Prices default to 1/2/5/10/25/50 by rarity, 150 for knives/gloves, 50% rarity value for stickers/charms, 10 for music, 30% container value and 50% agent price. StatTrak adds no sale premium. Cases/capsules use their CS2 local Armory costs.
 
-| Item | Stars |
-| --- | ---: |
-| Consumer / Industrial / Mil-Spec | 1 / 2 / 5 |
-| Restricted / Classified / Covert | 10 / 25 / 50 |
-| Knife or gloves | 150 |
-| Sticker, patch, graffiti or charm | 50% of rarity value, minimum 1 |
-| Music kit | 10 |
-| Eligible container | 30% of its local Armory price, minimum 1 |
-| Agent | 50% of configured agent price, normally 25 |
+## Test checklist
 
-No StatTrak premium or attached-sticker/charm refund, matching OfflineCS. Contraband has no default rarity sale value. Container prices use this CS2 Armory's 2-star case / 1-star capsule costs to avoid a buy/sell profit loop. All sale prices and percentages are configurable.
+1. Confirm `cs2_gc_prepare.log` ends with preparation complete and `cs2_gc_log.txt` identifies build `codex-20261020-16`.
+2. Check multiple Armory offers, all category buttons, page arrows, actual limited-item artwork and countdown. Buy a case, sticker, charm, capsule and agent; confirm each action matches its tile and spends the displayed stars.
+3. Right-click a spare item: Sell for Stars should be last, Community Market sell absent. Cancel once, then sell and confirm the saved balance.
+4. Check bots have varied ratings; win/loss changes your rating without moving their already-assigned values.
+5. Finish a local competitive match. Check the centered results card, profile level, drop images/names, and time to read them. The stock XP animation remains unresolved; this is the local results tab.
+6. Open a normal and StatTrak music capsule, equip each kit and check playback. Look for old guaranteed offer envelopes converting to their proper contents.
 
-## Suggested live test
+## Validation boundary
 
-1. Check `cs2_gc_log.txt` says `test build: codex-20261020-15` and the gameplay config loaded.
-2. After the restart, check the Armory's extra groups, balance timer, limited artwork and random-agent preview. Redeem one agent and one limited item; verify stars and certificate.
-3. Right-click a spare blue skin, cancel its sale, then confirm its sale. Expect +5 stars. Restart and confirm the skin is gone and the balance remains.
-4. Complete a competitive bot match. Look for REWARDS & RATING after the victory card, current profile level, actual drops, and rating or placement count. Check bot scoreboard ratings differ and remain stable while the scoreboard refreshes.
-5. Confirm weapon rewards belong to the weekly collections, and cases still drop. Match and level rewards can both occur at one completion.
-6. Send both logs if any native feature is skipped or the tab does not appear. The console echo/log transport for give-stars and forced rotation is still unresolved in the last live report; do not assume those commands work from offline tests.
+15 automated suites pass, including cached bot ratings, category paging/countdown, sale confirmation, acknowledged drop-card retention, music IDs/StatTrak, old-offer migration and save/reload. The preparation pipeline was exercised twice against inspected native scripts packed as version-2 resources: all updated overrides were built before launch, read back from their VPKs, syntax-checked, and remained byte-identical on the second pass. Windows x64 debug and release cross-builds pass. New target-client behavior still requires the checklist above.
 
-## Validation
-
-15 automated suites pass, including native sale confirmation/cancellation, repeat-sale protection, saved balance/loadout handling, weekly pool exclusion and real-cache results rendering. All 120 generated real-schema Armory goods redeem in a separate integration check; all 5 limited offers carry certificates. Patched actual xpshop, endofmatch and inventory-context scripts pass Node syntax checks. Windows debug and release builds are cross-compiled; live CS2 behavior is not verified here.
+Console echo-to-log transport for the testing commands remains unresolved in the last live logs. No change here claims to fix it. Terminal monetary-cap semantics and stock XP animation are also outside this update.

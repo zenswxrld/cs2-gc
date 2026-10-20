@@ -55,6 +55,10 @@ InventoryItem MakeLootItem(const LootItem &drop, std::uint32_t rarity, const Ran
     case LootKind::Keychain:
         item.keychain = drop.keychainIndex;
         break;
+    case LootKind::MusicKit:
+        item.musicKit = drop.musicKitIndex;
+        item.statTrak = statTrakPerMille == 1000;
+        break;
     case LootKind::Plain:
         break;
     }
@@ -172,7 +176,11 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
         }
     }
     else
-        rolled = RollLootList(schema, crate->lootListName, random, odds);
+    {
+        auto openingOdds = odds;
+        if (crateItem->statTrak || schema.ProducesStatTrak(crate->defIndex)) openingOdds.statTrakPerMille = 1000;
+        rolled = RollLootList(schema, crate->lootListName, random, openingOdds);
+    }
     if (!rolled)
     {
         result.error = OpenError::EmptyLootList;

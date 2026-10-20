@@ -34,15 +34,18 @@ const FriendsListAPI = {GetFriendCompetitiveRank:()=>rank, GetFriendCompetitiveW
 const InventoryAPI = {GetUnacknowledgeItemsCount:()=>ids.length, GetUnacknowledgeItemByIndex:i=>ids[i],
  GetItemPickupMethod:id=>id === '1000000000003' ? 'xpshopredeem' : 'drop',
  GetItemName:id=>'Reward '+id, GetItemRarityColor:()=> '#00aaff'};
-const GameStateAPI = {IsDemoOrHltv:()=>false,IsQueuedMatchmaking:()=>false};
+const GameStateAPI = {GetMapBSPName:()=> 'de_test',IsDemoOrHltv:()=>false,IsQueuedMatchmaking:()=>false};
 const EndOfMatch = {SwitchToPanel:id=>assert.equal(id,'eom-local-results'),StartDisplayTimer:()=>{},ShowNextPanel:()=>next++};
-const $ = {Schedule:(delay,fn)=>{jobs.push({delay,fn});return jobs.length;},
+const GameInterfaceAPI = {ConsoleCommand:()=>{}};
+const $ = {RegisterForUnhandledEvent:()=>{}, Schedule:(delay,fn)=>{jobs.push({delay,fn});return jobs.length;},
  CreatePanel:(kind,parent,id,props)=>{const panel=make(id);panel.kind=kind;panel.props=props;parent.children.push(panel);return panel;}};
-''' + native_endmatch.SCRIPT.replace('__PLACEMENTS__', '10') + '''
+''' + native_endmatch.SCRIPT.replace('__PLACEMENTS__', '10').replace('__DURATION__','20').replace('__DELAY__','45') + '''
 _LocalResultsInitialize();
 jobs.find(job=>job.delay===0).fn();
 assert.equal(_m_data._m_arrPanelObjects[1].name,'eom-local-results');
-ids.push('1000000000002','1000000000003'); rank=4518; level=2;
+ids.push('1000000000002','1000000000003'); _LocalCollectDrops();
+// An inventory popup acknowledges rewards before the end screen starts.
+ids = ['1000000000001']; rank=4518; level=2;
 _m_data._m_arrPanelObjects[1].Start();
 assert.equal(nodes['local-results-level'].text, 'Profile level 2');
 assert.equal(nodes['local-results-rating'].text, 'CS Rating  4518   (+311)');
@@ -58,17 +61,19 @@ assert.equal(nodes['local-results-items'].children.length,1);
     def test_sale_requires_native_confirmation_and_local_item(self):
         source = '''    function _PopulateContextMenu(id, populateFilterText) {
         let validEntries = ItemContextEntries.FilterEntries(id, populateFilterText);
+        marketEntries = validEntries.map(e=>e.name);
+        if (!validEntries.length) {}
 }'''
         data = {'enabled':True,'flat':{'60':1},'rarity':[0,1,2,5,10,25,50],'gold':150,'stickerPercent':50}
-        script = '''const assert = require('assert'); let confirm, deleted = 0, button;
-const elParent = {}, ItemContextEntries = {FilterEntries:()=>[]};
+        script = '''const assert = require('assert'); let confirm, deleted = 0, button, marketEntries;
+const elParent = {}, ItemContextEntries = {FilterEntries:()=>[{name:'sell'},{name:'inspect'}]};
 const InventoryAPI = {GetItemDefinitionName:()=> 'case', GetItemDefinitionIndexFromDefinitionName:()=>60,
  GetItemName:()=> 'Case', DeleteItem:()=>deleted++};
 const UiToolkitAPI = {ShowGenericPopupYesNo:(title,text,icon,yes,no)=>{confirm={yes,no,text};}};
-const $ = {CreatePanel:(type,parent,id,props)=>{const p={SetPanelEvent:(event,fn)=>p.activate=fn}; if(type==='Button')button=p; return p;},DispatchEvent:()=>{}};
+const $ = {CreatePanel:(type,parent,id,props)=>{const p={AddClass:()=>{},SetPanelEvent:(event,fn)=>p.activate=fn}; if(type==='Button')button=p; return p;},DispatchEvent:()=>{}};
 ''' + native_item_sales.patch(source, data) + '''
 assert.equal(_LocalSalePrice('42'),0);
-_PopulateContextMenu('1000000000001',''); button.activate();
+_PopulateContextMenu('1000000000001',''); assert.deepEqual(marketEntries,['inspect']); button.activate();
 assert.equal(deleted,0); confirm.no(); assert.equal(deleted,0);
 assert.ok(confirm.text.includes('1 stars')); confirm.yes(); assert.equal(deleted,1);
 '''

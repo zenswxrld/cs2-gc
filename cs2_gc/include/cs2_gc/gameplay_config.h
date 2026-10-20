@@ -32,6 +32,8 @@ struct GameplayConfig
     std::uint32_t premier_rating_variation{79};
     std::uint32_t premier_bot_spread{1200};
     std::uint32_t end_match_screens{1};
+    std::uint32_t end_match_duration{20};
+    std::uint32_t match_end_delay{45};
     std::uint32_t rewards_auto_start{1};
     std::uint32_t xp_enabled{1}, stars_enabled{1};
     std::uint32_t armory_xp_per_star{400};

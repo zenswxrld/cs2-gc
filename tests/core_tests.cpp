@@ -3729,10 +3729,67 @@ void WeeklyPoolAndItemSales()
     Check(live->Items().Find(overflowItem.id) && saves == 1, "overflow sale retains item");
 }
 
+void MusicKitsAndCouponMigration()
+{
+    auto schema = Schema::Load(R"("items_game" {
+      "rarities" { "rare" { "value" "3" } }
+      "prefabs" { "weapon_case_base" {} "musickit_prefab" { "item_rarity" "rare" } }
+      "items" { "1314" { "name" "musickit" "prefab" "musickit_prefab" }
+        "88" { "name" "musickit_fixed" "prefab" "musickit_prefab" "attributes" { "music id" "42" } }
+        "1209" { "name" "sticker" "item_rarity" "rare" }
+        "20037" { "name" "coupon - sticker" "loot_list_name" "coupon loot list sticker" }
+        "20038" { "name" "coupon - music" "loot_list_name" "coupon loot list music" "will_produce_stattrak" "1" }
+        "60" { "name" "crate_musickit_test_capsule" "prefab" "weapon_case_base"
+          "attributes" { "set supply crate series" { "value" "1" } } }
+        "61" { "name" "crate_musickit_test_stattrak_capsule" "prefab" "weapon_case_base"
+          "attributes" { "set supply crate series" { "value" "2" } } } }
+      "music_definitions" { "42" { "name" "test_music" } }
+      "sticker_kits" { "260" { "name" "test_sticker" } }
+      "client_loot_lists" {
+        "music_flat" { "[test_music]musickit" "1" }
+        "music_stattrak" { "will_produce_stattrak" "1" "music_flat" "1" }
+        "coupon loot list music" { "public_list_contents" "1" "[test_music]musickit" "1" }
+        "coupon loot list sticker" { "public_list_contents" "1" "[test_sticker]sticker" "1" } }
+      "revolving_loot_lists" { "1" "music_flat" "2" "music_stattrak" }
+    })");
+    Check(schema.has_value(), "music schema loads");
+    Inventory saved;
+    const auto normal = saved.Add({0,60}), tracked = saved.Add({0,61});
+    const auto opened = OpenCase(saved,*schema,normal,0,[]{return 0ull;});
+    Check(opened.error == OpenError::None && opened.item.musicKit == 42 && !opened.item.statTrak,
+          "keyless flat music list grants a playable kit with its music id");
+    const auto stat = OpenCase(saved,*schema,tracked,0,[]{return 0ull;});
+    Check(stat.error == OpenError::None && stat.item.musicKit == 42 && stat.item.statTrak,
+          "StatTrak music capsules guarantee StatTrak rather than a weapon roll");
+    saved.Add({0,20037}); saved.Add({0,20038});
+    const auto fixedKit = saved.Add({0,88});
+    LiveInventory live(saved);
+    Check(live.RepairStoreCoupons(*schema) == 3 && live.RepairStoreCoupons(*schema) == 0,
+          "existing guaranteed envelopes convert once without granting duplicates");
+    bool sticker = false, music = false;
+    for (const auto &item : live.Items().Items()) {
+        sticker |= item.stickerKit == 260;
+        music |= item.musicKit == 42 && item.statTrak;
+    }
+    Check(sticker && music && live.Items().Find(fixedKit)->musicKit == 42, "converted offers include stickers, StatTrak music and fixed music definitions");
+    const auto restored = Inventory::FromText(live.Items().ToText());
+    Check(restored && restored->Find(stat.item.id)->musicKit == 42 && restored->Find(stat.item.id)->statTrak,
+          "music id and StatTrak survive a save and restart");
+    // Build owns the payload for the duration of parsing.
+    const auto encoded = BuildEconItem(stat.item,555,CustomItemIdBase+stat.item.id,1000);
+    PbReader reader(encoded); PbField field; bool musicAttribute = false;
+    while (reader.Next(field)) if (field.number == 12 && field.wire == 2) {
+        PbReader inner(field.bytes); PbField attribute;
+        while(inner.Next(attribute)) if(attribute.number == 1 && attribute.value == 166) musicAttribute = true;
+    }
+    Check(musicAttribute,"native econ item carries the schema music id attribute");
+}
+
 int main()
 {
     try
     {
+        MusicKitsAndCouponMigration(); std::cout << "PASS music kits and coupon migration\n";
         WeeklyPoolAndItemSales(); std::cout << "PASS weekly pool and native item sales\n";
         NativeArmorySlotsAndConsoleStars(); std::cout << "PASS native Armory slots and console stars\n";
         NativePremier(); std::cout << "PASS native Premier placement/rating cache\n";

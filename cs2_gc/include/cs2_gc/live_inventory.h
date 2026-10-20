@@ -176,6 +176,7 @@ public:
 
     // Strips stickers and charms from Sticker Slabs. An earlier build wrote a sticker onto a slab item
     // (as if it were a weapon), saved it, and the game crashed on it. Returns how many items were repaired.
+    std::size_t RepairStoreCoupons(const Schema &schema);
     std::size_t RepairSlabs(const Schema &schema);
 
     // Earlier Armory rolls incorrectly assigned hidden StatTrak to collection-only finishes.

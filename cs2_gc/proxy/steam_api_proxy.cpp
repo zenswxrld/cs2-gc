@@ -906,6 +906,11 @@ State &Init()
                     }
                     // Store purchases are free and local: any item the schema defines can be bought, so the
                     // Store's own price sheet decides what is offered. The game checks the Armory pass etc. itself.
+                    if (const std::size_t repaired = live->RepairStoreCoupons(*schema))
+                    {
+                        s.log->Write("inventory: replaced " + std::to_string(repaired) + " guaranteed Store envelopes with their items");
+                        if (inventoryFileUsable && !live->Save(inventoryPath)) s.log->Write("could not save cs2_gc_inventory.txt");
+                    }
                     if (const std::size_t repaired = live->RepairSlabs(*schema))
                     {
                         s.log->Write("inventory: removed stickers or charms from " + std::to_string(repaired) +
@@ -968,7 +973,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: codex-20261020-15");
+        s.log->Write("test build: codex-20261020-16");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");

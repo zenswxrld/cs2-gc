@@ -102,7 +102,7 @@ CrateKind Classify(const KvNode &item, std::uint32_t keyDefIndex, const ItemMap 
 {
     if (ChainContains(item, "volatile_pricing", prefabs) && ChainContains(item, "weapon_case_selfopening_collection", prefabs))
         return CrateKind::Terminal;
-    if (ChainContains(item, "_capsule", prefabs))
+    if (item.Value("name").starts_with("crate_musickit_") || ChainContains(item, "_capsule", prefabs))
         return CrateKind::Capsule;
     if (ChainContains(item, "graffiti_box", prefabs))
         return CrateKind::GraffitiBox;
@@ -188,6 +188,12 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
                 std::uint32_t index = 0;
                 if (ParseU32(entry.key, index) && !entry.Value("name").empty())
                     schema.m_stickerKits.try_emplace(std::string{entry.Value("name")}, index);
+            }
+            else if (section.key == "music_definitions" && entry.block)
+            {
+                std::uint32_t index = 0;
+                if (ParseU32(entry.key, index) && !entry.Value("name").empty())
+                    schema.m_musicKits.try_emplace(std::string{entry.Value("name")}, index);
             }
             else if (section.key == "keychain_definitions" && entry.block)
             {
@@ -438,6 +444,10 @@ std::vector<LootTier> Schema::LootTiers(std::string_view lootListName) const
                 for (const KvNode &child : list.children)
                     if (!child.block)
                         tier.items.push_back(child.key);
+                if (tier.rarity == 0)
+                    for (const auto &entry : tier.items)
+                        if (const auto item = schema.ResolveLootItem(entry); item && item->kind == LootKind::MusicKit)
+                        { tier.rarity = schema.ItemRarity(item->weaponDefIndex); break; }
                 tiers.push_back(std::move(tier));
             }
             else
@@ -530,6 +540,11 @@ std::optional<LootItem> Schema::ResolveLootItem(std::string_view entry) const
         LootItem item;
         item.kind = LootKind::Plain;
         item.weaponDefIndex = plain->second;
+        const auto definition = m_itemsByIndex.find(plain->second);
+        const auto attributes = definition != m_itemsByIndex.end() ? Resolve(*definition->second, "attributes", m_prefabs) : nullptr;
+        const auto music = attributes ? attributes->Find("music id") : nullptr;
+        if (music && ParseU32(music->block ? music->Value("value") : std::string_view{music->value}, item.musicKitIndex) && item.musicKitIndex)
+            item.kind = LootKind::MusicKit;
         return item;
     }
     const std::size_t close = entry.find(']');
@@ -545,6 +560,14 @@ std::optional<LootItem> Schema::ResolveLootItem(std::string_view entry) const
         return std::nullopt;
     item.weaponDefIndex = weapon->second;
 
+    if (item.weaponClass == "musickit")
+    {
+        const auto kit = m_musicKits.find(item.paintKitName);
+        if (kit == m_musicKits.end()) return std::nullopt;
+        item.kind = LootKind::MusicKit;
+        item.musicKitIndex = kit->second;
+        return item;
+    }
     if (item.weaponClass == "sticker")
     {
         const auto kit = m_stickerKits.find(item.paintKitName);
@@ -630,6 +653,16 @@ std::vector<SkinRef> Schema::MatchRewardSkins(bool weeklyOnly) const
 }
 
 namespace cs2_gc {
+bool Schema::ProducesStatTrak(std::uint32_t definition) const
+{
+    const auto item = m_itemsByIndex.find(definition);
+    if (item == m_itemsByIndex.end()) return false;
+    if (ResolveValue(*item->second, "will_produce_stattrak", m_prefabs) == "1" ||
+        ResolveValue(*item->second, "item_quality", m_prefabs) == "strange") return true;
+    const auto crate = FindCrate(definition);
+    const auto list = crate ? m_lootLists.find(crate->lootListName) : m_lootLists.end();
+    return list != m_lootLists.end() && list->second->Value("will_produce_stattrak") == "1";
+}
 std::string Schema::ItemName(std::uint32_t definition) const
 {
     const auto item = m_itemsByIndex.find(definition);

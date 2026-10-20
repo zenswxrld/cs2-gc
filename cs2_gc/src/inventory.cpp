@@ -173,6 +173,7 @@ std::string Inventory::ToText() const
             << "\t\t\t\"stattrak\"\t\"" << (item.statTrak ? 1 : 0) << "\"\n"
             << "\t\t\t\"rarity\"\t\"" << item.rarity << "\"\n"
             << "\t\t\t\"sticker_kit\"\t\"" << item.stickerKit << "\"\n"
+            << "\t\t\t\"music_kit\"\t\"" << item.musicKit << "\"\n"
             << "\t\t\t\"keychain\"\t\"" << item.keychain << "\"\n";
         if (!item.customName.empty())
             out << "\t\t\t\"custom_name\"\t\"" << item.customName << "\"\n";
@@ -320,6 +321,7 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
         // Optional so files written before the field existed still load.
         if (entry.Find("rarity") && (!ParseNumber(entry.Value("rarity"), item.rarity) || item.rarity > 99))
             return std::nullopt;
+        if (entry.Find("music_kit") && !ParseNumber(entry.Value("music_kit"), item.musicKit)) return std::nullopt;
         if ((entry.Find("sticker_kit") && !ParseNumber(entry.Value("sticker_kit"), item.stickerKit)) ||
             (entry.Find("keychain") && !ParseNumber(entry.Value("keychain"), item.keychain)))
             return std::nullopt;

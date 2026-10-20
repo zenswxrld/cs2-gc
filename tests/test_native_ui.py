@@ -137,7 +137,8 @@ const rent = {visible:true}; const bar = {FindChildInLayoutFile:() => rent};
 buttons(bar, '1000000000001'); assert.equal(rent.visible, false);
 buttons(bar, '50'); assert.equal(rent.visible, true);
 '''
-        subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
         self.assertEqual(skip_container_confirm.patch(source, False, False), source)
 
     def test_vpk_embedded_chunk_and_preload_crc_and_no_archive_mutation(self):
@@ -189,14 +190,14 @@ buttons(bar, '50'); assert.equal(rent.visible, true);
 
     @unittest.skipUnless(shutil.which('node'), 'Node is optional; required for executable Panorama UI fixture')
     def test_unranked_ranked_wins_changes_bot_badges_and_fallback_in_javascript(self):
-        script = scoreboard.patch(SOURCE, gameplay_config.DEFAULTS) + '''
+        script = 'Math.random = () => .314159;\n' + scoreboard.patch(SOURCE, gameplay_config.DEFAULTS) + '''
 const assert = require('assert');
 let score = 1000, wins = 0, mode = 'competitive', queued = false, calls = [];
 const badge = { visible: false, IsValid: () => true };
 const $ = { Msg: () => {} };
 const MyPersonaAPI = { GetXuid: () => 'me' };
-const MockAdapter = { GetGameModeInternalName: () => mode, IsFakePlayer: id => id === 'bot' };
-const GameStateAPI = { GetPlayerName: id => 'Bot ' + id, IsQueuedMatchmakingMode_Team: () => queued, IsDemoOrHltv: () => false };
+const MockAdapter = { GetGameModeInternalName: () => mode, IsFakePlayer: id => id.startsWith('bot') };
+const GameStateAPI = { IsQueuedMatchmakingMode_Team: () => queued, IsDemoOrHltv: () => false };
 const FriendsListAPI = { GetFriendCompetitiveRank: () => score, GetFriendCompetitiveWins: () => wins };
 const RatingEmblem = { SetXuid: options => calls.push(options) };
 const player = id => ({m_xuid:id, m_elPlayer:{m_elSkillGroup:badge}, m_oStats:{}, GetGameStat:() => -1});
@@ -206,12 +207,17 @@ wins = 1; draw(me, 'skillgroup'); assert.equal(calls.at(-1).leaderboard_details.
 assert.equal(calls.length, 2); // Wins changed even while still unranked: redraw.
 score = 4000; wins = 10; draw(me, 'skillgroup');
 assert.equal(calls.at(-1).leaderboard_details.score, 4000);
-draw(player('bot'), 'skillgroup'); assert.equal(calls.at(-1).rating_type, 'Premier');
+const bot = player('bot'); draw(bot, 'skillgroup'); assert.equal(calls.at(-1).rating_type, 'Premier');
+const assigned = calls.at(-1).leaderboard_details.score;
+assert.notEqual(assigned,4000); assert.ok(Math.abs(assigned-4000)<=1200);
+score=4300; draw(bot,'skillgroup'); assert.equal(calls.at(-1).leaderboard_details.score,assigned);
+draw(player('bot2'),'skillgroup'); assert.notEqual(calls.at(-1).leaderboard_details.score,assigned);
 let other = player('other'); draw(other, 'skillgroup'); assert.equal(other.fallback, true);
 queued = true; me = player('me'); draw(me, 'skillgroup'); assert.equal(me.fallback, true);
 console.log('native badge fixture passed');
 '''
-        subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
 
     def test_native_terminal_store_adds_missing_schema_entries_preserves_message_and_is_idempotent(self):
         source = '''"items_game" { "items" {
@@ -255,7 +261,8 @@ limitJson = 'not json'; m_numOfferCounter = 3; assert.equal(_CurrentOfferNumber(
 limitJson = '{"limit":0}'; m_numOfferCounter = 2; assert.equal(_CurrentOfferNumber(), 2);
 '''
         script = 'var m_numOfferCounter = 0;\n' + script
-        subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
 
 
 class WritePath(unittest.TestCase):

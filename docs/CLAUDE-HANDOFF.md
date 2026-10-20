@@ -1,3 +1,17 @@
+# Current handoff: Codex build 16 (20 October 2026)
+
+Follow-up on PR #9, branch `codex/armory-agents-weekly-drops-and-match-screens`. Full checklist: [TEST-BUILD.md](TEST-BUILD.md).
+
+**Live finding:** user's build-15 helper could not replace mounted `cs2_gc_native`, `cs2_gc_armory` and `cs2_gc_scoreboard` VPKs (Windows error 5). GC loaded 120 offers while the client retained old six-slot UI/rating behavior. `cs2_gc_debug.exe` now runs new `prepare_native.py` to completion **before** starting Steam/CS2, aborting with a log on failure. Keep this order; preparing only after DLL/game load cannot update locked packs.
+
+**Confirmed by user:** native selling, weekly collection drops, Rent-button removal and one-click opening work. Results tab/rating delta appears but was clipped. Existing working mixed inputs, held skins, certificates and rotation remain intact.
+
+**Follow-up changes:** Community Market actions replaced by bottom Sell for Stars; native Armory category filters/countdown/4-3-4 row paging and explicit limited artwork/current-entry routing; stable individual bot ratings using real scoreboard slots rather than an unverified name API; full-height centered results card (stock parent is 300px); detected reward IDs retained through acknowledgement; configurable 20s tab/45s local match delay. Music definitions/id attribute/persistence/guaranteed ST capsule lists now supported. Single guaranteed old Store envelopes migrate in place without new IDs or duplicate items. Unknown/bundled offers and missing historical generic music IDs are left alone.
+
+Validation: 15 suites pass; Windows debug/release cross-builds; complete pre-launch override pipeline using inspected native scripts and version-2 resources, readback/syntax check from built VPKs, identical second-pass VPK bytes. New live validation remains necessary. Stock XP animation, console log transport and terminal price-cap semantics remain open.
+
+---
+
 # Current handoff: Codex build 15 (20 October 2026)
 
 Branch: `codex/armory-agents-weekly-drops-and-match-screens`, based on your `schema-loader` at `e6f93092f28f0664e479fd5b29080abdc876b44d`. See [TEST-BUILD.md](TEST-BUILD.md) for exact behavior and live checklist.

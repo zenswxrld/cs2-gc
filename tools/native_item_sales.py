@@ -79,6 +79,7 @@ def patch(source, data):
         const price = _LocalSalePrice(id);
         if (price > 0) {
             const button = $.CreatePanel('Button', elParent, 'cs2gc-sell-item');
+            button.AddClass('TopSeparator');
             $.CreatePanel('Label', button, '', {text: 'Sell for ' + price + ' stars'});
             button.SetPanelEvent('onactivate', () => {
                 $.DispatchEvent('ContextMenuEvent', '');
@@ -91,7 +92,14 @@ def patch(source, data):
     # Read the definition via the same native name-to-index path already used by Armory.
     code = PRICE.replace('__SETTINGS__', json.dumps(data)).replace(
         'InventoryAPI.GetItemDefinitionIndex(id)', 'InventoryAPI.GetItemDefinitionIndexFromDefinitionName(InventoryAPI.GetItemDefinitionName(id))')
-    return source.replace('    function _PopulateContextMenu(id, populateFilterText) {', code + '\n    function _PopulateContextMenu(id, populateFilterText) {', 1).replace(anchor, anchor + addition, 1)
+    bottom = '        if (!validEntries.length) {'
+    if source.count(bottom) != 1: raise ValueError('Changed inventory context-menu footer')
+    source = source.replace('    function _PopulateContextMenu(id, populateFilterText) {', code + '\n    function _PopulateContextMenu(id, populateFilterText) {', 1)
+    source = source.replace(anchor, anchor + '''
+        const localItem = Number(id) > 1000000000000 && Number(id) < 2000000000000;
+        if (localItem) validEntries = validEntries.filter(entry => entry.name !== 'sell' && entry.name !== 'marketlisting');
+''', 1)
+    return source.replace(bottom, addition + '        if (!validEntries.length && price <= 0) {', 1)
 
 
 def prepare(directory, config):

@@ -32,10 +32,12 @@ INJECT = '''
                             wins = Number.isFinite(wins) && wins >= 0 ? wins : 0;
                             if (wins < __PLACEMENTS__) score = 0;
                             if (isBot && score > 0 && __SPREAD__ > 0) {
-                                const identity = String(oPlayer.m_xuid) + ':' + GameStateAPI.GetPlayerName(oPlayer.m_xuid);
+                                const identity = String(oPlayer.m_xuid) + ':' + oPlayer.GetGameStat('slot');
                                 let hash = 2166136261;
                                 for (let i = 0; i < identity.length; ++i) hash = Math.imul(hash ^ identity.charCodeAt(i), 16777619) >>> 0;
-                                score = Math.max(1, Math.min(99999, score + hash % (__SPREAD__ * 2 + 1) - __SPREAD__));
+                                if (!m_localBotRatings[identity])
+                                    m_localBotRatings[identity] = Math.max(1, Math.min(__MAX__, score + ((hash ^ m_localBotSeed) >>> 0) % (__SPREAD__ * 2 + 1) - __SPREAD__));
+                                score = m_localBotRatings[identity];
                             }
                             const badgeKey = 'localPremier:' + score + ':' + wins;
                             nativeBadge.visible = true;
@@ -70,9 +72,11 @@ def patch(source, config):
     anchor = re.compile(r"(case\s+'skillgroup'\s*:\s*\{)")
     if len(anchor.findall(source)) != 1: raise ValueError('Ambiguous scoreboard skillgroup branch')
     if len(ROW_ANCHOR.findall(source)) != 1: raise ValueError('Ambiguous scoreboard row selector')
+    source = source.replace('function _GetPlayerRowForGameMode()', 'const m_localBotRatings = {};\n    const m_localBotSeed = Math.floor(Math.random() * 4294967296) >>> 0;\n    function _GetPlayerRowForGameMode()', 1)
     source = ROW_ANCHOR.sub(lambda match: match.group(0) + ROW_INJECT, source, count=1)
     insert = INJECT.replace('__BOTS__', 'true' if config['premier_bot_badges'] else 'false')
     insert = insert.replace('__PLACEMENTS__', str(config['premier_placement_wins']))
+    insert = insert.replace('__MAX__', str(config['premier_max_rating']))
     insert = insert.replace('__SPREAD__', str(config.get('premier_bot_spread', 0)))
     return anchor.sub(lambda match: match.group(0) + insert, source, count=1)
 

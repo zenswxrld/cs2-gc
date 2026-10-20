@@ -46,6 +46,25 @@ std::optional<std::uint32_t> LiveInventory::DefinitionOf(std::uint64_t itemId) c
     return item ? std::optional<std::uint32_t>{item->defIndex} : std::nullopt;
 }
 
+std::size_t LiveInventory::RepairStoreCoupons(const Schema &schema)
+{
+    std::size_t count = 0;
+    for (const auto &saved : m_inventory.Items()) {
+        const auto entries = schema.CouponEntries(saved.defIndex);
+        if (entries.size() > 1 || saved.musicKit) continue;
+        const auto loot = schema.ResolveLootItem(entries.empty() ? schema.ItemName(saved.defIndex) : entries.front());
+        if (entries.empty() && (!loot || loot->kind != LootKind::MusicKit)) continue;
+        if (!loot || loot->kind == LootKind::Skin) continue;
+        auto converted = MakeLootItem(*loot, schema.ItemRarity(loot->weaponDefIndex), [] {return 0ull;},
+            schema.ProducesStatTrak(saved.defIndex) ? 1000 : 0);
+        converted.id = saved.id; converted.storedIn = saved.storedIn;
+        converted.statTrak = converted.statTrak || saved.statTrak;
+        *m_inventory.Find(saved.id) = converted;
+        ++count;
+    }
+    return count;
+}
+
 std::size_t LiveInventory::RepairSlabs(const Schema &schema)
 {
     std::size_t repaired = 0;

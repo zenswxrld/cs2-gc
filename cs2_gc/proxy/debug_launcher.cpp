@@ -63,6 +63,34 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
            << "echo Local GC debug commands loaded\n";
     config.close();
     if (!boot || !config) return Fail(L"Could not prepare debug console controls. Check folder write permissions.");
+    // A running game locks mounted pak01 files. Prepare all native resources before Steam starts it.
+    const auto prepare = directory / L"prepare_native.py";
+    if (!std::filesystem::is_regular_file(prepare))
+        return Fail(L"Missing prepare_native.py. Extract the complete test ZIP beside this launcher.");
+    bool prepared = false;
+    for (const auto candidate : {L"py.exe", L"python.exe"}) {
+        wchar_t python[32768];
+        const auto found = SearchPathW(nullptr, candidate, nullptr, 32768, python, nullptr);
+        if (!found || found >= 32768) continue;
+        std::wstring prepCommand = L"\"" + std::wstring(python) + L"\"";
+        if (_wcsicmp(candidate, L"py.exe") == 0) prepCommand += L" -3";
+        prepCommand += L" \"" + prepare.wstring() + L"\" --proxy-dir \"" + directory.wstring() + L"\"";
+        STARTUPINFOW prepStartup{}; prepStartup.cb = sizeof(prepStartup);
+        PROCESS_INFORMATION prepChild{};
+        if (!CreateProcessW(python, prepCommand.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                            nullptr, directory.c_str(), &prepStartup, &prepChild)) continue;
+        CloseHandle(prepChild.hThread);
+        // Preparation is finite; wait in short intervals while keeping the launcher responsive.
+        DWORD waited = WAIT_TIMEOUT;
+        while ((waited = MsgWaitForMultipleObjects(1, &prepChild.hProcess, FALSE, 1000, QS_ALLINPUT)) == WAIT_TIMEOUT || waited == WAIT_OBJECT_0 + 1) {
+            MSG message;
+            while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {TranslateMessage(&message); DispatchMessageW(&message);}
+        }
+        DWORD code = 1; GetExitCodeProcess(prepChild.hProcess, &code); CloseHandle(prepChild.hProcess);
+        if (code != 0) return Fail(L"Native preparation failed. See cs2_gc_prepare.log beside the launcher. CS2 was not started, so its VPKs remain unlocked.");
+        prepared = true; break;
+    }
+    if (!prepared) return Fail(L"Python 3 was not found. Install it with the Python launcher or PATH option, then try again.");
     std::wstring command = L"\"" + std::wstring(steam) + L"\" -applaunch 730 -insecure -condebug +exec cs2_gc_console";
     STARTUPINFOW startup{}; startup.cb = sizeof(startup);
     PROCESS_INFORMATION child{};

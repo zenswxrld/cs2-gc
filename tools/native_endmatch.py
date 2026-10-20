@@ -4,7 +4,6 @@ CS2's stock rank/XP panels wait for engine-owned data-ready flags. This adds a
 local results panel to the existing EndOfMatch sequence without fake GC message
 IDs or guessed Panorama interfaces. It never grants or acknowledges an item.
 """
-import json
 from native_resources import install_override
 
 SCRIPT = '''
@@ -15,6 +14,8 @@ SCRIPT = '''
     let m_localResultsOpen = false;
     let m_localResultsDrawn = {};
     let m_localResultsTick = null;
+    let m_localResultsDrops = [];
+    let m_localDelayMap = null;
     function _LocalUnacknowledged() {
         const ids = [];
         const count = InventoryAPI.GetUnacknowledgeItemsCount();
@@ -25,11 +26,28 @@ SCRIPT = '''
         }
         return ids;
     }
+    function _LocalCollectDrops() {
+        if (m_localResultsBaseline === null) return;
+        _LocalUnacknowledged().forEach(id => {
+            if (m_localResultsBaseline.indexOf(id) !== -1 || m_localResultsDrops.indexOf(id) !== -1) return;
+            const pickup = InventoryAPI.GetItemPickupMethod(id) || '';
+            if (['purchased','purchasedvolatile','crafted','found_in_crate','xpshopredeem'].indexOf(pickup) === -1)
+                m_localResultsDrops.push(id);
+        });
+    }
     function _LocalResultsCapture() {
         if (!_m_cP || !_m_cP.IsValid()) return;
         if (!m_localResultsOpen && m_localResultsBaseline === null && MyPersonaAPI.IsInventoryValid()) {
             m_localResultsBaseline = _LocalUnacknowledged();
             m_localResultsOldRating = Number(FriendsListAPI.GetFriendCompetitiveRank(MyPersonaAPI.GetXuid(), 'Premier')) || 0;
+        }
+        _LocalCollectDrops();
+        if (!GameStateAPI.IsDemoOrHltv() && !GameStateAPI.IsQueuedMatchmaking()) {
+            const map = GameStateAPI.GetMapBSPName();
+            if (map && map !== m_localDelayMap) {
+                GameInterfaceAPI.ConsoleCommand('mp_match_restart_delay __DELAY__');
+                m_localDelayMap = map;
+            }
         }
         m_localResultsTick = $.Schedule(1, _LocalResultsCapture);
     }
@@ -45,19 +63,16 @@ SCRIPT = '''
         const difference = score && m_localResultsOldRating ? score - m_localResultsOldRating : 0;
         rating.text = score ? 'CS Rating  ' + score + (difference ? '   (' + (difference > 0 ? '+' : '') + difference + ')' : '') :
             'Premier placements  ' + wins + ' / ' + __PLACEMENTS__ + ' wins';
-        const items = _LocalUnacknowledged().filter(id => {
-            if (m_localResultsBaseline === null || m_localResultsBaseline.indexOf(id) !== -1) return false;
-            const pickup = InventoryAPI.GetItemPickupMethod(id) || '';
-            return ['purchased', 'purchasedvolatile', 'crafted', 'found_in_crate', 'xpshopredeem'].indexOf(pickup) === -1;
-        });
+        _LocalCollectDrops();
+        const items = m_localResultsDrops;
         const list = panel.FindChildTraverse('local-results-items');
         items.forEach(id => {
             if (m_localResultsDrawn[id]) return;
             m_localResultsDrawn[id] = true;
-            const tile = $.CreatePanel('Panel', list, '', {style:'width:220px;height:210px;margin:10px;flow-children:down;background-color:#17212bea;'});
-            $.CreatePanel('ItemImage', tile, '', {itemid:id, style:'width:210px;height:150px;'});
+            const tile = $.CreatePanel('Panel', list, '', {style:'width:200px;height:215px;margin:8px;flow-children:down;background-color:#17212bff;border:1px solid #395055;'});
+            $.CreatePanel('ItemImage', tile, '', {itemid:id, style:'width:198px;height:150px;'});
             const name = $.CreatePanel('Label', tile, '', {text:InventoryAPI.GetItemName(id)});
-            name.style.fontSize = '18px'; name.style.width = '210px'; name.style.textAlign = 'center';
+            name.style.fontSize = '17px'; name.style.width = '198px'; name.style.textAlign = 'center';
             const color = InventoryAPI.GetItemRarityColor(id);
             if (color) name.style.color = color;
         });
@@ -77,13 +92,17 @@ SCRIPT = '''
         const panel = $.CreatePanel('Panel', layout, 'eom-local-results', {class:'eom-panel'});
         m_localResultsPanel = panel;
         panel.style.width = '100%'; panel.style.height = '100%';
-        panel.style.flowChildren = 'down'; panel.style.padding = '110px 100px 30px 100px';
-        panel.style.backgroundColor = '#0c1522f5';
-        $.CreatePanel('Label', panel, '', {text:'MATCH REWARDS', style:'font-size:36px;color:#e8d8a0;margin-bottom:18px;'});
-        $.CreatePanel('Label', panel, 'local-results-rating', {style:'font-size:42px;color:#dddddd;margin-bottom:12px;'});
-        $.CreatePanel('Label', panel, 'local-results-level', {style:'font-size:24px;color:#a9c8dc;margin-bottom:25px;'});
-        $.CreatePanel('Panel', panel, 'local-results-items', {style:'width:100%;height:250px;flow-children:right;overflow:scroll squish;'});
-        $.CreatePanel('Label', panel, 'local-results-status', {style:'font-size:20px;color:#c4d1db;margin-top:18px;'});
+        panel.style.flowChildren = 'none'; panel.style.padding = '0px';
+        panel.style.backgroundColor = '#0b141ffb';
+        const card = $.CreatePanel('Panel', panel, 'local-results-card');
+        card.style.width = '1160px'; card.style.height = 'fit-children'; card.style.horizontalAlign = 'center';
+        card.style.marginTop = '64px'; card.style.padding = '32px'; card.style.flowChildren = 'down';
+        card.style.backgroundColor = '#14232cff'; card.style.border = '1px solid #3d585d';
+        $.CreatePanel('Label', card, '', {text:'MATCH COMPLETE', style:'font-size:24px;color:#e8d8a0;margin-bottom:18px;'});
+        $.CreatePanel('Label', card, 'local-results-rating', {style:'font-size:34px;color:#dddddd;margin-bottom:12px;'});
+        $.CreatePanel('Label', card, 'local-results-level', {style:'font-size:24px;color:#a9c8dc;margin-bottom:25px;'});
+        $.CreatePanel('Panel', card, 'local-results-items', {style:'width:100%;height:240px;flow-children:right;overflow:scroll squish;'});
+        $.CreatePanel('Label', card, 'local-results-status', {style:'font-size:20px;color:#c4d1db;margin-top:18px;'});
         // Stock subpanels register during layout loading. Insert after the victory card.
         $.Schedule(0, () => {
             if (!panel.IsValid() || !m_localResultsOpen) return;
@@ -91,13 +110,14 @@ SCRIPT = '''
                 name:'eom-local-results',
                 Start: () => {
                     EndOfMatch.SwitchToPanel('eom-local-results');
-                    EndOfMatch.StartDisplayTimer(6);
+                    EndOfMatch.StartDisplayTimer(__DURATION__);
                     _LocalResultsRefresh();
-                    $.Schedule(6, () => { if (m_localResultsOpen) EndOfMatch.ShowNextPanel(); });
+                    $.Schedule(__DURATION__, () => { if (m_localResultsOpen) EndOfMatch.ShowNextPanel(); });
                 }
             });
         });
     }
+    $.RegisterForUnhandledEvent('PanoramaComponent_MyPersona_InventoryUpdated', _LocalCollectDrops);
     _LocalResultsCapture();
 '''
 
@@ -110,7 +130,10 @@ def patch(source, config):
     title = '            elRBtn.FindChildTraverse("id-navbar-button__label").text = $.Localize("#" + elPanel.id);'
     if any(source.count(a) != 1 for a in (start, layout, shutdown, title)):
         raise ValueError('Installed end-of-match layout differs from the inspected client')
-    code = SCRIPT.replace('__PLACEMENTS__', str(config['premier_placement_wins']))
+    code = SCRIPT.replace('__PLACEMENTS__', str(config['premier_placement_wins'])).replace('__DURATION__', str(config['end_match_duration'])).replace('__DELAY__', str(config['match_end_delay']))
+    navigate = '    function _NavigateToTab(tab) {'
+    if source.count(navigate) != 1: raise ValueError('Changed end-of-match navigation')
+    source = source.replace(navigate, navigate + "\n        _m_cP.FindChildTraverse('id-eom-layout').style.height = tab === 'eom-local-results' ? '100%' : '300px';", 1)
     source = source.replace(start, code + '\n' + start, 1)
     source = source.replace(layout, layout + '\n        _LocalResultsInitialize();', 1)
     source = source.replace(title, '            elRBtn.FindChildTraverse("id-navbar-button__label").text = elPanel.id === "eom-local-results" ? "REWARDS & RATING" : $.Localize("#" + elPanel.id);', 1)
@@ -118,6 +141,7 @@ def patch(source, config):
         m_localResultsOpen = false;
         m_localResultsPanel = null;
         m_localResultsBaseline = null;
+        m_localResultsDrops = [];
 ''', 1)
     return source
 

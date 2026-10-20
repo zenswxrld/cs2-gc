@@ -282,6 +282,9 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                    if (result.status != Armory::Status::Ok)
                    {
                        ++gc.m_ignored;
+                       if (gc.m_config.diagnostic) gc.m_config.diagnostic("armory rejected: redeem=" + std::to_string(request->redeemId) +
+                           " cost=" + std::to_string(request->expectedCost) + " balance=" + std::to_string(armory->Balance()) +
+                           " status=" + std::to_string(static_cast<int>(result.status)));
                        return;
                    }
 
@@ -477,15 +480,16 @@ void LocalGameCoordinator::EnableStorePurchases(std::shared_ptr<LiveInventory> i
                            }
                            InventoryItem item;
                            item.defIndex = line.defIndex;
-                           // Deliver a coupon's guaranteed item directly, including capsules and packages.
-                           // Do not roll/open that container or guess at unresolved/bundle coupon contents.
+                           // Resolve guaranteed offers and fixed music definitions; never roll a container here.
                            if (schema)
-                               if (const auto entries = schema->CouponEntries(line.defIndex); entries.size() == 1)
-                                   if (const auto loot = schema->ResolveLootItem(entries[0]);
-                                       loot && (loot->kind == LootKind::Sticker || loot->kind == LootKind::Keychain ||
-                                                loot->kind == LootKind::Plain))
-                                       item = MakeLootItem(*loot, schema->ItemRarity(loot->weaponDefIndex),
-                                                           [] { return std::uint64_t{0}; });
+                           {
+                               const auto entries = schema->CouponEntries(line.defIndex);
+                               const auto name = entries.size() == 1 ? entries.front() : schema->ItemName(line.defIndex);
+                               if (const auto loot = schema->ResolveLootItem(name); loot && loot->kind != LootKind::Skin)
+                                   item = MakeLootItem(*loot, schema->ItemRarity(loot->weaponDefIndex),
+                                       [] { return std::uint64_t{0}; }, schema->ProducesStatTrak(line.defIndex) ? 1000 : 0);
+                           }
+                           if (schema && schema->ProducesStatTrak(line.defIndex)) item.statTrak = true;
                            item = inventory->AddItem(item);
                            SoSingleObject created;
                            created.typeId = static_cast<std::int32_t>(ItemTypeId);

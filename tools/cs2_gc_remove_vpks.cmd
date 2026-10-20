@@ -5,5 +5,6 @@ cd /d "%~dp0"
 for /d %%D in ("..\..\cs2_gc_*") do (
   del /q "%%D\pak01_dir.vpk" "%%D\pak01_000.vpk" 2>nul
 )
-echo Done. Start CS2 again.
+if exist vpk.signatures.cs2_gc_backup copy /y vpk.signatures.cs2_gc_backup vpk.signatures >nul
+echo Done (vpk.signatures restored from its backup if one existed). Start CS2 again.
 pause

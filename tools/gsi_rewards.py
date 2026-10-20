@@ -291,6 +291,11 @@ def run_with_parent(args, parent):
         except (OSError, ValueError, KeyError) as error:
             print('Native write-path placeholder setup skipped: ' + str(error), flush=True)
         try:
+            from vpk_signatures import update as update_vpk_signatures
+            print('Native VPK signatures: ' + update_vpk_signatures(args.proxy_dir), flush=True)
+        except (OSError, ValueError, struct.error) as error:
+            print('Native VPK signatures setup skipped: ' + str(error), flush=True)
+        try:
             from vpk_pack import status as vpk_status
             print('Native VPK overrides: ' + vpk_status(args.proxy_dir), flush=True)
         except OSError as error:

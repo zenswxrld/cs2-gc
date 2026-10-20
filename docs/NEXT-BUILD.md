@@ -147,3 +147,12 @@ refuses our unsigned pak01 VPKs in Game search paths. VPKs are now only written 
 existing ones are removed otherwise. Native UI/schema overrides (scoreboard rank, native mixed trade-up picker, offer
 numbers, Armory rotation script) therefore remain unloaded. Mixed StatTrak trade-ups work through `mixed_tradeup.cmd`
 while CS2 runs (the DLL processes the request); native-picker support needs a different loading method.
+
+### Build 14: VPK overrides listed in vpk.signatures (from filesystem_stdio.dll + the user's vpk.signatures)
+- Only `pakNN_dir.vpk` (13-character names) are mounted from a search path. With `"pakxx" "off"` in
+  `game\bin\win64\vpk.signatures`, a `pakNN` VPK must be listed as `"pak01" { "<folder>" "MD5:<hex>" }`; a listed name
+  with an unlisted folder fails with `Failed to load file (unexpected)!`, a wrong hash with `(invalid)`.
+- The hash is the last MD5 of the directory file's other-MD5 section; `vpk_signatures.directory_checksum()` on Valve's
+  own csgo pak01_dir.vpk returns Valve's listed value `7ff6546070bd65d225450fd1cb8e2751`.
+- The helper backs the file up once (`vpk.signatures.cs2_gc_backup`) and adds a pak01 block listing only cs2_gc_*
+  folders. The remove/disable scripts restore the backup.

@@ -14,7 +14,6 @@ class VpkPack(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             game = Path(folder)
             (game / 'bin/win64').mkdir(parents=True)
-            (game / 'bin/win64' / vpk_pack.OPT_IN).write_text('x')
             root = game / 'cs2_gc_native'
             (root / 'scripts/items').mkdir(parents=True)
             (root / 'panorama/scripts').mkdir(parents=True)
@@ -38,7 +37,6 @@ class VpkPack(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             game = Path(folder)
             (game / 'bin/win64').mkdir(parents=True)
-            (game / 'bin/win64' / vpk_pack.OPT_IN).write_text('x')
             mod = game / 'cs2_gc_native'
             (mod / 'scripts').mkdir(parents=True)
             (mod / 'scripts/a.txt').write_bytes(b'data')
@@ -54,17 +52,29 @@ class VpkPack(unittest.TestCase):
             vpk_pack.pack(mod)
             self.assertIn('cs2_gc_native', vpk_pack.status(game / 'bin/win64'))
 
-    def test_default_is_off_and_removes_existing_vpks(self):
+    def test_signatures_list_our_folders_with_the_directory_checksum_and_keep_valve_entries(self):
+        import vpk_signatures
         with tempfile.TemporaryDirectory() as folder:
             game = Path(folder)
-            (game / 'bin/win64').mkdir(parents=True)
-            mod = game / 'cs2_gc_offers'
-            mod.mkdir()
-            (mod / 'a.txt').write_bytes(b'x')
-            (mod / 'pak01_dir.vpk').write_bytes(b'old'); (mod / 'pak01_000.vpk').write_bytes(b'old')
-            self.assertTrue(vpk_pack.pack(mod))
-            self.assertFalse((mod / 'pak01_dir.vpk').exists() or (mod / 'pak01_000.vpk').exists())
-            self.assertIn('default', vpk_pack.status(game / 'bin/win64'))
+            proxy = game / 'bin/win64'; proxy.mkdir(parents=True)
+            original = '"vpk.signatures"\r\n{\r\n"pakxx" "off"\r\n"pak01"\r\n{\r\n\t"csgo" "MD5:7ff6546070bd65d225450fd1cb8e2751"\r\n}\r\n}\r\n'
+            (proxy / 'vpk.signatures').write_bytes(original.encode())
+            for name in ('cs2_gc_native', 'cs2_gc_offers'):
+                mod = game / name; mod.mkdir(); (mod / 'a.txt').write_bytes(name.encode())
+                vpk_pack.pack(mod)
+            self.assertIn('RESTART', vpk_signatures.update(proxy))
+            text = (proxy / 'vpk.signatures').read_text()
+            digest = vpk_signatures.directory_checksum(game / 'cs2_gc_offers/pak01_dir.vpk')
+            self.assertIn('"cs2_gc_offers" "MD5:' + digest + '"', text)
+            self.assertIn('"csgo" "MD5:7ff6546070bd65d225450fd1cb8e2751"', text)
+            self.assertTrue(text.rstrip().endswith('}'))
+            self.assertEqual((proxy / 'vpk.signatures.cs2_gc_backup').read_bytes(), original.encode())
+            self.assertIn('installed', vpk_signatures.update(proxy))  # idempotent
+            self.assertEqual(text.count('cs2_gc_offers'), 1)
+            (proxy / vpk_pack.KILL_SWITCH).write_text('x')
+            for name in ('cs2_gc_native', 'cs2_gc_offers'): vpk_pack.pack(game / name)
+            vpk_signatures.update(proxy)
+            self.assertEqual((proxy / 'vpk.signatures').read_bytes(), original.encode())
 
 
 if __name__ == '__main__':

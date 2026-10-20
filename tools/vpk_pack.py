@@ -5,9 +5,8 @@ override folder is listed in search-path order (our folders come before csgo), w
 Layout copied from the installed game's own pak01_dir.vpk: data lives in numbered archives, the directory file holds
 the tree, an archive MD5 section (one entry per 1 MiB chunk) and a 48-byte "other" MD5 section.
 
-OFF BY DEFAULT: CS2 build 25966348 stops at start-up ("Failed to load file (unexpected)") when an unsigned pak01 VPK
-is in a Game search path, even with -insecure and with the installed game's own layout. VPKs are only written when
-cs2_gc_use_vpk.txt exists beside the proxy DLL; otherwise (or when cs2_gc_no_vpk.txt exists) existing ones are removed.
+CS2 only mounts a pak01 VPK from a folder listed in game/bin/win64/vpk.signatures (see vpk_signatures.py), which the
+helper updates after packing. Kill switch: cs2_gc_no_vpk.txt beside the DLL removes our VPKs and writes none.
 """
 from pathlib import Path
 import hashlib
@@ -19,7 +18,6 @@ SKIP_SUFFIXES = ('.json', '.tmp')
 SKIP_NAMES = {'cs2_gc_schema_stamp.txt'}
 CHUNK = 1 << 20
 KILL_SWITCH = 'cs2_gc_no_vpk.txt'
-OPT_IN = 'cs2_gc_use_vpk.txt'
 
 
 def _files(folder):
@@ -79,7 +77,7 @@ def pack(folder):
     folder = Path(folder)
     directory_path, archive_path = folder / 'pak01_dir.vpk', folder / 'pak01_000.vpk'
     proxy = folder.parent / 'bin' / 'win64'
-    if (proxy / KILL_SWITCH).exists() or not (proxy / OPT_IN).exists():
+    if (proxy / KILL_SWITCH).exists():
         removed = False
         for path in (directory_path, archive_path):
             if path.exists():
@@ -103,7 +101,5 @@ def status(proxy_directory):
     game = proxy.parent.parent
     if (proxy / KILL_SWITCH).exists():
         return 'OFF (' + KILL_SWITCH + ' exists beside the DLL)'
-    if not (proxy / OPT_IN).exists():
-        return 'OFF (default; CS2 refuses unsigned override VPKs at start-up)'
     folders = sorted(path.name for path in game.glob('cs2_gc_*') if (path / 'pak01_dir.vpk').is_file())
     return ('on; VPKs present in ' + ', '.join(folders)) if folders else 'on; no override VPKs written yet'

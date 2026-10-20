@@ -687,6 +687,11 @@ void ProtobufDump()
 
 void ProxySupport()
 {
+    Check(QuoteWindowsArgument(L"") == L"\"\"" &&
+          QuoteWindowsArgument(L"C:\\Program Files\\CS2\\") == L"\"C:\\Program Files\\CS2\\\\\"" &&
+          QuoteWindowsArgument(L"a\"b") == L"\"a\\\"b\"", "background command safely quotes spaces, trailing slashes and quotes");
+    Check(ParseGameplayConfig("rewards_auto_start=0")->rewards_auto_start == 0 &&
+          !ParseGameplayConfig("rewards_auto_start=2"), "automatic rewards setting accepts only a boolean");
     Check(CommandLineHasArgument("cs2.exe -insecure", "-insecure"), "flag present");
     Check(CommandLineHasArgument("\"C:\\Program Files\\cs2.exe\" -novid -INSECURE +map de_dust2", "-insecure"), "case-insensitive, quoted path");
     Check(CommandLineHasArgument("cs2.exe\t-insecure\r\n", "-insecure"), "tab and newline separators");
@@ -1333,6 +1338,13 @@ void LoadoutAndPurchases()
     const auto first = slotFields((*changed)[0]);
     Check(first.at(1) == 555 && first.at(2) == 2 && first.at(3) == 14 && first.at(4) == mine && first.at(5) == 7, "equip slot object");
     Check(live.EncodedSlots(555).size() == 2, "slots remembered");
+    const auto equippedSave = Inventory::FromText(live.Items().ToText());
+    Check(equippedSave && LiveInventory(*equippedSave).EncodedSlots(555) == live.EncodedSlots(555),
+          "team-specific custom and default loadout slots survive a full inventory reload");
+    auto removedEquipped = *equippedSave;
+    Check(removedEquipped.Remove(1) && removedEquipped.Loadout().size() == 1 &&
+              removedEquipped.Loadout()[0].itemId == defaultAk && Inventory::FromText(removedEquipped.ToText()),
+          "consuming an equipped custom item removes its saved slot while preserving base weapons");
 
     // One unknown item rejects the whole request, and nothing changes.
     AdjustEquipSlots bad;
@@ -1344,6 +1356,8 @@ void LoadoutAndPurchases()
     const auto cleared = live.Adjust(clear, 555);
     Check(cleared && slotFields((*cleared)[0]).at(4) == 0 && slotFields((*cleared)[0]).at(5) == 0 && live.EncodedSlots(555).size() == 1,
           "cleared slot");
+    const auto clearedSave = Inventory::FromText(live.Items().ToText());
+    Check(clearedSave && LiveInventory(*clearedSave).EncodedSlots(555) == live.EncodedSlots(555), "unequipping also survives restart");
 
     // Message codecs.
     PbWriter slotMsg;
@@ -1400,7 +1414,8 @@ void LoadoutAndPurchases()
     gc.EnableReplay(store);
     gc.SetDropRecordedItems(true);
     auto liveForEndpoint = std::make_shared<LiveInventory>(inventory);
-    gc.EnableLiveInventory(liveForEndpoint);
+    int equipSaves = 0;
+    gc.EnableLiveInventory(liveForEndpoint, [&] { ++equipSaves; });
     gc.EnableStorePurchaseFailure();
 
     const auto send = [&](std::uint32_t type, const std::vector<std::uint8_t> &payload, const std::vector<std::uint8_t> &header = {}) {
@@ -1439,6 +1454,8 @@ void LoadoutAndPurchases()
 
     send(m::EGCItemMsg::k_EMsgGCAdjustEquipSlotsManual, body.bytes());
     const Out u = next();
+    Check(equipSaves == 1 && Inventory::FromText(liveForEndpoint->Items().ToText())->Loadout().size() == 1,
+          "native equip request invokes the save callback and persists its slot");
     const auto updateOut = DecodeSoMultipleObjects(u.body);
     Check(u.any && u.type == (m::ESOMsg::k_ESOMsg_UpdateMultiple | ProtobufMask) && updateOut && updateOut->objects.size() == 1 &&
               updateOut->objects[0].typeId == 3 && updateOut->owner.id == 555 && updateOut->version == 41, "equip answered with an SO update, version past the recorded one");
@@ -1616,9 +1633,30 @@ void ArmoryRedeems()
     int uncommon = 0;
     constexpr int Rolls = 20000;
     LiveInventory scratch{Inventory{}};
+    GameplayConfig baseOdds;
+    baseOdds.armory_pity_enabled = 0; baseOdds.armory_top_per_10000 = 0;
+    Inventory baseInventory; baseInventory.SetGameplay(baseOdds);
+    scratch = LiveInventory(baseInventory);
     for (int i = 0; i < Rolls; ++i)
         uncommon += rich.Redeem(request("lootlist:set_test", 4), scratch, random).item.paintKitIndex == 10;
     Check(std::abs(uncommon / double(Rolls) - 7992.0 / (7992 + 1598)) < 0.015, "collection odds: lowest tier is the common one");
+    Inventory pityInventory;
+    pityInventory.SetArmoryPity("set_test", 99);
+    pityInventory.SetArmoryPity("unrelated_collection", 7);
+    LiveInventory pityLive(pityInventory);
+    Armory pityArmory(*schema, 11, 8);
+    auto guaranteed = pityArmory.Redeem(request("lootlist:set_test", 4), pityLive, [] { return 9999ull; });
+    Check(guaranteed.status == Armory::Status::Ok && guaranteed.item.paintKitIndex == 11 &&
+              pityLive.Items().ArmoryPity("set_test") == 0 && pityLive.Items().ArmoryPity("unrelated_collection") == 7,
+          "100th Armory collection roll guarantees its highest tier and resets only its own saved counter");
+    const auto failedBefore = pityLive.Items().ToText();
+    const auto failed = pityArmory.Redeem(request("lootlist:set_test", 5), pityLive, [] { return 9999ull; });
+    Check(failed.status == Armory::Status::CostMismatch && failedBefore == pityLive.Items().ToText(),
+          "failed Armory buys do not consume stars or advance collection pity");
+    const auto miss = pityArmory.Redeem(request("lootlist:set_test", 4), pityLive, [] { return 9999ull; });
+    const auto savedPity = Inventory::FromText(pityLive.Items().ToText());
+    Check(miss.status == Armory::Status::Ok && savedPity && savedPity->ArmoryPity("set_test") == 1 &&
+              savedPity->ArmoryPity("unrelated_collection") == 7, "Armory pity survives restart independently for each collection");
 }
 
 void ArmoryEndpoint()
@@ -2883,22 +2921,29 @@ void TradeUps()
     Check(std::abs(traded.item.wear - (0.1f + 0.4f * 0.7f)) < 1e-5f && traded.item.seed >= 1 && traded.item.seed <= 1000,
           "the average wear is mapped into the new finish's range");
 
-    // StatTrak only when all ten are.
+    // StatTrak probability follows the fraction of tracked inputs.
     Inventory st;
     auto stIds = fill(st, 10, 10, 0.1f, true);
     Check(TradeUp(st, *schema, stIds, random).item.statTrak, "ten StatTrak skins give a StatTrak skin");
-    Inventory mixedSt;
-    auto mixedStIds = fill(mixedSt, 10, 9, 0.1f, true);
-    mixedStIds.push_back(mixedSt.Add(skin(10, 0.1f, false)));
-    Check(TradeUp(mixedSt, *schema, mixedStIds, random).error == TradeUpError::MixedStatTrak && mixedSt.Items().size() == 10,
-          "mixing StatTrak and normal is refused and changes nothing");
+    for (unsigned tracked = 0; tracked <= 10; ++tracked) {
+        unsigned hits = 0;
+        for (unsigned roll = 0; roll < 10; ++roll) {
+            Inventory mixed;
+            std::vector<std::uint64_t> ids;
+            for (unsigned i = 0; i < 10; ++i)
+                ids.push_back(mixed.Add(skin(10, .1f, i < tracked)));
+            const auto result = TradeUp(mixed, *schema, ids, [roll] { return std::uint64_t{roll}; });
+            Check(result.error == TradeUpError::None && result.consumed.size() == 10 && mixed.Items().size() == 1,
+                  "every mix of normal and StatTrak inputs completes atomically");
+            hits += result.item.statTrak;
+        }
+        Check(hits == tracked, "StatTrak chance exactly follows the input fraction, including zero and all");
+    }
 
     // Hidden StatTrak on collection-only Armory skins previously made visually normal contracts fail.
     Inventory damaged;
     auto repairedIds = fill(damaged, 11, 9, 0.2f);
     repairedIds.push_back(damaged.Add(skin(11, 0.2f, true)));
-    Check(TradeUp(damaged, *schema, repairedIds, random).error == TradeUpError::MixedStatTrak,
-          "the old hidden flag reproduces the rejection");
     LiveInventory repaired(damaged);
     Check(schema->CanBeStatTrak(7, 10) && !schema->CanBeStatTrak(7, 11) &&
               repaired.RepairCollectionStatTrak(*schema) == 1 && repaired.RepairCollectionStatTrak(*schema) == 0,
@@ -2989,6 +3034,38 @@ void TradeUps()
               structReply[34] == 1 && structReply[36] == 0 && structReply[40] == 1,
           "the response carries recipe 1, result OK and one item");
     Check(live->Items().Items().size() == 1 && saves == 1, "the contract is saved");
+
+    // The shared native recipe must work even when the first selected item is StatTrak.
+    for (const bool trackedFirst : {false, true})
+    {
+        auto mixedLive = std::make_shared<LiveInventory>(Inventory{});
+        PbWriter mixedCraft;
+        mixedCraft.Varint(1, 0); // An existing normal recipe; zero is a valid ID.
+        for (int i = 0; i < 10; ++i)
+        {
+            const bool tracked = trackedFirst ? i < 3 : i >= 7;
+            mixedCraft.Varint(2, CustomItemIdBase + mixedLive->AddItem(skin(10, .2f, tracked)).id);
+        }
+        LocalGameCoordinator mixedGc(config);
+        int mixedSaves = 0;
+        mixedGc.EnableContainers(mixedLive, shared, [] { return std::uint64_t{0}; }, [&] { ++mixedSaves; });
+        WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCCraft, {}, mixedCraft.bytes(), frame);
+        mixedGc.SendMessage(m::EGCItemMsg::k_EMsgGCCraft | ProtobufMask, frame.data(),
+                            static_cast<std::uint32_t>(frame.size()));
+        Check(mixedLive->Items().Items().size() == 1 && mixedSaves == 1 &&
+                  mixedLive->Items().Items()[0].statTrak && mixedLive->Items().Items()[0].statTrakFromContract,
+              "normal native recipe accepts either first-item variant and retains the mixed StatTrak roll");
+        std::vector<std::uint8_t> reply;
+        while (mixedGc.IsMessageAvailable(&size))
+        {
+            std::uint32_t got = 0, type = 0;
+            std::vector<std::uint8_t> buffer(size);
+            mixedGc.RetrieveMessage(&type, buffer.data(), size, &got);
+            if (type == m::EGCItemMsg::k_EMsgGCCraftResponse) reply = buffer;
+        }
+        Check(reply.size() == 50 && reply[34] == 0 && reply[35] == 0 && reply[36] == 0 && reply[40] == 1,
+              "shared recipe zero receives a successful native Craft response with its original recipe ID");
+    }
 
     // A refused contract still gets a (failed) struct response and changes nothing.
     PbWriter shortCraft;
@@ -3162,6 +3239,40 @@ void GoldTradeUps()
               "five Covert skins become a correctly flagged gold with five-input average wear");
         Check(Inventory::FromText(inv.ToText())->Items()[0].unusual, "gold quality survives saving");
     }
+    for (unsigned tracked = 1; tracked < 5; ++tracked) {
+        unsigned hits = 0;
+        for (unsigned roll = 0; roll < 5; ++roll) {
+            Inventory mixed;
+            std::vector<std::uint64_t> ids;
+            for (unsigned i = 0; i < 5; ++i) {
+                InventoryItem item;
+                item.defIndex = 7; item.paintKitIndex = 10; item.wear = .5f; item.statTrak = i < tracked;
+                ids.push_back(mixed.Add(item));
+            }
+            const auto result = TradeUp(mixed, *schema, ids, [roll] { return std::uint64_t{roll}; });
+            Check(result.error == TradeUpError::None && result.item.unusual && mixed.Items().size() == 1 &&
+                      (!result.item.statTrak || schema->IsKnife(result.item.defIndex)),
+                  "mixed Covert contracts complete and never put StatTrak on gloves");
+            hits += result.item.statTrak;
+        }
+        Check(hits == tracked, "gold StatTrak chance uses the five-input fraction");
+    }
+
+    Check(schema->LoadGoldPools("\"gold_pools\" { \"60\" { \"5030:20\" \"1\" } }"), "glove-only pool loads");
+    for (unsigned tracked : {1u, 5u}) {
+        Inventory input;
+        std::vector<std::uint64_t> ids;
+        for (unsigned i = 0; i < 5; ++i) {
+            InventoryItem item; item.defIndex = 7; item.paintKitIndex = 10; item.statTrak = i < tracked;
+            ids.push_back(input.Add(item));
+        }
+        const auto old = input.ToText();
+        const auto result = TradeUp(input, *schema, ids, [] { return 0ull; });
+        Check(tracked == 5 ? (result.error == TradeUpError::NoOutcome && input.ToText() == old) :
+                  (result.error == TradeUpError::None && !result.item.statTrak && result.item.defIndex == 5030),
+              "glove-only mixed contracts stay normal; all-StatTrak refuses atomically");
+    }
+
 }
 
 void Terminals()
@@ -3226,12 +3337,36 @@ void Terminals()
     auto offer = live->TerminalOffer(*schema, CustomItemIdBase + 1);
     Check(replies.size() == 3 && offer && offer->storedIn == 1 && offer->purchasePrice == 0u &&
               live->Items().Find(1)->terminalRemaining == 1u, "first offer stays inside the terminal until accepted");
+    PbWriter loadOffer;
+    loadOffer.Varint(2, CustomItemIdBase + 1);
+    loadOffer.Varint(4, 1);
+    const auto beforeLoad = live->Items().ToText();
+    const auto savesBeforeLoad = saves;
+    request(gc_msg::EGCItemMsg::k_EMsgGCVolatileItemLoadContents, loadOffer);
+    replies = drain();
+    Check(replies.size() == 3 && replies[0].first == 22 && replies[1].first == 22 && replies[2].first == 1090 &&
+              beforeLoad == live->Items().ToText() && saves == savesBeforeLoad,
+          "native 2536 reload sends saved terminal/offer and notification without reroll or save");
+    PbWriter staleLoad;
+    staleLoad.Varint(2, CustomItemIdBase + 1); staleLoad.Varint(4, 9);
+    request(gc_msg::EGCItemMsg::k_EMsgGCVolatileItemLoadContents, staleLoad);
+    Check(drain().empty() && beforeLoad == live->Items().ToText(), "stale native terminal reload is refused without mutation");
     request(gc_msg::EGCItemMsg::k_EMsgGCOpenCrate, next);
     Check(drain().empty() && live->TerminalOffer(*schema, CustomItemIdBase + 1)->id == offer->id,
           "repeating a stale offer request cannot reroll it");
     const auto restored = Inventory::FromText(live->Items().ToText());
     Check(restored && restored->Find(1)->terminalRemaining == 1u && restored->Find(offer->id)->storedIn == 1,
           "terminal offer and remaining choices survive a relaunch");
+    {
+        auto helperLive = std::make_shared<LiveInventory>(*restored);
+        LocalGameCoordinator helperGc(config);
+        helperGc.EnableContainers(helperLive, shared, [] { return 0ull; }, {});
+        int helperSaves = 0;
+        Check(helperGc.AcceptLocalTerminal(CustomItemIdBase + 1, [&] { ++helperSaves; }) &&
+              !helperGc.AcceptLocalTerminal(CustomItemIdBase + 1, {}) && helperSaves == 1 &&
+              helperLive->Items().Items().size() == 1 && !helperLive->Items().Items()[0].storedIn,
+              "terminal helper accepts the saved displayed offer once, without native checkout");
+    }
     PbWriter decline;
     decline.Varint(2, CustomItemIdBase + 1);
     decline.Varint(4, 1);
@@ -3260,10 +3395,271 @@ void Terminals()
     Check(live->Items().Items().size() == 1 && saves == 4, "repeated finalize cannot duplicate a terminal reward");
 }
 
+void NativeArmorySlotsAndConsoleStars()
+{
+    std::string text = R"("items_game" { "items" { )";
+    for (unsigned i = 0; i < 12; ++i)
+        text += "\"" + std::to_string(100 + i) + "\" { \"name\" \"item_" + std::to_string(i) + "\" } ";
+    text += R"(} "seasonaloperations" { "11" { "redeemable_goods" "xpshop" )";
+    const std::string slots[] = {"case", "capsule", "charm", "sticker", "collection", "limited"};
+    for (unsigned i = 0; i < 12; ++i)
+        text += "\"operational_point_redeemable\" { \"item_name\" \"item_" + std::to_string(i) +
+            "\" \"points\" \"2\" \"local_rotation_slot\" \"" + slots[i / 2] + "\" } ";
+    text += "} } }";
+    auto schema = Schema::Load(text);
+    Check(schema && schema->ArmoryRedeemables().size() == 12, "generated native catalogue loads every row");
+    GameplayConfig config;
+    Armory armory(*schema, 11, 10);
+    const auto first = armory.RotationAt(0, config), next = armory.RotationAt(900, config);
+    Check(first.redeemIds.size() == 6 && next.redeemIds.size() == 6, "every category has its own active slot");
+    for (const auto id : first.redeemIds)
+        Check(std::find(next.redeemIds.begin(), next.redeemIds.end(), id) == next.redeemIds.end(), "each pool advances");
+    armory.SetRotationOffset(1);
+    Check(armory.RotationAt(0, config).redeemIds == next.redeemIds, "console force rotation advances all pools");
+    Inventory saved; saved.SetArmoryCredits(10); saved.SetGameplay(config);
+    LiveInventory live(saved);
+    RedeemRequest request; request.campaignId = 11; request.expectedCost = 2; request.redeemId = first.redeemIds[0];
+    Check(armory.Redeem(request, live, [] { return 0ull; }, {}, 0).status == Armory::Status::NotInRotation &&
+          live.Items().Items().empty() && armory.Balance() == 10, "stale native slot rejects without spending");
+    Check(saved.ApplyConsoleStars(100) && saved.ArmoryCredits() == 110, "test stars add to balance");
+    auto restored = Inventory::FromText(saved.ToText());
+    Check(restored && !restored->ApplyConsoleStars(100) && !restored->ApplyConsoleStars(99) &&
+          restored->ArmoryCredits() == 110 && restored->ApplyConsoleStars(1100) && restored->ArmoryCredits() == 1110,
+          "console cursor survives restart and cannot grant the same stars twice");
+}
+
+void HowlAndArmoryRotation()
+{
+    auto schema = Schema::Load(R"("items_game" {
+      "rarities" { "common" { "value" "1" } "rare" { "value" "3" } "immortal" { "value" "7" } }
+      "items" { "7" { "name" "weapon_m4a1" "item_rarity" "common" } }
+      "paint_kits" { "309" { "name" "cu_m4a1_howling" "wear_remap_max" "0.4" } "10" { "name" "blue" } }
+      "paint_kits_rarity" { "cu_m4a1_howling" "immortal" "blue" "rare" }
+      "client_loot_lists" { "test_rare" { "[blue]weapon_m4a1" "1" } }
+      "seasonaloperations" { "11" { "redeemable_goods" "xpshop"
+        "operational_point_redeemable" { "item_name" "lootlist:test_rare" "points" "4" } } }
+    })");
+    Check(schema && schema->SkinRarity(7, 309) == 7, "Howl keeps its real Contraband rarity");
+    GameplayConfig config; config.armory_rotation_slots = 1;
+    Armory armory(*schema, 11, 100);
+    const auto howl = armory.HowlOffer(config);
+    Check(howl && howl->points == 40 && armory.RotationAt(0, config).redeemIds == std::vector<std::uint32_t>{howl->redeemId} &&
+          armory.RotationAt(0, config).endsAt == 900 && armory.RotationAt(899, config).endsAt == 900 &&
+          armory.RotationAt(900, config).redeemIds.front() != howl->redeemId &&
+          armory.RotationAt(1800, config).redeemIds.front() == howl->redeemId,
+          "Howl rotates in and out on 15-minute boundaries and returns");
+    Inventory saved; saved.SetGameplay(config); saved.SetArmoryCredits(100);
+    LiveInventory inventory(saved);
+    RedeemRequest request; request.campaignId = 11; request.redeemId = howl->redeemId; request.expectedCost = 40;
+    const auto before = inventory.Items().ToText();
+    Check(armory.Redeem(request, inventory, [] { return 0ull; }, {}, 900).status == Armory::Status::NotInRotation &&
+          inventory.Items().ToText() == before && armory.Balance() == 100, "expired Howl offer cannot spend stars");
+    const auto bought = armory.Redeem(request, inventory, [] { return 0ull; }, {}, 0);
+    Check(bought.status == Armory::Status::Ok && bought.item.paintKitIndex == 309 && bought.item.rarity == 7 &&
+          !bought.item.statTrak && bought.item.wear <= .4f && armory.Balance() == 60 && inventory.Items().ArmoryCredits() == 60u,
+          "active Howl offer grants the existing skin and spends the configured stars");
+    config.armory_howl_enabled = 0;
+    Check(!armory.HowlOffer(config) && armory.RotationAt(0, config).redeemIds.size() == 1, "Howl can be disabled");
+    Inventory contract; std::vector<std::uint64_t> ids;
+    for (int i = 0; i < 5; ++i) ids.push_back(contract.Add(bought.item));
+    const auto old = contract.ToText();
+    Check(TradeUp(contract, *schema, ids, [] { return 0ull; }).error != TradeUpError::None && contract.ToText() == old,
+          "Howl cannot be consumed as a Covert contract input");
+}
+
+void ConfiguredRewardsAndPity()
+{
+    Check(CaseGoldChance(0) == 26 && CaseGoldChance(8) == 26 && CaseGoldChance(9) == 135 &&
+          CaseGoldChance(99) == 10000, "case pity starts on 10 and guarantees 100");
+    for (unsigned n = 1; n <= 99; ++n)
+        Check(CaseGoldChance(n) >= CaseGoldChance(n - 1), "pity chance is monotonic");
+    auto settings = ParseGameplayConfig("armory_xp_per_star=200\nmatch_drop_count=4\npity_soft_at=5\npity_hard_at=20\n");
+    Check(settings && settings->match_drop_count == 4 && PityChance(19, 26, *settings) == 10000 &&
+          PityChance(3, 26, *settings) == 26 && PityChance(4, 26, *settings) > 26, "config changes real reward and pity rules");
+    for (auto bad : {"unknown=1", "pity_soft_at=99\npity_hard_at=20", "stars_enabled=2", "match_skin_min_rarity=2",
+                     "match_drop_count=0", "kill_xp=1\nkill_xp=2", "armory_rotation_seconds=0"})
+        Check(!ParseGameplayConfig(bad), "invalid config is rejected atomically");
+    Inventory progression;
+    progression.XpTracks().push_back(201);
+    progression.SetGameplay(*settings);
+    Check(progression.XpTracks()[0] == 100 && progression.DisplayXpTracks()[0] == 200, "changing pass XP preserves pass fraction in native UI units");
+    progression.ApplyEarnedXp(100);
+    Check(progression.ArmoryCredits() == 1u && progression.DisplayXpTracks()[0] == 400 && progression.Progress().xp == 100,
+          "configured pass XP awards a star and native display matches");
+    auto reloadedProgress = Inventory::FromText(progression.ToText());
+    Check(reloadedProgress && reloadedProgress->DisplayXpTracks()[0] == 400, "pass XP unit survives relaunch");
+    settings->stars_enabled = 0; settings->xp_enabled = 0;
+    progression.SetGameplay(*settings); progression.ApplyEarnedXp(300);
+    Check(progression.Progress().xp == 100 && progression.ArmoryCredits() == 1u, "profile and star switches consume cursor without paying");
+
+    auto schema = Schema::Load(R"("items_game" {
+      "rarities" { "common" { "value" "1" } "rare" { "value" "3" } "ancient" { "value" "6" } }
+      "prefabs" { "rifle" { "item_rarity" "common" } "hands_paintable" { }
+        "weapon_case_base" { } "weapon_case" { "prefab" "weapon_case_base" "associated_item" "50" }
+        "volatile_pricing" { } "weapon_case_selfopening_collection" { "prefab" "weapon_case_base" } }
+      "items" {
+        "7" { "name" "weapon_test" "prefab" "rifle" }
+        "50" { "name" "key" } "51" { "name" "wrong_key" }
+        "500" { "name" "weapon_bayonet" "item_class" "weapon_knife" }
+        "5030" { "name" "gloves_test" "prefab" "hands_paintable" }
+        "60" { "name" "case_test" "prefab" "weapon_case" "tags" { "ItemSet" { "tag_value" "set_test" } }
+          "attributes" { "set supply crate series" { "value" "1" } } }
+        "5176" { "name" "terminal_test" "prefab" "volatile_pricing weapon_case_selfopening_collection"
+          "attributes" { "set supply crate series" { "value" "1" } } }
+        "5181" { "name" "terminal_gold" "prefab" "volatile_pricing weapon_case_selfopening_collection"
+          "tags" { "ItemSet" { "tag_value" "set_test" } }
+          "attributes" { "set supply crate series" { "value" "1" } } }
+      }
+      "paint_kits" { "10" { "name" "blue" } "11" { "name" "red" } "20" { "name" "gold" } }
+      "paint_kits_rarity" { "blue" "rare" "red" "ancient" }
+      "item_sets" { "set_test" { "items" { "[blue]weapon_test" "1" "[red]weapon_test" "1" } } }
+      "revolving_loot_lists" { "1" "rewards" }
+      "client_loot_lists" { "rewards" { "rewards_rare" "1" "rewards_ancient" "1" }
+        "rewards_rare" { "[blue]weapon_test" "1" } "rewards_ancient" { "[red]weapon_test" "1" } }
+    })");
+    Check(schema && schema->LoadGoldPools("\"gold_pools\" { \"60\" { \"5030:20\" \"1\" } }"), "pity fixture validated");
+    Inventory inv;
+    inv.SetCasePity(99); inv.SetTerminalPity(5176, 99); inv.SetTerminalPity(5181, 99);
+    const auto crate = inv.Add({0, 60}), key = inv.Add({0, 50}), wrong = inv.Add({0, 51});
+    Check(OpenCase(inv, *schema, crate, wrong, [] { return 9999ull; }).error == OpenError::WrongKey && inv.CasePity() == 99,
+          "bad opens do not advance pity");
+    auto restored = Inventory::FromText(inv.ToText());
+    Check(restored && restored->CasePity() == 99 && restored->TerminalPity(5176) == 99 && restored->TerminalPity(5181) == 99,
+          "separate case and terminal pity counters persist");
+    const auto gold = OpenCase(*restored, *schema, crate, key, [] { return 9999ull; });
+    Check(gold.error == OpenError::None && gold.item.unusual && gold.item.defIndex == 5030 && !gold.item.statTrak && restored->CasePity() == 0,
+          "100th eligible case guarantees real gold and resets without StatTrak gloves");
+    for (auto def : {5176u, 5181u}) restored->Add({0, def});
+    LiveInventory terminals(*restored);
+    const auto terminalId = [&](auto def) {
+        for (const auto &item : terminals.Items().Items()) if (item.defIndex == def) return CustomItemIdBase + item.id;
+        return std::uint64_t{0};
+    };
+    for (auto def : {5176u, 5181u}) {
+        OpenCrateRequest request;
+        request.crateItemId = terminalId(def);
+        Check(terminals.AdvanceTerminal(*schema, request, [] { return 9999ull; }, 100).has_value(), "terminal unseals");
+        Check(terminals.Items().TerminalPity(def) == 99, "unseal does not count as an offer");
+        request.pointsRemaining = 0;
+        const auto offer = terminals.AdvanceTerminal(*schema, request, [] { return 9999ull; }, 100);
+        Check(offer && offer->offer && offer->offer->rarity == 6 && terminals.Items().TerminalPity(def) == 0 &&
+              (def != 5181 || (offer->offer->unusual && !offer->offer->statTrak)), "100th terminal offer guarantees its top reward");
+        const auto before = terminals.Items().ToText();
+        Check(!terminals.AdvanceTerminal(*schema, request, [] { return 0ull; }, 100) && before == terminals.Items().ToText(),
+              "stale terminal request cannot advance pity or change offer");
+    }
+    Check(terminals.Items().CasePity() == 0, "terminal pity does not touch case pity");
+    std::mt19937_64 engine(951);
+    std::size_t caseDrops = 0, skinDrops = 0;
+    for (unsigned n = 0; n < 1000; ++n) {
+        const auto drops = RollMatchDrops(*schema, [&] { return engine(); });
+        Check(drops && drops->size() == 3, "every completed match produces exactly three drops");
+        for (const auto &drop : *drops) {
+            if (!drop.paintKitIndex) { ++caseDrops; Check(drop.defIndex == 60, "only keyed cases in case reward pool"); }
+            else { ++skinDrops; Check(drop.rarity >= 3 && drop.rarity <= 6 && !drop.unusual && !drop.statTrak, "weapon rewards blue and above, no golds"); }
+        }
+    }
+    Check(caseDrops > 1400 && caseDrops < 1600 && caseDrops + skinDrops == 3000, "independent case/weapon split is 50 percent");
+    LiveInventory rewards(Inventory{});
+    Check(rewards.GrantMatchRewards(*schema, 1, [&] { return engine(); })->size() == 3 &&
+          !rewards.GrantMatchRewards(*schema, 1, [&] { return engine(); }), "duplicate completion grants nothing");
+    auto savedRewards = Inventory::FromText(rewards.Items().ToText());
+    Check(savedRewards && savedRewards->MatchRewardTotal() == 1, "completion cursor and three items save together");
+    LocalGameCoordinator endpoint({});
+    auto live = std::make_shared<LiveInventory>(Inventory{});
+    auto shared = std::shared_ptr<const Schema>(&*schema, [](const Schema *) {});
+    endpoint.EnableContainers(live, shared, [&] { return engine(); }, {});
+    int saves = 0;
+    Check(endpoint.ApplyMatchRewards(1, [&] { ++saves; }) && !endpoint.ApplyMatchRewards(1, {}), "endpoint grants a completion once");
+    std::vector<std::uint32_t> types;
+    std::uint32_t size = 0;
+    while (endpoint.IsMessageAvailable(&size)) {
+        std::vector<std::uint8_t> bytes(size); std::uint32_t type = 0, got = 0;
+        endpoint.RetrieveMessage(&type, bytes.data(), size, &got); types.push_back(type & ~ProtobufMask);
+    }
+    Check(types == std::vector<std::uint32_t>{21, 9137, 21, 9137, 21, 9137} && saves == 1,
+          "native match drop notifications follow each created item and save once");
+    Inventory levelInventory;
+    GameplayConfig levelConfig;
+    levelConfig.match_drops_enabled = 0;
+    levelInventory.SetGameplay(levelConfig);
+    LiveInventory levels(levelInventory);
+    Check(!levels.GrantLevelRewards(*schema, [&] { return engine(); }), "starting level 1 has no free level reward");
+    levels.ApplyEarnedXp(2 * ProfileLevelXp);
+    Check(levels.Items().Progress().level == 3 && levels.GrantLevelRewards(*schema, [&] { return engine(); })->size() == 3,
+          "level 2 grants three rewards even with match drops disabled");
+    auto pending = Inventory::FromText(levels.Items().ToText());
+    Check(pending && pending->LevelRewardTotal() == 1, "level reward cursor persists alongside its granted items");
+    pending->SetGameplay(levelConfig);
+    LiveInventory resumed(*pending);
+    Check(resumed.GrantLevelRewards(*schema, [&] { return engine(); })->size() == 3 &&
+              !resumed.GrantLevelRewards(*schema, [&] { return engine(); }) && resumed.Items().Items().size() == 6,
+          "a second earned level survives restart and pays once without any weekly timer");
+    resumed.ApplyEarnedXp(2 * ProfileLevelXp);
+    Check(!resumed.GrantLevelRewards(*schema, [&] { return engine(); }), "replaying XP does not duplicate level drops");
+    const std::string token(32, 'a');
+    Check(DecodeLocalTradeUpRequest(token + " 1 2 3 4 5").has_value() &&
+          !DecodeLocalTradeUpRequest(token + " 1 2 3 4") && !DecodeLocalTradeUpRequest(token + " 1 2 3 4 5 ") &&
+          !DecodeLocalTradeUpRequest(token + " 1 2 3 4 18446744073709551616"), "helper request count, trailing data and overflow validated");
+}
+
+void NativePremier()
+{
+    const auto fields = [](std::span<const std::uint8_t> body) {
+        std::map<std::uint32_t, std::uint64_t> result;
+        PbReader reader(body); PbField field;
+        while (reader.Next(field)) if (field.wire == 0) result[field.number] = field.value;
+        Check(!reader.Failed(), "Premier protobuf parses");
+        return result;
+    };
+    for (const auto wins : {0u, 1u, 9u, 10u})
+    {
+        const auto rank = fields(EncodePremierRank({4000, wins, 10}, 555));
+        Check(rank.at(1) == 555 && rank.at(2) == (wins >= 10 ? 4000 : 0) && rank.at(3) == wins && rank.at(6) == 11,
+              "native Premier type11 publishes exact placement wins while hiding rating until ten wins");
+    }
+    PbWriter wingman; wingman.Varint(2, 5); wingman.Varint(6, 7);
+    PbWriter stale; stale.Bytes(1, EncodePremierRank({9000, 99, 10}, 999)); stale.Message(1, wingman); stale.Varint(30, 42);
+    const auto changed = WithPremierRankUpdate(stale.bytes(), {1300, 1, 10}, 555);
+    Check(changed.has_value(), "recorded rank update patches");
+    PbReader reader(*changed); PbField field;
+    int premierCount = 0, wingmanCount = 0;
+    while (reader.Next(field)) if (field.number == 1) {
+        const auto rank = fields(field.bytes);
+        if (rank.at(6) == 11) { ++premierCount; Check(rank.at(3) == 1 && rank.at(2) == 0 && rank.at(1) == 555, "recorded Premier replaced"); }
+        if (rank.at(6) == 7) ++wingmanCount;
+    }
+    Check(premierCount == 1 && wingmanCount == 1, "other native rank types retained without duplicate Premier entries");
+    PbWriter oldProfile; oldProfile.Bytes(20, EncodePremierRank({9000, 99, 10}, 999)); oldProfile.Message(20, wingman);
+    const LocalPremier current{1300, 1, 10};
+    const auto profile = WithLocalProfile(oldProfile.bytes(), {}, &current, 555);
+    Check(profile.has_value(), "welcome/profile placement count patches");
+    PbReader profileReader(*profile); premierCount = 0;
+    while (profileReader.Next(field)) if (field.number == 20) {
+        const auto rank = fields(field.bytes);
+        if (rank.at(6) == 11) { ++premierCount; Check(rank.at(3) == 1, "XP profile update cannot restore stale placement wins"); }
+    }
+    Check(premierCount == 1, "one local Premier ranking in profile");
+    GcEndpointConfig config; config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    gc.EnableLocalPremier({1000, 0, 10});
+    Check(gc.SetLocalPremier(current) && !gc.SetLocalPremier(current) && !gc.SetLocalPremier({100000, 1, 10}),
+          "native rank cache updates only on valid changes");
+    std::uint32_t size = 0, type = 0, got = 0;
+    Check(gc.IsMessageAvailable(&size), "saved placement change queues a native rank event");
+    std::vector<std::uint8_t> bytes(size); gc.RetrieveMessage(&type, bytes.data(), size, &got);
+    Check((type & ~ProtobufMask) == gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate,
+          "native rank event uses the captured 9194 message");
+}
+
 int main()
 {
     try
     {
+        NativeArmorySlotsAndConsoleStars(); std::cout << "PASS native Armory slots and console stars\n";
+        NativePremier(); std::cout << "PASS native Premier placement/rating cache\n";
+        HowlAndArmoryRotation(); std::cout << "PASS limited Howl and Armory rotation policy\n";
+        ConfiguredRewardsAndPity(); std::cout << "PASS configured match rewards, pity and local transport\n";
         ArmoryPassCapAndPersistence(); std::cout << "PASS armory pass cap and persistence\n";
         SavedProgressionAndServerItems(); std::cout << "PASS saved ranks, pass XP and bot-server cache\n";
         Terminals(); std::cout << "PASS terminal offers, decline and purchase\n";

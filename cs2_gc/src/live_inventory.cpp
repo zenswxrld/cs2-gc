@@ -18,9 +18,10 @@ InventoryItem LiveInventory::AddItem(InventoryItem item)
 
 bool LiveInventory::AddXpTrack(std::uint32_t xp)
 {
-    if (xp == 0 || xp > ArmoryPassMaxXp)
+    const auto maxPassXp = 40 * m_inventory.Gameplay().armory_xp_per_star;
+    if (xp == 0 || xp > maxPassXp)
         return false;
-    std::erase_if(m_inventory.XpTracks(), [](auto track) { return track >= ArmoryPassMaxXp; });
+    std::erase_if(m_inventory.XpTracks(), [maxPassXp](auto track) { return track >= maxPassXp; });
     if (m_inventory.XpTracks().size() >= MaxXpTracks)
         return false;
     m_inventory.XpTracks().push_back(xp);
@@ -64,7 +65,7 @@ std::size_t LiveInventory::RepairCollectionStatTrak(const Schema &schema)
 {
     std::size_t repaired = 0;
     for (const InventoryItem &item : m_inventory.Items())
-        if (item.statTrak && !schema.CollectionsOf(item.defIndex, item.paintKitIndex).empty() &&
+        if (item.statTrak && !item.statTrakFromContract && !schema.CollectionsOf(item.defIndex, item.paintKitIndex).empty() &&
             !schema.CanBeStatTrak(item.defIndex, item.paintKitIndex))
         {
             m_inventory.Find(item.id)->statTrak = false;
@@ -342,7 +343,7 @@ std::optional<LiveInventory::StickerApplied> LiveInventory::ApplySticker(const A
 std::vector<std::vector<std::uint8_t>> LiveInventory::EncodedSlots(std::uint32_t accountId) const
 {
     std::vector<std::vector<std::uint8_t>> out;
-    for (const Slot &slot : m_slots)
+    for (const LoadoutSlot &slot : m_inventory.Loadout())
         if (slot.itemId)
             out.push_back(EncodeEquipSlot(accountId, slot.classId, slot.slotId, slot.itemId, slot.itemDefinition));
     return out;
@@ -358,7 +359,7 @@ std::vector<std::vector<std::uint8_t>> LiveInventory::EncodedServerItems(std::ui
         auto bytes = BuildEconItem(item, accountId, CustomItemIdBase + item.id, ItemPositionBase);
         PbWriter equipped;
         bool used = false;
-        for (const Slot &slot : m_slots)
+        for (const LoadoutSlot &slot : m_inventory.Loadout())
             if (slot.itemId == CustomItemIdBase + item.id)
             {
                 PbWriter state;
@@ -387,14 +388,14 @@ std::optional<std::vector<std::vector<std::uint8_t>>> LiveInventory::Adjust(cons
     for (const EquipSlotChange &change : request.slots)
     {
         const std::uint32_t definition = change.itemId ? *DefinitionOf(change.itemId) : 0;
-        Slot *slot = nullptr;
-        for (Slot &candidate : m_slots)
+        LoadoutSlot *slot = nullptr;
+        for (LoadoutSlot &candidate : m_inventory.Loadout())
             if (candidate.classId == change.classId && candidate.slotId == change.slotId)
                 slot = &candidate;
         if (!slot)
         {
-            m_slots.push_back({change.classId, change.slotId, 0, 0});
-            slot = &m_slots.back();
+            m_inventory.Loadout().push_back({change.classId, change.slotId, 0, 0});
+            slot = &m_inventory.Loadout().back();
         }
         slot->itemId = change.itemId;
         slot->itemDefinition = definition;

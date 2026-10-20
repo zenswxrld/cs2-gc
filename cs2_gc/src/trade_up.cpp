@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <charconv>
 
 namespace cs2_gc
 {
@@ -19,6 +20,36 @@ std::uint64_t Below(const RandomSource &random, std::uint64_t bound)
 }
 
 constexpr std::uint32_t Covert = 6;
+}
+
+std::optional<LocalTradeUpRequest> DecodeLocalTradeUpRequest(std::string_view text)
+{
+    if (text.size() > 512)
+        return std::nullopt;
+    const auto split = text.find(' ');
+    if (split != 32 || text.substr(0, split).find_first_not_of("0123456789abcdef") != std::string_view::npos)
+        return std::nullopt;
+    LocalTradeUpRequest request;
+    request.token = text.substr(0, split);
+    text.remove_prefix(split + 1);
+    while (!text.empty())
+    {
+        const auto end = text.find(' ');
+        const auto word = text.substr(0, end);
+        std::uint64_t id = 0;
+        const auto [last, ec] = std::from_chars(word.data(), word.data() + word.size(), id);
+        if (ec != std::errc{} || last != word.data() + word.size() || !id || request.itemIds.size() == 10)
+            return std::nullopt;
+        request.itemIds.push_back(id);
+        if (end == std::string_view::npos)
+            break;
+        text.remove_prefix(end + 1);
+        if (text.empty())
+            return std::nullopt;
+    }
+    if (request.itemIds.size() != 5 && request.itemIds.size() != 10)
+        return std::nullopt;
+    return request;
 }
 
 const char *TradeUpErrorText(TradeUpError error)
@@ -60,6 +91,7 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     }
 
     std::uint32_t rarity = 0;
+    std::uint32_t statTrakCount = 0;
     float totalWear = 0.0f;
     std::map<std::string, std::uint32_t> supplied; // collection -> how many of the ten it supplies
     for (const InventoryItem *item : inputs)
@@ -73,8 +105,7 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
             rarity = *skinRarity;
         else if (*skinRarity != rarity)
             return fail(TradeUpError::MixedRarity);
-        if (item->statTrak != inputs.front()->statTrak)
-            return fail(TradeUpError::MixedStatTrak);
+        statTrakCount += item->statTrak;
         const auto collections = schema.CollectionsOf(item->defIndex, item->paintKitIndex);
         if (collections.empty())
             return fail(TradeUpError::NoCollection);
@@ -85,6 +116,11 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
         return fail(TradeUpError::WrongCount);
     if (rarity > Covert)
         return fail(TradeUpError::TopRarity);
+    // Exact input fraction, with no random draw at the 0% and 100% endpoints.
+    if (!inventory.Gameplay().mixed_stattrak_tradeups && statTrakCount && statTrakCount != itemIds.size())
+        return fail(TradeUpError::MixedStatTrak);
+    bool outputStatTrak = statTrakCount == itemIds.size() ||
+                          (statTrakCount && Below(random, itemIds.size()) < statTrakCount);
 
     // For every collection that supplied inputs, its skins of the next rarity.
     struct Pool
@@ -98,7 +134,7 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     {
         Pool pool{count, {}};
         if (rarity == Covert)
-            pool.skins = schema.GoldOutcomes(collection, inputs.front()->statTrak);
+            pool.skins = schema.GoldOutcomes(collection, false);
         else
             for (const SkinRef &skin : schema.CollectionSkins(collection))
                 if (schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex) == rarity + 1)
@@ -110,6 +146,30 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     }
     if (pools.empty())
         return fail(TradeUpError::NoOutcome);
+
+    if (rarity == Covert && outputStatTrak)
+    {
+        auto knifePools = pools;
+        std::uint64_t knifeWeight = 0;
+        for (auto &pool : knifePools)
+        {
+            std::erase_if(pool.skins, [&schema](const SkinRef &skin) { return !schema.IsKnife(skin.weaponDefIndex); });
+            if (!pool.skins.empty())
+                knifeWeight += pool.weight;
+        }
+        std::erase_if(knifePools, [](const Pool &pool) { return pool.skins.empty(); });
+        if (knifePools.empty())
+        {
+            if (statTrakCount == itemIds.size())
+                return fail(TradeUpError::NoOutcome);
+            outputStatTrak = false; // mixed glove-only inputs have no possible StatTrak output
+        }
+        else
+        {
+            pools = std::move(knifePools);
+            totalWeight = knifeWeight;
+        }
+    }
 
     std::uint64_t roll = Below(random, totalWeight);
     const Pool *chosen = &pools.back();
@@ -131,7 +191,8 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     item.defIndex = outcome.weaponDefIndex;
     item.paintKitIndex = outcome.paintKitIndex;
     item.rarity = rarity == Covert ? Covert : rarity + 1;
-    item.statTrak = inputs.front()->statTrak;
+    item.statTrak = outputStatTrak;
+    item.statTrakFromContract = outputStatTrak;
     item.unusual = rarity == Covert;
     item.seed = static_cast<std::uint32_t>(Below(random, 1000)) + 1;
     const float average = totalWear / static_cast<float>(itemIds.size());

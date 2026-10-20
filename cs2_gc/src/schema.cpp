@@ -212,6 +212,7 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
                         if (!ParseU32(good.Value("points"), armory.points) || armory.itemName.empty())
                             continue; // an unusable tile still occupies its position in the game's list
                         armory.redeemId = Crc32(armory.itemName);
+                        armory.rotationSlot = good.Value("local_rotation_slot");
                         schema.m_armoryRedeemables.push_back(std::move(armory));
                     }
                 }
@@ -359,6 +360,16 @@ std::vector<SkinRef> Schema::GoldOutcomes(const std::string &collection, bool st
             if (!statTrak || IsKnife(skin.weaponDefIndex))
                 result.push_back(skin);
     return result;
+}
+
+std::vector<SkinRef> Schema::CrateGoldOutcomes(std::uint32_t defIndex) const
+{
+    const auto item = m_itemsByIndex.find(defIndex);
+    if (item == m_itemsByIndex.end())
+        return {};
+    const auto *tags = item->second->Find("tags");
+    const auto *set = tags ? tags->Find("ItemSet") : nullptr;
+    return set ? GoldOutcomes(std::string{set->Value("tag_value")}, false) : std::vector<SkinRef>{};
 }
 
 std::vector<std::string> Schema::CollectionsOf(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
@@ -584,8 +595,33 @@ std::optional<std::uint32_t> Schema::SkinRarity(std::uint32_t weaponDefIndex, st
     const auto base = m_rarities.find(std::string{ResolveValue(*weapon->second, "item_rarity", m_prefabs)});
     if (kit == m_rarities.end() || base == m_rarities.end() || kit->second == 0 || base->second == 0)
         return std::nullopt;
+    if (kit->second > 6) return kit->second; // preserve explicit Contraband, never treat Howl as a Covert contract input
     constexpr std::uint32_t Covert = 6;
     const std::uint32_t combined = kit->second + base->second - 1;
     return combined > Covert ? Covert : combined;
+}
+}
+
+namespace cs2_gc
+{
+std::vector<SkinRef> Schema::MatchRewardSkins() const
+{
+    std::vector<SkinRef> result;
+    std::unordered_set<std::uint64_t> seen;
+    for (const auto &[name, skins] : m_collectionSkins)
+        for (const auto &skin : skins)
+        {
+            const auto rarity = SkinRarity(skin.weaponDefIndex, skin.paintKitIndex);
+            const auto loot = SkinAsLootItem(skin.weaponDefIndex, skin.paintKitIndex);
+            if (rarity && *rarity >= 3 && *rarity <= 6 && !IsKnife(skin.weaponDefIndex) && loot &&
+                loot->weaponClass.starts_with("weapon_") &&
+                seen.insert((std::uint64_t{skin.weaponDefIndex} << 32) | skin.paintKitIndex).second)
+                result.push_back(skin);
+        }
+    std::sort(result.begin(), result.end(), [](const auto &a, const auto &b) {
+        return a.weaponDefIndex < b.weaponDefIndex ||
+            (a.weaponDefIndex == b.weaponDefIndex && a.paintKitIndex < b.paintKitIndex);
+    });
+    return result;
 }
 }

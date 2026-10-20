@@ -8,7 +8,17 @@ snapshot of the CS:GO source for porting, not CS2-compatible runtime code.
 Instructions in `legacy/AGENTS.md` apply only to that reference subtree.
 
 Keep custom cases, custom paint kits and schema rewriting out of the active CS2
-port for now. The store must live in CS2's native Armory page, with category tabs
+port for now. Exception authorised by the user on 20 October 2026: native mixed
+StatTrak trade-ups may use a dedicated, reversible recipe-only override generated
+from the user's current schema. Broaden only the existing normal recipe input
+qualities and disable their duplicate StatTrak recipes; do not edit original item,
+paint-kit, collection or case definitions. Additional user-authorised exception:
+generate native Armory catalogue rows referencing existing official items and
+loot lists, for per-category rotation of Armory collections, charms, stickers,
+limited items, cases and curated capsules. Do not create or alter item/loot-list
+definitions. Load the same generated catalogue in the client and local GC.
+Back up gameinfo.gi before adding the
+owned native search path and preserve other addons. The store must live in CS2's native Armory page, with category tabs
 and pagination for the catalogue. Do not bring back the legacy Riptide store.
 Do not claim the Armory UI works until mounted and verified in the target client.
 

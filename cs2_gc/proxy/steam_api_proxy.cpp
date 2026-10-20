@@ -23,6 +23,7 @@
 #include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/gc_summary.h"
 #include "cs2_gc/protobuf_dump.h"
+#include "cs2_gc/protobuf.h"
 #include "cs2_gc/proxy_support.h"
 #include "cs2_gc/replay.h"
 
@@ -220,13 +221,40 @@ public:
     bool IsMessageAvailable(std::uint32_t *size) override { return m_gc.IsMessageAvailable(size); }
 
     void EnableReplay(std::shared_ptr<const ReplayStore> store) { m_gc.EnableReplay(std::move(store)); }
+    void EnableNativeStore(const std::filesystem::path &path, const ReplayStore &replay)
+    {
+        const auto id = gc_msg::EGCItemMsg::k_EMsgGCStoreGetUserDataResponse;
+        const auto *recorded = replay.Find(id);
+        if (!recorded) return;
+        m_gc.SetHandler(gc_msg::EGCItemMsg::k_EMsgGCStoreGetUserData,
+            [path, fallback = *recorded, id](const FrameView &frame, LocalGameCoordinator &gc) {
+                std::vector<std::uint8_t> body;
+                std::error_code error;
+                const auto size = std::filesystem::file_size(path, error);
+                if (!error && size <= MaxMessageBytes)
+                {
+                    std::ifstream input(path, std::ios::binary);
+                    body.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+                    if (input.bad() || body.size() != size) body.clear();
+                }
+                bool hasSheet = false;
+                PbReader reader(body); PbField field;
+                while (reader.Next(field))
+                    if (field.number == 8 && field.wire == 2 && field.bytes.size() >= 17 &&
+                        std::memcmp(field.bytes.data(), "LZMA", 4) == 0) hasSheet = true;
+                if (reader.Failed() || !hasSheet) body = fallback;
+                gc.Reply(id, body, ReplyHeaderFor(frame));
+            });
+    }
     void SetItemProvider(LocalGameCoordinator::ItemProvider provider) { m_gc.SetItemProvider(std::move(provider)); }
     void SetDropRecordedItems(bool drop) { m_gc.SetDropRecordedItems(drop); }
     void SetArmoryCredits(std::optional<std::uint32_t> credits) { m_gc.SetArmoryCredits(credits); }
+    void EnableLocalPremier(const LocalPremier &rank) { m_gc.EnableLocalPremier(rank); }
     void EnableProgression(std::filesystem::path rewardPath, std::function<void()> afterReward)
     {
         m_rewardPath = std::move(rewardPath);
         m_afterReward = std::move(afterReward);
+        m_log.Write("progression: gameplay rewards use the local bridge (automatic startup controlled by rewards_auto_start)");
     }
     void PollProgression()
     {
@@ -243,6 +271,36 @@ public:
         const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), total);
         if (input && error == std::errc{} && end == text.data() + text.size())
             m_gc.ApplyEarnedXp(total, m_afterReward);
+        {
+            std::ifstream matches(m_rewardPath.parent_path() / "cs2_gc_matches.txt");
+            std::string count;
+            std::getline(matches, count);
+            std::uint64_t completed = 0;
+            const auto [last, ec] = std::from_chars(count.data(), count.data() + count.size(), completed);
+            if (matches && ec == std::errc{} && last == count.data() + count.size())
+                m_gc.ApplyMatchRewards(completed, m_afterReward);
+        }
+        PollTradeUpRequest();
+        PollTerminalRequest();
+#ifdef CS2_GC_DEBUG_TOOLS
+        {
+            std::ifstream control(m_rewardPath.parent_path() / "cs2_gc_console.txt");
+            std::uint64_t pid = 0, stars = 0, offset = 0; std::string extra;
+            if ((control >> pid >> stars >> offset) && !(control >> extra) && control.eof() &&
+                pid == GetCurrentProcessId() && offset <= 1000000)
+                m_gc.ApplyConsoleControl(stars, static_cast<std::uint32_t>(offset), m_afterReward);
+        }
+#endif
+        m_gc.ApplyLevelRewards(m_afterReward);
+        {
+            std::ifstream premier(m_rewardPath.parent_path() / "cs2_gc_premier.txt");
+            std::uint64_t rating = 0, wins = 0, placements = 0;
+            std::string extra;
+            if ((premier >> rating >> wins >> placements) && !(premier >> extra) && premier.eof() &&
+                rating <= 99999 && wins <= UINT32_MAX && placements >= 1 && placements <= 100)
+                m_gc.SetLocalPremier({static_cast<std::uint32_t>(rating), static_cast<std::uint32_t>(wins),
+                                      static_cast<std::uint32_t>(placements)});
+        }
     }
     void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange)
     {
@@ -282,6 +340,73 @@ public:
     }
 
 private:
+    void PollTerminalRequest()
+    {
+        const auto dir = m_rewardPath.parent_path();
+        const auto pending = dir / "cs2_gc_terminal_request.txt";
+        const auto processing = dir / "cs2_gc_terminal_processing.txt";
+        std::error_code ec;
+        if (std::filesystem::exists(processing, ec) || !std::filesystem::exists(pending, ec)) return;
+        std::filesystem::rename(pending, processing, ec);
+        if (ec) return;
+        std::ifstream input(processing);
+        std::string line; std::getline(input, line); input.close();
+        // Reuse the strict token/ID decoder; repeat one ID only to share the transport shape.
+        const auto request = DecodeLocalTradeUpRequest(line);
+        bool valid = request && request->itemIds.size() == 5;
+        if (valid)
+            for (const auto id : request->itemIds) valid = valid && id == request->itemIds.front();
+        const bool accepted = valid && m_gc.AcceptLocalTerminal(request->itemIds.front(), m_afterReward);
+        if (request)
+        {
+            const auto temporary = dir / "cs2_gc_terminal_result.txt.tmp";
+            std::ofstream output(temporary);
+            output << request->token << "\n" << (accepted ? "success" : "rejected; check cs2_gc_log.txt") << "\n";
+            output.close();
+            std::filesystem::remove(dir / "cs2_gc_terminal_result.txt", ec);
+            std::filesystem::rename(temporary, dir / "cs2_gc_terminal_result.txt", ec);
+        }
+        std::filesystem::remove(processing, ec);
+    }
+    void PollTradeUpRequest()
+    {
+        const auto directory = m_rewardPath.parent_path();
+        const auto pending = directory / "cs2_gc_tradeup_request.txt";
+        const auto processing = directory / "cs2_gc_tradeup_processing.txt";
+        std::error_code ec;
+        if (std::filesystem::exists(processing, ec) || !std::filesystem::exists(pending, ec))
+            return;
+        std::filesystem::rename(pending, processing, ec);
+        if (ec)
+            return;
+        std::ifstream input(processing);
+        std::string line;
+        std::getline(input, line);
+        input.close();
+        const auto request = DecodeLocalTradeUpRequest(line);
+        if (request)
+        {
+            PbWriter body;
+            body.Varint(1, 1);
+            for (const auto id : request->itemIds)
+                body.Varint(2, id);
+            std::vector<std::uint8_t> frame;
+            WriteProtobufFrame(gc_msg::EGCItemMsg::k_EMsgGCCraft, {}, body.bytes(), frame);
+            const auto ignored = m_gc.IgnoredMessages();
+            const auto result = SendMessage(gc_msg::EGCItemMsg::k_EMsgGCCraft | ProtobufMask, frame.data(),
+                                             static_cast<std::uint32_t>(frame.size()));
+            const bool success = result == GCResult::OK && ignored == m_gc.IgnoredMessages();
+            const auto temporary = directory / "cs2_gc_tradeup_result.tmp";
+            std::ofstream output(temporary, std::ios::trunc);
+            output << request->token << '\n' << (success ? "success" : "rejected; check cs2_gc_log.txt") << '\n';
+            output.close();
+            if (output)
+                std::filesystem::rename(temporary, directory / "cs2_gc_tradeup_result.txt", ec);
+        }
+        else
+            m_log.Write("local trade-up helper: invalid request; nothing consumed");
+        std::filesystem::remove(processing, ec);
+    }
     LocalGameCoordinator m_gc;
     std::filesystem::path m_rewardPath;
     std::function<void()> m_afterReward;
@@ -354,6 +479,10 @@ struct State
     ProxyCoordinator *coordinator{};
     ProxyCoordinator *serverCoordinator{};
     ProxyMode mode{ProxyMode::Local};
+    bool autoRewards{};
+    HANDLE rewardsProcess{};
+    unsigned rewardsLaunchAttempts{};
+    std::chrono::steady_clock::time_point nextRewardsLaunch{};
     using FindFn = void *(__cdecl *)(int, const char *);
     using CreateFn = void *(__cdecl *)(const char *);
     FindFn realFind{};
@@ -368,6 +497,85 @@ struct State
     std::uint64_t (__cdecl *realGetSteamId)(void *){};
     std::optional<std::uint32_t> genericSlotOffset; // from the real DLL's own flat-API thunk
 };
+
+// Called from the normal game callback loop, never DllMain/loader initialization.
+void StartRewardsIfNeeded(State &state)
+{
+    if (!state.autoRewards)
+        return;
+    static std::mutex launchMutex;
+    std::lock_guard lock(launchMutex);
+    const auto now = std::chrono::steady_clock::now();
+    if (now < state.nextRewardsLaunch)
+        return;
+    state.nextRewardsLaunch = now + std::chrono::seconds(10);
+    if (state.rewardsProcess)
+    {
+        if (WaitForSingleObject(state.rewardsProcess, 0) == WAIT_TIMEOUT)
+            return;
+        DWORD code = 1;
+        GetExitCodeProcess(state.rewardsProcess, &code);
+        CloseHandle(state.rewardsProcess);
+        state.rewardsProcess = nullptr;
+        if (code == 0)
+        {
+            state.autoRewards = false; // another helper already holds the directory lock
+            state.log->Write("rewards: launcher finished; an existing helper may already be running");
+            return;
+        }
+        state.log->Write("rewards: helper exited with code " + std::to_string(code) +
+                         "; see cs2_gc_rewards.log (Python 3 is required)");
+    }
+    if (state.rewardsLaunchAttempts >= 3)
+    {
+        state.autoRewards = false;
+        state.log->Write("rewards: stopped retrying; check cs2_gc_rewards.log or run start_rewards.cmd to diagnose");
+        return;
+    }
+    ++state.rewardsLaunchAttempts;
+    const auto script = std::filesystem::path(state.directory) / L"gsi_rewards.py";
+    const auto cfg = (std::filesystem::path(state.directory) / L".." / L".." / L"csgo" / L"cfg").lexically_normal();
+    if (!std::filesystem::exists(script) || !std::filesystem::is_directory(cfg))
+    {
+        state.autoRewards = false;
+        state.log->Write("rewards: missing bundled helper or game/csgo/cfg; extract the complete test ZIP beside the DLL");
+        return;
+    }
+    struct Candidate { const wchar_t *name; bool launcher; };
+    const Candidate candidates[] = {{L"pyw.exe", true}, {L"pythonw.exe", false},
+                                    {L"py.exe", true}, {L"python.exe", false}};
+    for (const auto &candidate : candidates)
+    {
+        wchar_t found[32768];
+        const auto length = SearchPathW(nullptr, candidate.name, nullptr, 32768, found, nullptr);
+        if (!length || length >= 32768)
+            continue;
+        std::wstring command = QuoteWindowsArgument(found);
+        if (candidate.launcher) command += L" -3";
+        command += L" " + QuoteWindowsArgument(script.wstring()) +
+                   L" --proxy-dir " + QuoteWindowsArgument(state.directory) +
+                   L" --cfg-dir " + QuoteWindowsArgument(cfg.wstring()) +
+                   L" --parent-pid " + std::to_wstring(GetCurrentProcessId()) +
+                   L" --log-file " + QuoteWindowsArgument((std::filesystem::path(state.directory) / L"cs2_gc_rewards.log").wstring());
+#ifdef CS2_GC_DEBUG_TOOLS
+        command += L" --debug-console";
+#endif
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        startup.dwFlags = STARTF_USESHOWWINDOW;
+        startup.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION child{};
+        if (!CreateProcessW(found, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                            nullptr, state.directory.c_str(), &startup, &child))
+            continue;
+        CloseHandle(child.hThread);
+        state.rewardsProcess = child.hProcess;
+        state.log->Write("rewards: background helper launched; exits with CS2. Diagnostics: cs2_gc_rewards.log");
+        return;
+    }
+    state.autoRewards = false;
+    state.log->Write("rewards: Python 3 not found; install Python 3 with its launcher or PATH option, then restart CS2");
+}
 
 State &Init();
 
@@ -585,6 +793,7 @@ State &Init()
             }
             else
                 s.log->Write("replay: no recordings in cs2_gc_replay, using the synthetic welcome");
+            s.coordinator->EnableNativeStore(std::filesystem::path(s.directory + L"cs2_gc_store_2501.bin"), *replay);
 
             // One live inventory serves the welcome, equipping and the Armory. It starts from
             // cs2_gc_inventory.txt (same text format the core saves in, so it can be edited by hand).
@@ -598,6 +807,23 @@ State &Init()
                 s.log->Write("custom inventory: cs2_gc_inventory.txt is invalid, starting empty and not saving over it");
                 loaded = Inventory{};
             }
+            std::ifstream gameplayFile(std::filesystem::path(s.directory + L"cs2_gc_gameplay.cfg"));
+            if (gameplayFile)
+            {
+                std::ostringstream contents; contents << gameplayFile.rdbuf();
+                if (const auto gameplay = ParseGameplayConfig(contents.str()))
+                {
+                    loaded->SetGameplay(*gameplay);
+                    s.log->Write("gameplay: cs2_gc_gameplay.cfg loaded (restart game/helper after edits)");
+                }
+                else
+                    s.log->Write("ERROR: cs2_gc_gameplay.cfg invalid; using documented default gameplay settings");
+            }
+            else s.log->Write("gameplay: no cs2_gc_gameplay.cfg; using documented defaults");
+            s.autoRewards = loaded->Gameplay().rewards_auto_start != 0;
+            if (loaded->Gameplay().premier_enabled)
+                s.coordinator->EnableLocalPremier({loaded->Gameplay().premier_start_rating, 0,
+                                                   loaded->Gameplay().premier_placement_wins});
             auto live = std::make_shared<LiveInventory>(std::move(*loaded));
             s.serverCoordinator->EnableServerInventory(live);
             Logger *saveLog = s.log;
@@ -640,7 +866,28 @@ State &Init()
                 std::ifstream schemaFile(schemaPath, std::ios::binary);
                 std::ostringstream schemaText;
                 schemaText << schemaFile.rdbuf();
-                auto parsed = Schema::Load(schemaText.str());
+                std::string schemaSource = schemaText.str();
+                // The bridge prepares a reversible native catalogue for the next
+                // launch. Validate both files against its stamp before accepting
+                // it, so native shop indexes and local redeem identities agree.
+                const auto nativeDir = schemaPath.parent_path().parent_path().parent_path() / L"cs2_gc_native";
+                std::ifstream stampFile(nativeDir / L"cs2_gc_schema_stamp.txt");
+                std::string marker; std::uint64_t originalCrc = 0, outputCrc = 0;
+                if (stampFile >> marker >> originalCrc >> outputCrc && marker == "CS2_GC_NATIVE_V1" &&
+                    originalCrc == Crc32(schemaSource))
+                {
+                    std::ifstream nativeFile(nativeDir / L"scripts/items/items_game.txt", std::ios::binary);
+                    const std::string nativeSource((std::istreambuf_iterator<char>(nativeFile)), {});
+                    std::ifstream gameinfo(nativeDir.parent_path() / L"csgo/gameinfo.gi");
+                    const std::string mounts((std::istreambuf_iterator<char>(gameinfo)), {});
+                    if (!nativeSource.empty() && outputCrc == Crc32(nativeSource) &&
+                        mounts.find("Game\tcs2_gc_native // cs2_gc native tradeups") != std::string::npos)
+                    {
+                        schemaSource = nativeSource;
+                        s.log->Write("armory: validated mounted native catalogue loaded");
+                    }
+                }
+                auto parsed = Schema::Load(schemaSource);
                 if (!parsed)
                     s.log->Write("armory: items_game.txt could not be read; Armory purchases stay unanswered");
                 else
@@ -721,7 +968,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: codex-20261020-01");
+        s.log->Write("test build: codex-20261020-05");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");
@@ -895,7 +1142,10 @@ extern "C" __declspec(dllexport) void __cdecl SteamAPI_RunCallbacks()
     if (state.realRunCallbacks)
         state.realRunCallbacks();
     if (state.active && state.coordinator && state.mode == ProxyMode::Local)
+    {
+        StartRewardsIfNeeded(state);
         state.coordinator->PollProgression();
+    }
     std::uint32_t size = 0;
     if (state.active && state.coordinator && state.coordinator->IsMessageAvailable(&size))
         DeliverGcMessageAvailable(state, size);

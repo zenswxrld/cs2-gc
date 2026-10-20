@@ -1,6 +1,7 @@
 #include "cs2_gc/econ_item.h"
 #include "cs2_gc/protobuf.h"
 #include <bit>
+#include <functional>
 #include <array>
 #include <cstring>
 
@@ -37,7 +38,7 @@ void Reemit(PbWriter &out, const PbField &f)
 
 // CMsgSOCacheSubscribed.SubscribedType, with `items` appended when it is the item type (and its
 // existing objects removed first when dropExisting).
-std::optional<std::vector<std::uint8_t>> PatchSubscribedType(std::span<const std::uint8_t> type,
+std::optional<std::vector<std::uint8_t>> PatchSubscribedType(std::span<const std::uint8_t> type, std::uint64_t typeId,
     std::span<const std::vector<std::uint8_t>> items, bool dropExisting, bool &isItemType)
 {
     isItemType = false;
@@ -46,7 +47,7 @@ std::optional<std::vector<std::uint8_t>> PatchSubscribedType(std::span<const std
         PbReader scan(type);
         PbField f;
         while (scan.Next(f))
-            if (f.number == 1 && f.wire == 0 && f.value == ItemTypeId)
+            if (f.number == 1 && f.wire == 0 && f.value == typeId)
                 isItemType = true;
         if (scan.Failed())
             return std::nullopt;
@@ -68,7 +69,7 @@ std::optional<std::vector<std::uint8_t>> PatchSubscribedType(std::span<const std
     return out.bytes();
 }
 
-std::optional<std::vector<std::uint8_t>> PatchCache(std::span<const std::uint8_t> cache,
+std::optional<std::vector<std::uint8_t>> PatchCache(std::span<const std::uint8_t> cache, std::uint64_t typeId,
     std::span<const std::vector<std::uint8_t>> items, bool dropExisting)
 {
     PbWriter out;
@@ -80,7 +81,7 @@ std::optional<std::vector<std::uint8_t>> PatchCache(std::span<const std::uint8_t
         if (f.number == 2 && f.wire == 2)
         {
             bool isItemType = false;
-            auto type = PatchSubscribedType(f.bytes, items, dropExisting, isItemType);
+            auto type = PatchSubscribedType(f.bytes, typeId, items, dropExisting, isItemType);
             if (!type)
                 return std::nullopt;
             patched |= isItemType;
@@ -94,7 +95,7 @@ std::optional<std::vector<std::uint8_t>> PatchCache(std::span<const std::uint8_t
     if (!patched)
     {
         PbWriter type;
-        type.Varint(1, ItemTypeId);
+        type.Varint(1, typeId);
         for (const auto &item : items)
             type.Bytes(2, item);
         out.Message(2, type);
@@ -123,9 +124,29 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
     return out.bytes();
 }
 
+std::vector<std::uint8_t> EncodeEquipSlot(std::uint32_t accountId, std::uint32_t classId, std::uint32_t slotId,
+                                          std::uint64_t itemId, std::uint32_t itemDefinition)
+{
+    PbWriter out;
+    out.Varint(1, accountId);
+    out.Varint(2, classId);
+    out.Varint(3, slotId);
+    out.Varint(4, itemId);
+    out.Varint(5, itemDefinition);
+    return out.bytes();
+}
+
 std::optional<std::vector<std::uint8_t>> AppendItemsToWelcome(
     std::span<const std::uint8_t> welcome, std::span<const std::vector<std::uint8_t>> items, bool dropExisting)
 {
+    return AppendObjectsToWelcome(welcome, ItemTypeId, items, dropExisting);
+}
+
+std::optional<std::vector<std::uint8_t>> AppendObjectsToWelcome(
+    std::span<const std::uint8_t> welcome, std::uint64_t typeId,
+    std::span<const std::vector<std::uint8_t>> objects, bool dropExisting)
+{
+    std::span<const std::vector<std::uint8_t>> items = objects;
     PbWriter out;
     PbReader reader(welcome);
     PbField f;
@@ -134,7 +155,7 @@ std::optional<std::vector<std::uint8_t>> AppendItemsToWelcome(
     {
         if (f.number == 3 && f.wire == 2 && !patched)
         {
-            auto cache = PatchCache(f.bytes, items, dropExisting);
+            auto cache = PatchCache(f.bytes, typeId, items, dropExisting);
             if (!cache)
                 return std::nullopt;
             out.Bytes(3, *cache);
@@ -146,5 +167,103 @@ std::optional<std::vector<std::uint8_t>> AppendItemsToWelcome(
     if (reader.Failed() || !patched)
         return std::nullopt;
     return out.bytes();
+}
+}
+
+namespace cs2_gc
+{
+namespace
+{
+using ObjectRewrite = std::function<std::optional<std::vector<std::uint8_t>>(std::span<const std::uint8_t>)>;
+
+// Rewrites every object of one SO type in the first cache of a Welcome; all else is copied.
+std::optional<std::vector<std::uint8_t>> RewriteObjects(std::span<const std::uint8_t> welcome,
+                                                        std::uint64_t typeId, const ObjectRewrite &rewrite)
+{
+    PbWriter out;
+    PbReader reader(welcome);
+    PbField f;
+    bool sawCache = false;
+    while (reader.Next(f))
+    {
+        if (f.number != 3 || f.wire != 2 || sawCache)
+        {
+            Reemit(out, f);
+            continue;
+        }
+        sawCache = true;
+        PbWriter cacheOut;
+        PbReader cacheReader(f.bytes);
+        PbField c;
+        while (cacheReader.Next(c))
+        {
+            if (c.number != 2 || c.wire != 2)
+            {
+                Reemit(cacheOut, c);
+                continue;
+            }
+            bool matches = false;
+            {
+                PbReader scan(c.bytes);
+                PbField t;
+                while (scan.Next(t))
+                    if (t.number == 1 && t.wire == 0 && t.value == typeId)
+                        matches = true;
+                if (scan.Failed())
+                    return std::nullopt;
+            }
+            PbWriter typeOut;
+            PbReader typeReader(c.bytes);
+            PbField t;
+            while (typeReader.Next(t))
+            {
+                if (matches && t.number == 2 && t.wire == 2)
+                {
+                    auto changed = rewrite(t.bytes);
+                    if (!changed)
+                        return std::nullopt;
+                    typeOut.Bytes(2, *changed);
+                }
+                else
+                    Reemit(typeOut, t);
+            }
+            if (typeReader.Failed())
+                return std::nullopt;
+            cacheOut.Bytes(2, typeOut.bytes());
+        }
+        if (cacheReader.Failed())
+            return std::nullopt;
+        out.Bytes(3, cacheOut.bytes());
+    }
+    if (reader.Failed() || !sawCache)
+        return std::nullopt;
+    return out.bytes();
+}
+}
+
+std::optional<std::vector<std::uint8_t>> SetArmoryBalance(std::span<const std::uint8_t> welcome,
+                                                          std::uint32_t balance)
+{
+    return RewriteObjects(welcome, XpShopTypeId, [balance](std::span<const std::uint8_t> object) {
+        PbWriter out;
+        PbReader reader(object);
+        PbField f;
+        bool replaced = false;
+        while (reader.Next(f))
+        {
+            if (f.number == 2 && f.wire == 0)
+            {
+                out.Varint(2, balance);
+                replaced = true;
+            }
+            else
+                Reemit(out, f);
+        }
+        if (reader.Failed())
+            return std::optional<std::vector<std::uint8_t>>{};
+        if (!replaced)
+            out.Varint(2, balance);
+        return std::optional<std::vector<std::uint8_t>>{out.bytes()};
+    });
 }
 }

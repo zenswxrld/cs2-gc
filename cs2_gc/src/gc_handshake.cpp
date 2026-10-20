@@ -233,6 +233,60 @@ std::optional<SoMultipleObjects> DecodeSoMultipleObjects(std::span<const std::ui
     return result;
 }
 
+std::optional<AdjustEquipSlots> DecodeAdjustEquipSlots(std::span<const std::uint8_t> body)
+{
+    AdjustEquipSlots result;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+    {
+        if (f.number == 1)
+        {
+            if (f.wire != 2)
+                return std::nullopt;
+            EquipSlotChange change;
+            PbReader inner(f.bytes);
+            PbField g;
+            while (inner.Next(g))
+            {
+                if (g.number == 1 && !U32(g, change.classId))
+                    return std::nullopt;
+                if (g.number == 2 && !U32(g, change.slotId))
+                    return std::nullopt;
+                if (g.number == 3)
+                {
+                    if (g.wire != 0)
+                        return std::nullopt;
+                    change.itemId = g.value;
+                }
+            }
+            if (inner.Failed())
+                return std::nullopt;
+            result.slots.push_back(change);
+        }
+        else if (f.number == 2 && !U32(f, result.changeNum))
+            return std::nullopt;
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    return result;
+}
+
+std::vector<std::uint8_t> EncodeSoMultipleObjects(const SoMultipleObjects &objects)
+{
+    PbWriter w;
+    for (const auto &object : objects.objects)
+    {
+        PbWriter o;
+        o.Varint(1, static_cast<std::uint64_t>(static_cast<std::int64_t>(object.typeId)));
+        o.Bytes(2, object.data);
+        w.Message(2, o);
+    }
+    w.Fixed64(3, objects.version);
+    w.Message(6, OwnerWriter(objects.owner));
+    return w.bytes();
+}
+
 std::vector<std::uint8_t> EncodeSoCacheSubscribed(const SoCacheSubscribed &cache)
 {
     PbWriter w;

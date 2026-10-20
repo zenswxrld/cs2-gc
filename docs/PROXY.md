@@ -120,6 +120,26 @@ the weapon's base rarity - 1, capped at Covert). `next_id` must be greater than 
 are 1 to 1000. Items get ids from 1000000000001 up. StatTrak is not encoded yet. Added items exist only
 in this session's view of the inventory: nothing is stored on Valve's side.
 
+### Loadout, Armory and Store: what is known and what works
+
+- **Equipping works through the local GC.** When you equip an item in the Loadout the game sends
+  `AdjustEquipSlotsManual` (2531: class, slot, item id). The proxy updates its own slot table and
+  tells the game with a shared-object update (the loadout slots are SO type 3, shaped like
+  `CSOEconEquipSlot`). Only your own items and the built-in defaults can be equipped; anything else is
+  ignored. The slots live in memory for the session and are not saved yet.
+- **Purchases are refused cleanly.** Buying on the Store page sends `StorePurchaseInit` (2510); in a test
+  it was for the Armory Pass (item 1354, 2275 in currency 21). The proxy now answers with a failure and
+  echoes the request's job id, so the game shows a normal purchase failure instead of timing out into the
+  generic Steam error and reconnecting. Nothing is charged: no request ever reaches Valve.
+- **Armory credits.** The Credits Balance and the two Armory Pass tracks live in one recorded object
+  (type 6, shaped like `CSOAccountXpShop`). `armory_credits = N` in `cs2_gc.cfg` sets the balance in the
+  Welcome, which tests whether that guess is right: the Armory page should then show N credits.
+- **Armory purchases.** Buying a tile sends `ClientRedeemMissionReward` (9209: campaign id, redeem id,
+  expected cost, your balance). Nothing answers it yet. The log records the request, which tells us
+  each tile's redeem id and cost.
+- The Armory's tile catalogue is not in `items_game.txt`, and the Store page's catalogue is a compressed
+  price sheet inside message 2501. Decoding those is the next step.
+
 ## Config (`cs2_gc.cfg`, optional)
 
 The file lives next to `steam_api64.dll`. Windows hides known file extensions, so make sure it is
@@ -129,6 +149,7 @@ The log says whether the file was found.
 ```
 # mode = local (default) or capture
 # real_items = hide (default, a fresh inventory) or keep (your recorded items stay)
+# armory_credits = 25   (the Armory Credits Balance to show; leave out to keep the recording)
 # SteamID64 used as the cache owner. Leave out to read it from the local Steam session.
 steam_id = 7656119XXXXXXXXXX
 welcome_version = 0

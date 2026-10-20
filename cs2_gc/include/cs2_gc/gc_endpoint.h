@@ -1,11 +1,13 @@
 #pragma once
 
 #include "cs2_gc/gc_handshake.h"
+#include "cs2_gc/live_inventory.h"
 #include "cs2_gc/message_queue.h"
 #include "cs2_gc/replay.h"
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <mutex>
 #include <unordered_map>
 
@@ -43,6 +45,8 @@ public:
 
     // Queue a protobuf reply for the game. `type` is the plain message ID (no flag).
     bool Reply(std::uint32_t type, std::span<const std::uint8_t> body);
+    // With a header, for replies the game matches to its request (see ReplyHeaderFor).
+    bool Reply(std::uint32_t type, std::span<const std::uint8_t> body, std::span<const std::uint8_t> header);
     void SetHandler(std::uint32_t type, Handler handler); // plain ID; replaces any earlier one
     void SetOwner(const SoOwner &owner);                  // used by later welcomes
 
@@ -60,6 +64,16 @@ public:
     // Remove the items the recorded Welcome carries, so the inventory starts fresh and holds only
     // what the provider supplies. Other recorded object types are left alone.
     void SetDropRecordedItems(bool drop);
+    // Set the Armory credits balance in the replayed Welcome (unset leaves the recording as is).
+    void SetArmoryCredits(std::optional<std::uint32_t> credits);
+
+    // Track the loadout: equip requests change the live inventory and the game is told through a
+    // shared-object update, and a fresh Welcome carries the current slots in place of the recorded ones.
+    void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory);
+
+    // Answer a store purchase request with a failure instead of leaving it unanswered. Nothing is
+    // charged and nothing is granted.
+    void EnableStorePurchaseFailure();
     std::size_t PatchFailures() const { return m_patchFailures; }
 
     std::size_t IgnoredMessages() const { return m_ignored; }
@@ -76,5 +90,12 @@ private:
     std::atomic<std::size_t> m_patchFailures{0};
     ItemProvider m_itemProvider;
     bool m_dropRecordedItems{};
+    std::optional<std::uint32_t> m_armoryCredits;
+    std::shared_ptr<LiveInventory> m_live;
+    std::uint64_t m_soVersion{1};
 };
+
+// The header for a reply to `request`: the job id the request carried, echoed back as the target so
+// the game can match the reply to it. Empty when the request has no job id.
+std::vector<std::uint8_t> ReplyHeaderFor(const FrameView &request);
 }

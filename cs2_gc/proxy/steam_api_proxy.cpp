@@ -217,6 +217,9 @@ public:
     void EnableReplay(std::shared_ptr<const ReplayStore> store) { m_gc.EnableReplay(std::move(store)); }
     void SetItemProvider(LocalGameCoordinator::ItemProvider provider) { m_gc.SetItemProvider(std::move(provider)); }
     void SetDropRecordedItems(bool drop) { m_gc.SetDropRecordedItems(drop); }
+    void SetArmoryCredits(std::optional<std::uint32_t> credits) { m_gc.SetArmoryCredits(credits); }
+    void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory) { m_gc.EnableLiveInventory(std::move(inventory)); }
+    void EnableStorePurchaseFailure() { m_gc.EnableStorePurchaseFailure(); }
 
     GCResult RetrieveMessage(std::uint32_t *type, void *destination, std::uint32_t capacity,
                              std::uint32_t *size) override
@@ -503,6 +506,12 @@ State &Init()
             {
                 s.coordinator->EnableReplay(replay);
                 s.coordinator->SetDropRecordedItems(proxy.hideRealItems);
+                if (proxy.armoryCredits)
+                {
+                    s.coordinator->SetArmoryCredits(proxy.armoryCredits);
+                    s.log->Write("armory: the credits balance is set to " + std::to_string(*proxy.armoryCredits) +
+                                 " in the welcome (armory_credits)");
+                }
                 s.log->Write(proxy.hideRealItems ? "inventory: fresh. The items in the recording are removed; only "
                                                    "cs2_gc_inventory.txt items appear (real_items = keep to change)"
                                                  : "inventory: the recorded items are kept (real_items = keep)");
@@ -511,6 +520,14 @@ State &Init()
             }
             else
                 s.log->Write("replay: no recordings in cs2_gc_replay, using the synthetic welcome");
+
+            // Equipping and purchases need answers too; see the README for what each one does.
+            s.coordinator->EnableStorePurchaseFailure();
+            {
+                const std::filesystem::path path(s.directory + L"cs2_gc_inventory.txt");
+                auto loaded = std::filesystem::exists(path) ? Inventory::Load(path) : std::optional<Inventory>(Inventory{});
+                s.coordinator->EnableLiveInventory(std::make_shared<LiveInventory>(loaded ? *loaded : Inventory{}));
+            }
 
             // Optional custom items, added to the replayed welcome. The file uses the same format
             // the inventory is saved in, so it can be edited by hand.
@@ -533,7 +550,7 @@ State &Init()
                         std::uint32_t position = 1000; // clear of the account's own backpack slots
                         for (const InventoryItem &item : items)
                             encoded.push_back(BuildEconItem(item, static_cast<std::uint32_t>(steamId & 0xFFFFFFFFull),
-                                                            1000000000000ull + item.id, position++));
+                                                            CustomItemIdBase + item.id, position++));
                         return encoded;
                     });
                     s.log->Write("custom inventory: " + std::to_string(inventory->Items().size()) +

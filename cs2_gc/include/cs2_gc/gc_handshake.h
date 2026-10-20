@@ -70,6 +70,19 @@ struct SoMultipleObjects // CMsgSOMultipleObjects: UpdateMultiple
     SoOwner owner;
 };
 
+struct EquipSlotChange // CMsgAdjustEquipSlot
+{
+    std::uint32_t classId{};
+    std::uint32_t slotId{};
+    std::uint64_t itemId{}; // zero clears the slot
+};
+
+struct AdjustEquipSlots // CMsgAdjustEquipSlots: the body of k_EMsgGCAdjustEquipSlotsManual
+{
+    std::vector<EquipSlotChange> slots;
+    std::uint32_t changeNum{};
+};
+
 // Decoders reject malformed input outright; unknown fields are skipped.
 std::optional<ClientHello> DecodeClientHello(std::span<const std::uint8_t> body);
 std::optional<SoCacheSubscribed> DecodeSoCacheSubscribed(std::span<const std::uint8_t> body);
@@ -77,6 +90,8 @@ std::optional<ClientWelcome> DecodeClientWelcome(std::span<const std::uint8_t> b
 std::optional<SoSingleObject> DecodeSoSingleObject(std::span<const std::uint8_t> body);
 std::optional<SoMultipleObjects> DecodeSoMultipleObjects(std::span<const std::uint8_t> body);
 
+std::optional<AdjustEquipSlots> DecodeAdjustEquipSlots(std::span<const std::uint8_t> body);
+std::vector<std::uint8_t> EncodeSoMultipleObjects(const SoMultipleObjects &objects);
 std::vector<std::uint8_t> EncodeSoCacheSubscribed(const SoCacheSubscribed &cache);
 std::vector<std::uint8_t> EncodeClientWelcome(const ClientWelcome &welcome);
 std::vector<std::uint8_t> EncodeClientHello(const ClientHello &hello);

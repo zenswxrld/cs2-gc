@@ -24,6 +24,7 @@ add_library(cs2_gc_core STATIC
     cs2_gc/src/proxy_support.cpp
     cs2_gc/src/inventory.cpp
     cs2_gc/src/keyvalues.cpp
+    cs2_gc/src/live_inventory.cpp
     cs2_gc/src/schema.cpp
     cs2_gc/src/wire.cpp
     cs2_gc/src/message_queue.cpp

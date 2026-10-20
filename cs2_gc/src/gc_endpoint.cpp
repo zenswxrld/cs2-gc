@@ -1,6 +1,7 @@
 #include "cs2_gc/gc_endpoint.h"
 #include "cs2_gc/econ_item.h"
 #include "cs2_gc/gc_msg_ids.h"
+#include "cs2_gc/protobuf.h"
 
 namespace cs2_gc
 {
@@ -40,6 +41,9 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
     }
     if (!store)
         return;
+    if (const auto *recorded = store->Find(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome))
+        if (const auto welcome = DecodeClientWelcome(*recorded); welcome && !welcome->outOfDateCaches.empty())
+            m_soVersion = welcome->outOfDateCaches[0].version;
     for (const ReplayRule &rule : ReplayRules)
     {
         if (!store->Find(rule.reply))
@@ -48,6 +52,53 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
             gc.Reply(reply, *store->Find(reply));
         });
     }
+}
+
+void LocalGameCoordinator::EnableStorePurchaseFailure()
+{
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseInit, [](const FrameView &frame, LocalGameCoordinator &gc) {
+        PbWriter response;
+        response.Varint(1, 2); // result: EResult Fail
+        gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseInitResponse, response.bytes(), ReplyHeaderFor(frame));
+    });
+}
+
+void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> inventory)
+{
+    {
+        std::lock_guard lock(m_mutex);
+        m_live = inventory;
+    }
+    if (!inventory)
+        return;
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCAdjustEquipSlotsManual,
+               [inventory](const FrameView &frame, LocalGameCoordinator &gc) {
+                   const auto request = DecodeAdjustEquipSlots(frame.body);
+                   if (!request)
+                   {
+                       ++gc.m_ignored;
+                       return;
+                   }
+                   const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                   const auto changed = inventory->Adjust(*request, accountId);
+                   if (!changed || changed->empty())
+                   {
+                       ++gc.m_ignored; // an item we do not know: leave the loadout as it is
+                       return;
+                   }
+                   SoMultipleObjects update;
+                   for (const auto &object : *changed)
+                       update.objects.push_back({static_cast<std::int32_t>(EquipSlotTypeId), object});
+                   update.version = ++gc.m_soVersion;
+                   update.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_UpdateMultiple, EncodeSoMultipleObjects(update));
+               });
+}
+
+void LocalGameCoordinator::SetArmoryCredits(std::optional<std::uint32_t> credits)
+{
+    std::lock_guard lock(m_mutex);
+    m_armoryCredits = credits;
 }
 
 void LocalGameCoordinator::SetDropRecordedItems(bool drop)
@@ -79,6 +130,29 @@ void LocalGameCoordinator::SetOwner(const SoOwner &owner)
 {
     std::lock_guard lock(m_mutex);
     m_config.owner = owner;
+}
+
+std::vector<std::uint8_t> ReplyHeaderFor(const FrameView &request)
+{
+    PbReader reader(request.header);
+    PbField f;
+    while (reader.Next(f))
+        if (f.number == 10 && f.wire == 1) // CMsgProtoBufHeader.job_id_source
+        {
+            PbWriter header;
+            header.Fixed64(11, f.value); // job_id_target
+            return header.bytes();
+        }
+    return {};
+}
+
+bool LocalGameCoordinator::Reply(std::uint32_t type, std::span<const std::uint8_t> body,
+                                 std::span<const std::uint8_t> header)
+{
+    Message message{type | ProtobufMask, {}};
+    if (WriteProtobufFrame(type, header, body, message.bytes) != FrameError::None)
+        return false;
+    return m_toGame.Push(std::move(message));
 }
 
 bool LocalGameCoordinator::Reply(std::uint32_t type, std::span<const std::uint8_t> body)
@@ -121,23 +195,38 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
     {
         if (const auto *welcome = m_replay->Find(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome))
         {
-            std::vector<std::uint8_t> patched;
-            std::span<const std::uint8_t> body = *welcome;
+            std::vector<std::uint8_t> patched = *welcome;
             if (m_itemProvider || m_dropRecordedItems)
             {
                 const auto items = m_itemProvider ? m_itemProvider(m_config.owner.id)
                                                   : std::vector<std::vector<std::uint8_t>>{};
                 if (!items.empty() || m_dropRecordedItems)
                 {
-                    if (auto result = AppendItemsToWelcome(*welcome, items, m_dropRecordedItems))
-                    {
+                    if (auto result = AppendItemsToWelcome(patched, items, m_dropRecordedItems))
                         patched = std::move(*result);
-                        body = patched;
-                    }
                     else
                         ++m_patchFailures;
                 }
             }
+            if (m_dropRecordedItems || m_live)
+            {
+                // The recorded loadout slots point at the recorded items. When those are gone, the
+                // slots are replaced with the live ones (none yet if nothing was equipped).
+                const auto accountId = static_cast<std::uint32_t>(m_config.owner.id & 0xFFFFFFFFull);
+                const auto slots = m_live ? m_live->EncodedSlots(accountId) : std::vector<std::vector<std::uint8_t>>{};
+                if (auto result = AppendObjectsToWelcome(patched, EquipSlotTypeId, slots, m_dropRecordedItems))
+                    patched = std::move(*result);
+                else
+                    ++m_patchFailures;
+            }
+            if (m_armoryCredits)
+            {
+                if (auto result = SetArmoryBalance(patched, *m_armoryCredits))
+                    patched = std::move(*result);
+                else
+                    ++m_patchFailures;
+            }
+            const std::span<const std::uint8_t> body = patched;
             Reply(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, body);
             for (std::uint32_t id : PostWelcome)
                 if (const auto *body = m_replay->Find(id))

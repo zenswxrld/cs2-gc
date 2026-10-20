@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -10,6 +11,11 @@ namespace cs2_gc
 // True when the command line has `argument` as a whole token (ASCII case-insensitive).
 // Tokens are separated by whitespace; double quotes group text, as on Windows.
 bool CommandLineHasArgument(std::string_view commandLine, std::string_view argument);
+
+// Decodes the Steamworks flat-API wrapper `mov rax,[rcx]; jmp [rax+N]` and returns the
+// vtable byte offset N. Anything else (including unaligned or implausible offsets) is
+// rejected, so a changed code shape disables the hook instead of patching a wrong slot.
+std::optional<std::uint32_t> DecodeVtableThunkOffset(std::span<const std::uint8_t> code);
 
 // Settings for the proxy, read from a small key=value file. Every value is optional,
 // '#' starts a comment, and an unknown key or malformed value rejects the whole file

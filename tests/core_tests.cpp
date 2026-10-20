@@ -678,6 +678,17 @@ void ProxySupport()
     Check(!CommandLineHasArgument("cs2.exe \"-insecure foo\"", "-insecure"), "quoted text is one token");
     Check(!CommandLineHasArgument("C:\\games\\-insecure\\cs2.exe -novid", "-insecure"), "path text is not a flag");
 
+    // Real thunks read from the target steam_api64.dll (SteamAPI_ISteamClient_*).
+    const auto thunk = [](std::initializer_list<int> bytes) { return DecodeVtableThunkOffset(Bytes(bytes)); };
+    Check(thunk({0x48, 0x8b, 0x01, 0x48, 0xff, 0x60, 0x60, 0xcc, 0xcc}) == 0x60u, "GetISteamGenericInterface disp8");
+    Check(thunk({0x48, 0x8b, 0x01, 0x48, 0xff, 0x20, 0xcc, 0xcc, 0xcc}) == 0u, "slot zero");
+    Check(thunk({0x48, 0x8b, 0x01, 0x48, 0xff, 0xa0, 0x10, 0x01, 0x00, 0x00}) == 0x110u, "disp32");
+    Check(!thunk({0x48, 0x8b, 0x01, 0x48, 0xff, 0x60, 0xf8, 0xcc}) && !thunk({0x48, 0x8b, 0x01, 0x48, 0xff, 0x60, 0x61, 0xcc}) &&
+              !thunk({0x48, 0x8b, 0x01, 0x48, 0xff, 0xa0, 0x00, 0x00, 0x10, 0x00}) &&
+              !thunk({0x48, 0x8b, 0x01, 0x48, 0xff, 0xa0, 0x10, 0x01}) && !thunk({0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90}) &&
+              !thunk({0x48, 0x8b, 0x01, 0x48, 0xff, 0xe0, 0x00}) && !thunk({}) && !thunk({0x48, 0x8b, 0x01}),
+          "unrecognised, negative, unaligned, huge or short thunks rejected");
+
     const auto config = ParseProxyConfig("# comment\n steam_id = 76561198000000000 \nwelcome_version=3 # trailing\r\nowner_type=1\ncache_version=9\n");
     Check(config && config->steamId == 76561198000000000ull && config->welcomeVersion == 3 && config->ownerType == 1 &&
               config->cacheVersion == 9, "config values");

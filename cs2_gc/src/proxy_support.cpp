@@ -1,5 +1,7 @@
 #include "cs2_gc/proxy_support.h"
+#include <algorithm>
 #include <charconv>
+#include <iterator>
 #include <limits>
 
 namespace cs2_gc
@@ -72,6 +74,38 @@ bool CommandLineHasArgument(std::string_view commandLine, std::string_view argum
         }
     }
     return flush();
+}
+
+std::optional<std::uint32_t> DecodeVtableThunkOffset(std::span<const std::uint8_t> code)
+{
+    constexpr std::uint8_t Prologue[] = {0x48, 0x8B, 0x01}; // mov rax, [rcx]
+    if (code.size() < 7 || !std::equal(std::begin(Prologue), std::end(Prologue), code.begin()))
+        return std::nullopt;
+    if (code[3] != 0x48 || code[4] != 0xFF)
+        return std::nullopt;
+
+    std::uint32_t offset = 0;
+    if (code[5] == 0x20) // jmp [rax]
+        offset = 0;
+    else if (code[5] == 0x60) // jmp [rax+disp8]
+    {
+        if (code[6] & 0x80)
+            return std::nullopt; // negative displacement is not a vtable slot
+        offset = code[6];
+    }
+    else if (code[5] == 0xA0) // jmp [rax+disp32]
+    {
+        if (code.size() < 10)
+            return std::nullopt;
+        offset = std::uint32_t{code[6]} | (std::uint32_t{code[7]} << 8) | (std::uint32_t{code[8]} << 16) |
+                 (std::uint32_t{code[9]} << 24);
+    }
+    else
+        return std::nullopt;
+
+    if (offset % 8 != 0 || offset > 0x1000)
+        return std::nullopt;
+    return offset;
 }
 
 std::optional<ProxyConfig> ParseProxyConfig(std::string_view text)

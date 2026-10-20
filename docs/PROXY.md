@@ -5,12 +5,22 @@ a real CS2 client. Treat the first run as an experiment.
 
 ## What it is
 
-CS2's `client.dll` asks `steam_api64.dll` for its GC interface by calling
-`SteamInternal_FindOrCreateUserInterface(user, "SteamGameCoordinator001")`. The proxy is a
-`steam_api64.dll` that forwards every export to the original (renamed `steam_api64_real.dll`)
-except that one function. For that one name it returns a local, in-process GC instead of
-Steam's, so the game's GC traffic stays on your machine. It answers the client Hello with a
-Welcome and writes every message the game sends to `cs2_gc_log.txt`.
+The proxy is a `steam_api64.dll` that forwards every export to the original (renamed
+`steam_api64_real.dll`) except two. For the name `SteamGameCoordinator001` it returns a local,
+in-process GC instead of Steam's, so the game's GC traffic stays on your machine. It answers
+the client Hello with a Welcome and writes every message the game sends to `cs2_gc_log.txt`.
+
+The game can ask for that interface two ways, so both are covered:
+
+- `SteamInternal_FindOrCreateUserInterface(user, "SteamGameCoordinator001")`, directly.
+- Through the `ISteamClient` object (`SteamInternal_CreateInterface("SteamClient023")`, then
+  its `GetISteamGenericInterface`). The proxy redirects that one vtable entry on the real
+  object. The entry's offset is decoded at runtime from the real library's own flat-API
+  wrapper, and if it cannot be decoded the hook is simply not installed.
+
+The first test run showed the game never used the first route, which is why the second exists.
+Every distinct interface name the game requests is logged ("interface requested via ..."), so
+the log shows how the game really gets its interfaces even if the GC hook does not take.
 
 Its purpose is to find out **what CS2 sends and expects**. It is not a working inventory yet:
 the Welcome carries no items, and the Welcome version and owner values are unverified guesses.
@@ -71,6 +81,6 @@ Cross-compiling works too (for example `zig c++ -target x86_64-windows-gnu`). Th
 
 ## What to send back after a run
 
-The Hello (`>> GAME->GC type=4006`) and whatever the game sends next, plus anything the
+The whole log. The `interface requested via ...` lines matter most if there are no `>> GAME->GC` lines. Otherwise the Hello (`>> GAME->GC type=4006`) and whatever the game sends next, plus anything the
 log reports as rejected. If the game sits waiting, or crashes, send the last lines of the log
 and when it happened.

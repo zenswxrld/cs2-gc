@@ -1,7 +1,11 @@
 // Stand-in steam_api64.dll for diagnostics. Every export is forwarded to the original
-// library (renamed steam_api64_real.dll, see tools/make_proxy_def.py) except
-// SteamInternal_FindOrCreateUserInterface, which hands the game a local GC for
-// "SteamGameCoordinator001" and logs the messages it sends.
+// library (renamed steam_api64_real.dll, see tools/make_proxy_def.py) except two:
+//  - SteamInternal_FindOrCreateUserInterface hands the game a local GC for
+//    "SteamGameCoordinator001".
+//  - SteamInternal_CreateInterface returns the real ISteamClient, with its
+//    GetISteamGenericInterface vtable entry redirected so the same name resolves to the
+//    local GC when the game asks through the client object.
+// Every interface name the game requests is logged, plus the GC messages it sends.
 //
 // It only activates when the game was launched with -insecure; otherwise every call goes to
 // the real library untouched and nothing is written. Windows x64 only.
@@ -20,9 +24,14 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <cstring>
 #include <mutex>
+#include <set>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 using namespace cs2_gc;
 
@@ -171,8 +180,79 @@ struct State
     Logger *log{};
     ProxyCoordinator *coordinator{};
     using FindFn = void *(__cdecl *)(int, const char *);
+    using CreateFn = void *(__cdecl *)(const char *);
     FindFn realFind{};
+    CreateFn realCreate{};
+    std::optional<std::uint32_t> genericSlotOffset; // from the real DLL's own flat-API thunk
 };
+
+State &Init();
+
+// Each distinct requested interface name is logged once, with how it was requested.
+void LogInterfaceRequest(const char *how, const char *version)
+{
+    State &state = Init();
+    if (!state.active || !version)
+        return;
+    static std::mutex mutex;
+    static std::set<std::string> seen;
+    const std::string entry = std::string(how) + ": " + std::string(version, strnlen(version, 128));
+    std::lock_guard lock(mutex);
+    if (seen.size() < 256 && seen.insert(entry).second)
+        state.log->Write("interface requested via " + entry);
+}
+
+// The original GetISteamGenericInterface for each patched vtable, keyed by the slot address.
+std::mutex g_patchMutex;
+std::map<void **, void *> g_originalGeneric;
+
+void *__cdecl GenericInterfaceHook(void *self, int user, int pipe, const char *version);
+
+using GenericFn = void *(__cdecl *)(void *, int, int, const char *);
+
+void *__cdecl GenericInterfaceHook(void *self, int user, int pipe, const char *version)
+{
+    State &state = Init();
+    LogInterfaceRequest("ISteamClient::GetISteamGenericInterface", version);
+    if (state.active && state.genericSlotOffset && version && std::string_view(version) == GcInterfaceName)
+        return state.coordinator;
+
+    void **vtable = *reinterpret_cast<void ***>(self);
+    void **slot = reinterpret_cast<void **>(reinterpret_cast<char *>(vtable) + *state.genericSlotOffset);
+    void *original = nullptr;
+    {
+        std::lock_guard lock(g_patchMutex);
+        const auto it = g_originalGeneric.find(slot);
+        original = it == g_originalGeneric.end() ? nullptr : it->second;
+    }
+    return original ? reinterpret_cast<GenericFn>(original)(self, user, pipe, version) : nullptr;
+}
+
+// Redirects one vtable entry of the real ISteamClient object in place. Only done once per
+// vtable, and only when the slot offset was decoded from the real library.
+void PatchSteamClient(State &state, void *object)
+{
+    if (!object || !state.genericSlotOffset)
+        return;
+    void **vtable = *reinterpret_cast<void ***>(object);
+    void **slot = reinterpret_cast<void **>(reinterpret_cast<char *>(vtable) + *state.genericSlotOffset);
+
+    std::lock_guard lock(g_patchMutex);
+    if (g_originalGeneric.contains(slot) || *slot == reinterpret_cast<void *>(&GenericInterfaceHook))
+        return;
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(slot, sizeof(void *), PAGE_READWRITE, &oldProtect))
+    {
+        state.log->Write("could not make the ISteamClient vtable writable; GC hook not installed");
+        return;
+    }
+    g_originalGeneric[slot] = *slot;
+    *slot = reinterpret_cast<void *>(&GenericInterfaceHook);
+    DWORD ignored = 0;
+    VirtualProtect(slot, sizeof(void *), oldProtect, &ignored);
+    state.log->Write("ISteamClient::GetISteamGenericInterface hook installed at vtable offset 0x" +
+                     [&] { std::ostringstream o; o << std::hex << *state.genericSlotOffset; return o.str(); }());
+}
 
 State &Init()
 {
@@ -181,9 +261,16 @@ State &Init()
         s.directory = ModuleDirectory();
         const HMODULE real = LoadLibraryW((s.directory + L"steam_api64_real.dll").c_str());
         if (real)
+        {
             s.realFind = reinterpret_cast<State::FindFn>(GetProcAddress(real, "SteamInternal_FindOrCreateUserInterface"));
+            s.realCreate = reinterpret_cast<State::CreateFn>(GetProcAddress(real, "SteamInternal_CreateInterface"));
+            // The flat-API wrapper is `mov rax,[rcx]; jmp [rax+N]`; N is the vtable offset we need.
+            if (const auto *thunk = reinterpret_cast<const std::uint8_t *>(
+                    GetProcAddress(real, "SteamAPI_ISteamClient_GetISteamGenericInterface")))
+                s.genericSlotOffset = DecodeVtableThunkOffset({thunk, 16});
+        }
 
-        s.active = s.realFind && CommandLineHasArgument(Narrow(GetCommandLineW()), "-insecure");
+        s.active = s.realFind && s.realCreate && CommandLineHasArgument(Narrow(GetCommandLineW()), "-insecure");
         if (!s.active)
             return s;
 
@@ -211,6 +298,9 @@ State &Init()
         s.coordinator = new ProxyCoordinator(endpoint, *s.log);
         s.log->Write("cs2_gc diagnostic proxy active (-insecure). Targets Steam build " +
                      std::string(TargetSteamBuildId) + "; the GC is local and nothing is sent to Valve.");
+        s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
+                                         : "could not decode GetISteamGenericInterface from the real library; "
+                                           "only interface requests will be logged");
         s.log->Write(note + "; welcome values are unverified guesses. Logs redact SteamID-shaped values, "
                             "but review before sharing.");
         return s;
@@ -219,11 +309,24 @@ State &Init()
 }
 }
 
+extern "C" __declspec(dllexport) void *__cdecl SteamInternal_CreateInterface(const char *version)
+{
+    State &state = Init();
+    if (!state.realCreate)
+        return nullptr;
+    void *result = state.realCreate(version);
+    LogInterfaceRequest("SteamInternal_CreateInterface", version);
+    if (state.active && result && version && std::string_view(version) == "SteamClient023")
+        PatchSteamClient(state, result);
+    return result;
+}
+
 extern "C" __declspec(dllexport) void *__cdecl SteamInternal_FindOrCreateUserInterface(int user, const char *version)
 {
     State &state = Init();
     if (!state.realFind)
         return nullptr;
+    LogInterfaceRequest("SteamInternal_FindOrCreateUserInterface", version);
     if (state.active && version && std::string_view(version) == GcInterfaceName)
         return state.coordinator;
     return state.realFind(user, version);

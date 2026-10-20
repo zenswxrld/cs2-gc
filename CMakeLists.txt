@@ -13,6 +13,14 @@ find_package(Threads REQUIRED)
 
 add_library(cs2_gc_core STATIC
     cs2_gc/src/armory_catalog.cpp
+    cs2_gc/src/case_opening.cpp
+    cs2_gc/src/gc_endpoint.cpp
+    cs2_gc/src/gc_handshake.cpp
+    cs2_gc/src/gc_summary.cpp
+    cs2_gc/src/protobuf.cpp
+    cs2_gc/src/protobuf_dump.cpp
+    cs2_gc/src/proxy_support.cpp
+    cs2_gc/src/inventory.cpp
     cs2_gc/src/keyvalues.cpp
     cs2_gc/src/schema.cpp
     cs2_gc/src/wire.cpp
@@ -36,5 +44,30 @@ if(BUILD_TESTING)
         add_test(NAME cs2_client_inspection
             COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_inspect_cs2.py -v)
         set_tests_properties(cs2_client_inspection PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_gc_protocol_extraction
+            COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_extract_gc_protocol.py -v)
+        set_tests_properties(cs2_gc_protocol_extraction PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_proxy_def_generation
+            COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_make_proxy_def.py -v)
+        set_tests_properties(cs2_proxy_def_generation PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endif()
+endif()
+
+# Diagnostic stand-in steam_api64.dll (Windows only, off by default). Needs a .def generated
+# from the game's own steam_api64.dll with tools/make_proxy_def.py.
+option(CS2_GC_BUILD_PROXY "Build the diagnostic steam_api64.dll stand-in" OFF)
+if(CS2_GC_BUILD_PROXY)
+    if(NOT WIN32)
+        message(FATAL_ERROR "CS2_GC_BUILD_PROXY is Windows only")
+    endif()
+    set(CS2_GC_PROXY_DEF "" CACHE FILEPATH "Output of tools/make_proxy_def.py")
+    if(NOT EXISTS "${CS2_GC_PROXY_DEF}")
+        message(FATAL_ERROR "Set CS2_GC_PROXY_DEF to the generated .def file")
+    endif()
+    add_library(cs2_gc_proxy SHARED cs2_gc/proxy/steam_api_proxy.cpp "${CS2_GC_PROXY_DEF}")
+    set_target_properties(cs2_gc_proxy PROPERTIES OUTPUT_NAME steam_api64 PREFIX "")
+    target_link_libraries(cs2_gc_proxy PRIVATE cs2_gc_core)
+    if(NOT MSVC)
+        target_link_options(cs2_gc_proxy PRIVATE -static)
     endif()
 endif()

@@ -155,12 +155,23 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
                 schema.m_lootLists[entry.key] = &entry;
             else if (section.key == "revolving_loot_lists" && !entry.block)
                 revolving[entry.key] = &entry;
+            else if (section.key == "paint_kits" && entry.block)
+                schema.m_paintKits[std::string{entry.Value("name")}] = &entry;
+            else if (section.key == "rarities" && entry.block)
+            {
+                std::uint32_t value = 0;
+                if (ParseU32(entry.Value("value"), value))
+                    schema.m_rarities[entry.key] = value;
+            }
         }
     }
 
-    ItemMap itemsByIndex;
     for (const KvNode *item : itemNodes)
-        itemsByIndex[item->key] = item;
+    {
+        std::uint32_t defIndex = 0;
+        if (ParseU32(item->key, defIndex) && !item->Value("name").empty())
+            schema.m_itemsByName[std::string{item->Value("name")}] = defIndex;
+    }
 
     for (const KvNode *item : itemNodes)
     {
@@ -222,6 +233,13 @@ std::vector<LootTier> Schema::LootTiers(std::string_view lootListName) const
             {
                 LootTier tier;
                 tier.name = name;
+                const std::size_t underscore = name.rfind('_');
+                if (underscore != std::string::npos)
+                {
+                    const auto rarity = schema.m_rarities.find(name.substr(underscore + 1));
+                    if (rarity != schema.m_rarities.end())
+                        tier.rarity = rarity->second;
+                }
                 for (const KvNode &child : list.children)
                     if (!child.block)
                         tier.items.push_back(child.key);
@@ -239,5 +257,37 @@ std::vector<LootTier> Schema::LootTiers(std::string_view lootListName) const
 
     Walker{*this, tiers, visiting}.Visit(std::string{lootListName}, 0);
     return tiers;
+}
+
+std::optional<LootItem> Schema::ResolveLootItem(std::string_view entry) const
+{
+    if (!entry.starts_with('['))
+        return std::nullopt;
+    const std::size_t close = entry.find(']');
+    if (close == std::string_view::npos)
+        return std::nullopt;
+
+    LootItem item;
+    item.paintKitName = entry.substr(1, close - 1);
+    item.weaponClass = entry.substr(close + 1);
+
+    const auto weapon = m_itemsByName.find(item.weaponClass);
+    const auto kit = m_paintKits.find(item.paintKitName);
+    if (weapon == m_itemsByName.end() || kit == m_paintKits.end() || !ParseU32(kit->second->key, item.paintKitIndex))
+        return std::nullopt;
+    item.weaponDefIndex = weapon->second;
+
+    const auto parseWear = [&](std::string_view name, float &out) {
+        const std::string_view text = kit->second->Value(name);
+        float value = 0.0f;
+        const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
+        if (ec == std::errc{} && end == text.data() + text.size())
+            out = value;
+    };
+    parseWear("wear_remap_min", item.wearMin);
+    parseWear("wear_remap_max", item.wearMax);
+    if (item.wearMin > item.wearMax || item.wearMin < 0.0f || item.wearMax > 1.0f)
+        return std::nullopt;
+    return item;
 }
 }

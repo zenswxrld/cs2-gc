@@ -182,6 +182,7 @@ buttons(bar, '50'); assert.equal(rent.visible, true);
 const assert = require('assert');
 let score = 1000, wins = 0, mode = 'competitive', queued = false, calls = [];
 const badge = { visible: false, IsValid: () => true };
+const $ = { Msg: () => {} };
 const MyPersonaAPI = { GetXuid: () => 'me' };
 const MockAdapter = { GetGameModeInternalName: () => mode, IsFakePlayer: id => id === 'bot' };
 const GameStateAPI = { IsQueuedMatchmakingMode_Team: () => queued, IsDemoOrHltv: () => false };

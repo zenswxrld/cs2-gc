@@ -145,6 +145,7 @@ private:
     std::shared_ptr<Armory> m_armory;
     bool m_serverReady{};
     std::vector<std::vector<std::uint8_t>> m_serverItems;
+    std::vector<std::vector<std::uint8_t>> m_serverSlots;
     std::uint64_t m_soVersion{1};
 
     struct Transaction

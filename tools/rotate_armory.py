@@ -13,6 +13,7 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
     let m_localRotationTick;
     let m_localRotationCycle = -1;
     let m_localRotationActive = [];
+    let m_localRotationLogged = -1;
     function _LocalRotationRefresh() {
         const root = $.GetContextPanel();
         if (!root.IsValid()) return;
@@ -20,6 +21,10 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
         if (!entries.length || !m_localRotation.enabled) return;
         const now = Math.floor(Date.now() / 1000);
         const offset = parseInt(GameInterfaceAPI.GetSettingString('cs2_gc_rotation_offset')) || 0;
+        if (m_localRotationLogged !== offset) {
+            m_localRotationLogged = offset;
+            $.Msg('cs2_gc armory rotation hook: offset=' + offset + ' raw=[' + GameInterfaceAPI.GetSettingString('cs2_gc_rotation_offset') + ']');
+        }
         const cycle = Math.floor(now / m_localRotation.seconds) + Math.max(0, Math.min(1000000, offset));
         const pools = {};
         entries.forEach(entry => {

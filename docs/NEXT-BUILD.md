@@ -103,3 +103,14 @@ then restart. Original game files are never modified.
    tidy-up of the test-only helpers.
 
 Wherever this document says "verified", it means offline tests only.
+
+## Build 07 findings (from the 20 Oct test logs)
+- Console commands: `console.log` is written (launch flags and `+exec cs2_gc_console` are confirmed), but text printed by
+  `echo` and by typed commands does **not** appear in it, so the helper cannot see `cs2_gc_give_stars`. Stars/rotation
+  through the log transport are unconfirmed. Rotation itself is read by the Armory script from the
+  `cs2_gc_rotation_offset` convar; whether `setinfo` creates that convar in this build is unverified.
+- Native UI mounts (`cs2_gc_native/armory/scoreboard/confirm` appear in the filesystem list). Build 07 adds `$.Msg`
+  lines so console.log shows whether the patched scoreboard / Armory scripts actually run.
+- Server cache now includes equip-slot objects (type 3). The server library registers `CSOEconEquipSlot`.
+- The scoreboard in the test was `Competitive | Vertigo`; the rank badge hook only reached a "0" cell there. Premier
+  mode scoreboard behaviour is unverified.

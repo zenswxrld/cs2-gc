@@ -16,6 +16,11 @@ INJECT = '''
                     const localMode = MockAdapter.GetGameModeInternalName(false);
                     const isLocal = oPlayer.m_xuid === localXuid;
                     const isBot = MockAdapter.IsFakePlayer(oPlayer.m_xuid);
+                    if (isLocal && !oPlayer.m_oStats.cs2gcLogged) {
+                        oPlayer.m_oStats.cs2gcLogged = true;
+                        $.Msg('cs2_gc scoreboard hook reached: mode=' + localMode +
+                              ' queued=' + GameStateAPI.IsQueuedMatchmakingMode_Team());
+                    }
                     if ((isLocal || (__BOTS__ && isBot)) &&
                         (localMode === 'competitive' || localMode === 'premier') &&
                         !GameStateAPI.IsQueuedMatchmakingMode_Team() && !GameStateAPI.IsDemoOrHltv()) {

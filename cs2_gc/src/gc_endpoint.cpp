@@ -128,9 +128,10 @@ void LocalGameCoordinator::EnableServerInventory(std::shared_ptr<LiveInventory> 
         gc.Reply(gc_msg::EGCBaseClientMsg::k_EMsgGCServerWelcome, welcome.bytes());
         gc.m_serverReady = true;
         gc.m_serverItems.clear();
+        gc.m_serverSlots.clear();
     });
     SetHandler(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_Server2GCClientValidate,
-               [](const FrameView &, LocalGameCoordinator &gc) { gc.m_serverItems.clear(); });
+               [](const FrameView &, LocalGameCoordinator &gc) { gc.m_serverItems.clear(); gc.m_serverSlots.clear(); });
 }
 
 void LocalGameCoordinator::RefreshServerInventory()
@@ -138,10 +139,13 @@ void LocalGameCoordinator::RefreshServerInventory()
     std::lock_guard lock(m_mutex);
     if (!m_serverReady || !m_live || !m_config.owner.id)
         return;
-    auto items = m_live->EncodedServerItems(static_cast<std::uint32_t>(m_config.owner.id));
-    if (items == m_serverItems)
+    const auto accountId = static_cast<std::uint32_t>(m_config.owner.id);
+    auto items = m_live->EncodedServerItems(accountId);
+    auto slots = m_live->EncodedSlots(accountId);
+    if (items == m_serverItems && slots == m_serverSlots)
         return;
     m_serverItems = items;
+    m_serverSlots = slots;
     PbWriter type;
     type.Varint(1, ItemTypeId);
     for (const auto &item : items)
@@ -151,6 +155,13 @@ void LocalGameCoordinator::RefreshServerInventory()
     owner.Varint(2, m_config.owner.id);
     PbWriter cache;
     cache.Message(2, type);
+    // The game server library registers CSOEconEquipSlot (type 3) beside items, as the client does.
+    PbWriter slotType;
+    slotType.Varint(1, EquipSlotTypeId);
+    for (const auto &slot : slots)
+        slotType.Bytes(2, slot);
+    if (!slots.empty())
+        cache.Message(2, slotType);
     cache.Fixed64(3, ++m_soVersion);
     cache.Message(4, owner);
     Reply(gc_msg::ESOMsg::k_ESOMsg_CacheSubscribed, cache.bytes());

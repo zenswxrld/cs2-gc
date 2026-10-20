@@ -80,7 +80,7 @@ const parent = {FindChildInLayoutFile: () => label};
 const root = {IsValid: () => true, FindChildInLayoutFile: id =>
  id === 'id-xpshop-top-nav' ? parent : tiles[id] || navs[id] || {}};
 const GameInterfaceAPI = {GetSettingString: () => '0'};
-const $ = {GetContextPanel: () => root, Schedule: () => 1, CancelScheduled: () => {}, DispatchEvent: () => {}};
+const $ = {Msg: () => {}, GetContextPanel: () => root, Schedule: () => 1, CancelScheduled: () => {}, DispatchEvent: () => {}};
 const aShopItemsData = ['case_a', 'case_b', 'charm_a', 'charm_b', 'capsule'].map(item_name => ({item_name}));
 function _MakeShopTile(e) { tiles[e.item_name] = {}; }
 function _MakeNavButton(e) { navs[e.item_name + '-nav'] = {}; }

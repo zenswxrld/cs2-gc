@@ -212,3 +212,12 @@ while CS2 runs (the DLL processes the request); native-picker support needs a di
   zenswxrld/CSOffline repo) and port the idea, e.g. generated botprofile names applied before bots spawn (the helper
   already writes cs2_gc_premier_bots.cfg) and a patched scoreboard ping cell for bots in tools/native_scoreboard.py.
   Consider giving each bot its own believable rating near the player's instead of mirroring 4,000.
+- Armory agents: add an agents slot to the Armory rotation, like CSOffline had: one random official agent for stars
+  (rotating like the other category tiles). Agents are existing schema items, so this fits the catalogue-rows exception.
+- End-of-match screens: the post-match drop screen and rank-change screen still do not show (only the stock
+  MATCH RESULT / VICTORY cards). The GC does send MatchEndRewardDropsNotification (9137) and ClientGCRankUpdate (9194)
+  at match end (see the cs2_gc_log.txt of a finished match), so the client is not displaying them; find what the
+  end-of-match Panorama flow waits for.
+- Match drops: currently drops can be any item, including items that only come from cases. Restrict them to the weekly
+  drop pool: the weapons/collections in the current active drop pool (the schema's drop/loot lists for the weekly care
+  package and the active collection drops), not case-only items.

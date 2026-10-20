@@ -30,6 +30,12 @@ CS:GO binaries into CS2.**
   build's file hashes. In this build cases open through `k_EMsgGCOpenCrate`
   (`CMsgOpenCrate`), not the deprecated `UnlockCrate`; which field is the key and which the
   case is inferred from the field names and is unverified.
+- A bounded protobuf reader/writer, codecs for the Hello/Welcome/SOCacheSubscribed handshake
+  messages, and `LocalGameCoordinator`: an in-process stand-in with the same three calls as
+  `ISteamGameCoordinator` that answers a client Hello with a Welcome. The encoders were
+  cross-checked with Google's protobuf library against the target client's own descriptors.
+  It is not attached to Steam's interface, and the welcome version, owner ID and cache
+  contents are caller-supplied because they cannot be derived offline.
 - A read-only Windows CS2 build inspector and automated core checks.
 
 ## Store direction
@@ -85,7 +91,7 @@ verify the Steam/GC bridge and mount the shop controls on the native Armory page
 | Area | Current state / acceptance check |
 | --- | --- |
 | Core envelope and queue | Offline tests; no live message exchange yet |
-| Client adapter | Message IDs extracted for build 25947352; interface and Hello/Welcome/SOCache still pending in the identified CS2 client |
+| Client adapter | Message IDs, codecs and an offline Hello/Welcome endpoint done; Steam interface hook and live Hello/Welcome/SOCache exchange pending in the identified CS2 client |
 | Inventory and loadouts | Offline model and persistence tested; show, equip and reload in CS2 pending |
 | Standard case opening | Offline logic tested against the real schema; client message handling, previews and the knife/glove tier pending |
 | Armory shop | Catalogue paging tested; native UI and redemption bridge pending |

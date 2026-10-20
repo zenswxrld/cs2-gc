@@ -1,7 +1,9 @@
 #include "cs2_gc/armory_catalog.h"
 #include "cs2_gc/case_opening.h"
 #include "cs2_gc/client_fingerprint.h"
+#include "cs2_gc/gc_endpoint.h"
 #include "cs2_gc/gc_msg_ids.h"
+#include "cs2_gc/protobuf.h"
 #include "cs2_gc/message_queue.h"
 #include "cs2_gc/progression.h"
 #include "cs2_gc/schema.h"
@@ -435,6 +437,176 @@ void GcMessageIds()
           "fingerprint record");
 }
 
+std::vector<std::uint8_t> Bytes(std::initializer_list<int> values)
+{
+    std::vector<std::uint8_t> out;
+    for (int v : values)
+        out.push_back(static_cast<std::uint8_t>(v));
+    return out;
+}
+
+void ProtobufWire()
+{
+    // Canonical vectors from the protobuf encoding documentation.
+    PbWriter w;
+    w.Varint(1, 150);
+    Check(w.bytes() == Bytes({0x08, 0x96, 0x01}), "varint vector");
+    PbWriter s;
+    s.String(2, "testing");
+    Check(s.bytes() == Bytes({0x12, 0x07, 't', 'e', 's', 't', 'i', 'n', 'g'}), "string vector");
+    PbWriter fixed;
+    fixed.Fixed64(3, 0x0102030405060708ull);
+    fixed.Fixed32(4, 0x0A0B0C0Du);
+    Check(fixed.bytes() == Bytes({0x19, 8, 7, 6, 5, 4, 3, 2, 1, 0x25, 0x0D, 0x0C, 0x0B, 0x0A}), "fixed vectors");
+
+    PbReader reader(fixed.bytes());
+    PbField f;
+    Check(reader.Next(f) && f.number == 3 && f.wire == 1 && f.value == 0x0102030405060708ull, "fixed64 read");
+    Check(reader.Next(f) && f.number == 4 && f.wire == 5 && f.value == 0x0A0B0C0Du, "fixed32 read");
+    Check(!reader.Next(f) && !reader.Failed(), "clean end");
+
+    PbWriter big;
+    big.Varint(1, UINT64_MAX);
+    PbReader bigReader(big.bytes());
+    Check(bigReader.Next(f) && f.value == UINT64_MAX, "max varint");
+
+    const auto fails = [](std::vector<std::uint8_t> bytes) {
+        PbReader r(bytes);
+        PbField field;
+        while (r.Next(field)) {}
+        return r.Failed();
+    };
+    Check(fails(Bytes({0x08})), "missing varint");
+    Check(fails(Bytes({0x08, 0x80})), "truncated varint");
+    Check(fails(Bytes({0x08, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x02})), "varint overflows 64 bits");
+    Check(fails(Bytes({0x08, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01})), "varint too long");
+    Check(fails(Bytes({0x00, 0x01})), "field number zero");
+    Check(fails(Bytes({0x12, 0x05, 1, 2})), "length overruns");
+    Check(fails(Bytes({0x12, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F})), "huge length");
+    Check(fails(Bytes({0x0B})) && fails(Bytes({0x0C})) && fails(Bytes({0x0E})), "group and invalid wire types");
+    Check(fails(Bytes({0x19, 1, 2, 3})) && fails(Bytes({0x25, 1})), "short fixed");
+    Check(!fails({}), "empty message is valid");
+
+    // No prefix of a valid message may crash the reader.
+    PbWriter nested;
+    nested.Varint(1, 300);
+    nested.Message(2, w);
+    nested.Fixed64(3, 7);
+    for (std::size_t n = 0; n <= nested.bytes().size(); ++n)
+        fails(std::vector<std::uint8_t>(nested.bytes().begin(), nested.bytes().begin() + n));
+}
+
+void HandshakeCodec()
+{
+    ClientHello hello;
+    hello.version = 7;
+    hello.haveVersions.push_back({{1, 76561190000000001ull}, 42});
+    hello.clientSessionNeed = 9;
+    hello.clientLauncher = 3;
+    hello.steamLauncher = 2;
+    const auto decoded = DecodeClientHello(EncodeClientHello(hello));
+    Check(decoded && *decoded->version == 7 && decoded->haveVersions.size() == 1 &&
+              decoded->haveVersions[0].owner.id == 76561190000000001ull && decoded->haveVersions[0].version == 42 &&
+              *decoded->clientSessionNeed == 9 && *decoded->clientLauncher == 3 && *decoded->steamLauncher == 2,
+          "hello round trip");
+    const auto empty = DecodeClientHello({});
+    Check(empty && !empty->version && empty->haveVersions.empty(), "empty hello");
+
+    PbWriter unknown;
+    unknown.Varint(99, 1);
+    unknown.Varint(1, 5);
+    Check(DecodeClientHello(unknown.bytes()) && *DecodeClientHello(unknown.bytes())->version == 5, "unknown fields skipped");
+    PbWriter oversized;
+    oversized.Varint(1, 0x100000000ull);
+    Check(!DecodeClientHello(oversized.bytes()), "oversized uint32 rejected");
+    PbWriter wrongWire;
+    wrongWire.Fixed64(1, 5);
+    Check(!DecodeClientHello(wrongWire.bytes()), "wrong wire type rejected");
+    Check(!DecodeClientHello(Bytes({0x08})), "truncated hello rejected");
+
+    ClientWelcome welcome;
+    welcome.version = 11;
+    welcome.outOfDateCaches.push_back({{1, 99}, 5, {{-1, {{1, 2, 3}, {}}}, {1, {}}}});
+    const auto bytes = EncodeClientWelcome(welcome);
+    const auto back = DecodeClientWelcome(bytes);
+    Check(back && back->version == 11 && back->outOfDateCaches.size() == 1, "welcome round trip");
+    const SoCacheSubscribed &cache = back->outOfDateCaches[0];
+    Check(cache.owner.id == 99 && cache.version == 5 && cache.types.size() == 2 && cache.types[0].typeId == -1 &&
+              cache.types[0].objects.size() == 2 && cache.types[0].objects[0] == Bytes({1, 2, 3}) &&
+              cache.types[0].objects[1].empty() && cache.types[1].typeId == 1,
+          "cache contents, negative type id, empty object");
+    // Known encoding: version=11, one cache {types:[], version fixed64=5, owner{type 1,id 99}}.
+    ClientWelcome minimal;
+    minimal.version = 11;
+    minimal.outOfDateCaches.push_back({{1, 99}, 5, {}});
+    Check(EncodeClientWelcome(minimal) ==
+              Bytes({0x08, 0x0B, 0x1A, 0x0F, 0x19, 5, 0, 0, 0, 0, 0, 0, 0, 0x22, 0x04, 0x08, 0x01, 0x10, 0x63}),
+          "welcome wire layout");
+    for (std::size_t n = 0; n < bytes.size(); ++n)
+        DecodeClientWelcome(std::span(bytes).first(n)); // must not crash on any prefix
+}
+
+void Endpoint()
+{
+    GcEndpointConfig config;
+    config.welcomeVersion = 5;
+    config.owner = {1, 1234};
+    config.cacheVersion = 77;
+    config.cacheTypes = {{1, {{9, 9}}}};
+    LocalGameCoordinator gc(config);
+
+    const auto send = [&](std::uint32_t type, const std::vector<std::uint8_t> &body) {
+        std::vector<std::uint8_t> frame;
+        Check(WriteProtobufFrame(type, {}, body, frame) == FrameError::None, "frame");
+        return gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+
+    std::uint32_t size = 123;
+    Check(!gc.IsMessageAvailable(&size) && size == 0, "nothing before hello");
+
+    ClientHello hello;
+    hello.version = 1;
+    Check(send(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello, EncodeClientHello(hello)) == GCResult::OK, "hello accepted");
+    Check(gc.IsMessageAvailable(&size) && size > 8, "welcome queued");
+
+    std::uint32_t type = 0, got = 0;
+    std::vector<std::uint8_t> small(4);
+    Check(gc.RetrieveMessage(&type, small.data(), 4, &got) == GCResult::BufferTooSmall && got == size,
+          "buffer too small reports size");
+    std::vector<std::uint8_t> buffer(size);
+    Check(gc.RetrieveMessage(&type, buffer.data(), size, &got) == GCResult::OK && got == size, "retrieve");
+    Check(type == (gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome | ProtobufMask), "welcome type carries the protobuf flag");
+    FrameView frame;
+    Check(ReadProtobufFrame(type, buffer, frame) == FrameError::None, "welcome frame");
+    const auto welcome = DecodeClientWelcome(frame.body);
+    Check(welcome && welcome->version == 5 && welcome->outOfDateCaches.size() == 1, "welcome content");
+    Check(welcome->outOfDateCaches[0].owner.id == 1234 && welcome->outOfDateCaches[0].version == 77 &&
+              welcome->outOfDateCaches[0].types.size() == 1 && welcome->outOfDateCaches[0].types[0].objects.size() == 1,
+          "welcome carries configured cache");
+    Check(!gc.IsMessageAvailable(&size), "queue drained");
+
+    // Bad input never produces a reply and never mutates state beyond the counter.
+    Check(send(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello, Bytes({0x08})) == GCResult::OK && !gc.IsMessageAvailable(&size) &&
+              gc.IgnoredMessages() == 1, "malformed hello gets no welcome");
+    Check(gc.SendMessage(5, nullptr, 0) == GCResult::InvalidMessage, "empty non-protobuf");
+    Check(gc.SendMessage(4006 | ProtobufMask, nullptr, 8) == GCResult::InvalidMessage, "null with size");
+    std::vector<std::uint8_t> raw;
+    WriteProtobufFrame(4006, {}, {}, raw);
+    Check(gc.SendMessage(4007 | ProtobufMask, raw.data(), static_cast<std::uint32_t>(raw.size())) == GCResult::InvalidMessage,
+          "type mismatch");
+    Check(gc.SendMessage(4006, raw.data(), static_cast<std::uint32_t>(raw.size())) == GCResult::InvalidMessage, "missing flag");
+    Check(gc.SendMessage(4006 | ProtobufMask, raw.data(), 3) == GCResult::InvalidMessage, "truncated frame");
+    Check(!gc.IsMessageAvailable(&size), "rejected messages queue nothing");
+
+    // Unknown types are accepted, counted and unanswered; custom handlers can reply.
+    Check(send(9999, {}) == GCResult::OK && gc.IgnoredMessages() == 2, "unknown message ignored");
+    gc.SetHandler(9999, [](const FrameView &, LocalGameCoordinator &g) { g.Reply(9998, Bytes({1, 2})); });
+    Check(send(9999, {}) == GCResult::OK && gc.IsMessageAvailable(&size), "custom handler replies");
+    gc.RetrieveMessage(&type, buffer.data(), static_cast<std::uint32_t>(buffer.size()), &got);
+    Check(type == (9998 | ProtobufMask) && got == 10, "custom reply framing");
+    Check(!gc.Reply(0, {}), "invalid reply type rejected");
+}
+
 int main()
 {
     try
@@ -448,6 +620,9 @@ int main()
         CaseOpening(); std::cout << "PASS case opening odds and atomic consumption\n";
         InventoryPersistence(); std::cout << "PASS inventory persistence and strict loading\n";
         GcMessageIds(); std::cout << "PASS extracted GC message IDs and build fingerprint\n";
+        ProtobufWire(); std::cout << "PASS protobuf reader and writer\n";
+        HandshakeCodec(); std::cout << "PASS handshake message codecs\n";
+        Endpoint(); std::cout << "PASS local game coordinator hello/welcome\n";
         return 0;
     }
     catch (const std::exception &error)

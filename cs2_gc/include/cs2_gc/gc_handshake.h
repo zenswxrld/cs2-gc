@@ -1,0 +1,61 @@
+#pragma once
+
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <vector>
+
+namespace cs2_gc
+{
+// Field layouts below come from the descriptors embedded in the target client.dll
+// (gcsdk_gcmessages.proto). Only the fields the handshake needs are modelled.
+
+struct SoOwner // CMsgSOIDOwner
+{
+    std::uint32_t type{};
+    std::uint64_t id{};
+};
+
+struct SoCacheVersion // CMsgSOCacheHaveVersion
+{
+    SoOwner owner;
+    std::uint64_t version{};
+};
+
+struct ClientHello // CMsgClientHello
+{
+    std::optional<std::uint32_t> version;
+    std::vector<SoCacheVersion> haveVersions;
+    std::optional<std::uint32_t> clientSessionNeed;
+    std::optional<std::uint32_t> clientLauncher;
+    std::optional<std::uint32_t> steamLauncher;
+};
+
+struct SoObjectType // CMsgSOCacheSubscribed.SubscribedType
+{
+    std::int32_t typeId{};
+    std::vector<std::vector<std::uint8_t>> objects; // serialized objects, opaque here
+};
+
+struct SoCacheSubscribed // CMsgSOCacheSubscribed
+{
+    SoOwner owner;
+    std::uint64_t version{};
+    std::vector<SoObjectType> types;
+};
+
+struct ClientWelcome // CMsgClientWelcome (subset)
+{
+    std::uint32_t version{};
+    std::vector<SoCacheSubscribed> outOfDateCaches;
+};
+
+// Decoders reject malformed input outright; unknown fields are skipped.
+std::optional<ClientHello> DecodeClientHello(std::span<const std::uint8_t> body);
+std::optional<SoCacheSubscribed> DecodeSoCacheSubscribed(std::span<const std::uint8_t> body);
+std::optional<ClientWelcome> DecodeClientWelcome(std::span<const std::uint8_t> body);
+
+std::vector<std::uint8_t> EncodeSoCacheSubscribed(const SoCacheSubscribed &cache);
+std::vector<std::uint8_t> EncodeClientWelcome(const ClientWelcome &welcome);
+std::vector<std::uint8_t> EncodeClientHello(const ClientHello &hello);
+}

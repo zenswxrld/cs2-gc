@@ -70,6 +70,24 @@ class BotRewards(unittest.TestCase):
         self.rewards.accept(self.packet)
         self.assertEqual(self.rewards.state['total'], 16)
 
+    def test_bonus_premier_wins_apply_once_and_only_upward(self):
+        (Path(self.tmp.name) / 'cs2_gc_gameplay.cfg').write_text('premier_bonus_wins = 8\n')
+        granted = gsi.Rewards(self.tmp.name)
+        self.assertEqual(granted.state['premier']['wins'], 8)
+        self.assertEqual(granted.state['premier']['rating'], 1000 + 8 * 300)
+        self.assertEqual(granted.state['premier_bonus_applied'], 8)
+        self.assertEqual((Path(self.tmp.name) / 'cs2_gc_premier.txt').read_text(), '3400 8 10\n')
+        again = gsi.Rewards(self.tmp.name)   # a restart must not grant them again
+        self.assertEqual(again.state['premier']['wins'], 8)
+        (Path(self.tmp.name) / 'cs2_gc_gameplay.cfg').write_text('premier_bonus_wins = 9\n')
+        self.assertEqual(gsi.Rewards(self.tmp.name).state['premier']['wins'], 9)   # only the difference
+        (Path(self.tmp.name) / 'cs2_gc_gameplay.cfg').write_text('premier_bonus_wins = 2\n')
+        self.assertEqual(gsi.Rewards(self.tmp.name).state['premier']['wins'], 9)   # lowering removes nothing
+
+    def test_bonus_premier_wins_are_ignored_when_premier_is_off(self):
+        (Path(self.tmp.name) / 'cs2_gc_gameplay.cfg').write_text('premier_enabled = 0\npremier_bonus_wins = 8\n')
+        self.assertEqual(gsi.Rewards(self.tmp.name).state['premier']['wins'], 0)
+
     def test_invalid_persisted_state_is_not_overwritten(self):
         state = Path(self.tmp.name) / 'cs2_gc_gsi_state.json'
         state.write_text('{broken')

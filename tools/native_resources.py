@@ -56,7 +56,7 @@ def vpk_file(directory, wanted, *, aliases=False, with_path=False):
                     if name.lower() == Path(wanted).stem.lower(): nearby.append(path)
                     match = path.lower() == wanted.lower()
                     alias = (aliases and path.rsplit('.', 1)[0].lower() == wanted.rsplit('.', 1)[0].lower()
-                             and extension.lower() in ('js', 'vjs', 'vjs_c', 'js_c'))
+                             and extension.lower() in ('js', 'vjs', 'vjs_c', 'js_c', 'vts_c'))
                     if match or alias:
                         if found is not None: raise ValueError('Ambiguous VPK script assets: ' + found[5] + ', ' + path)
                         if length + preload > MAX_ASSET: raise ValueError('VPK asset too large')
@@ -79,8 +79,10 @@ def vpk_file(directory, wanted, *, aliases=False, with_path=False):
 def script_blocks(resource):
     if len(resource) < 16 or len(resource) > MAX_ASSET: raise ValueError('Invalid Panorama resource size')
     size, header, version, offset, count = struct.unpack_from('<IHHII', resource)
-    if size != len(resource) or header != 12 or version != 4 or not 1 <= count <= 32:
-        raise ValueError('Unsupported Panorama script resource; expected plaintext header12/version4')
+    # The installed game's compiled scripts (.vts_c) are header 12 / version 2: a RED2 block, the plaintext
+    # DATA block and a STAT block. Version 4 is accepted too (what the older notes assumed).
+    if size != len(resource) or header != 12 or version not in (2, 4) or not 1 <= count <= 32:
+        raise ValueError('Unsupported Panorama script resource; expected plaintext header12/version2 or 4')
     table = 8 + offset
     if table < 16 or table + 12 * count > size: raise ValueError('Invalid Panorama block table')
     blocks, spans = [], []
@@ -98,12 +100,13 @@ def script_blocks(resource):
 
 def rewrite_script(resource, patch):
     blocks = script_blocks(resource)
+    version = struct.unpack_from('<H', resource, 6)[0]
     original = next(data for kind, data in blocks if kind == b'DATA')
     source = original.rstrip(b'\0').decode('utf-8')
     changed = patch(source).encode('utf-8') + (b'\0' if original.endswith(b'\0') else b'')
     # Debug source maps refer to the original line/column positions. Preserve other metadata.
     blocks = [(kind, changed if kind == b'DATA' else data) for kind, data in blocks if kind != b'SrMa']
-    result = bytearray(struct.pack('<IHHII', 0, 12, 4, 8, len(blocks)) + b'\0' * (len(blocks) * 12))
+    result = bytearray(struct.pack('<IHHII', 0, 12, version, 8, len(blocks)) + b'\0' * (len(blocks) * 12))
     for i, (kind, data) in enumerate(blocks):
         result.extend(b'\0' * (-len(result) % 16))
         entry = 16 + i * 12

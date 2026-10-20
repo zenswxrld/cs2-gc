@@ -49,6 +49,18 @@ def resource(source, other=True):
     return bytes(result)
 
 
+def resource_v2(source):
+    # The installed game's compiled Panorama scripts (.vts_c): header 12 / version 2 with RED2, DATA and STAT blocks.
+    blocks = [(b'RED2', b'resource edit info'), (b'DATA', source.encode() + b'\0'), (b'STAT', b'stats')]
+    result = bytearray(struct.pack('<IHHII', 0, 12, 2, 8, len(blocks)) + bytes(12 * len(blocks)))
+    for i, (kind, data) in enumerate(blocks):
+        result.extend(bytes(-len(result) % 16))
+        struct.pack_into('<4sII', result, 16 + 12 * i, kind, len(result) - (20 + 12 * i), len(data))
+        result.extend(data)
+    struct.pack_into('<I', result, 0, len(result))
+    return bytes(result)
+
+
 def vpk(directory, payload, split=False, preload=0, extension='vjs_c', folder='panorama/scripts'):
     small, remainder = payload[:preload], payload[preload:]
     archive = 0 if split else 0x7fff
@@ -61,6 +73,26 @@ def vpk(directory, payload, split=False, preload=0, extension='vjs_c', folder='p
 
 
 class NativeUI(unittest.TestCase):
+    def test_installed_vts_c_version2_resource_is_found_patched_and_keeps_its_layout(self):
+        # The real game names these scripts .vts_c and writes resource version 2; the lookup and parser used to
+        # insist on .vjs_c and version 4, so no native patch ever mounted.
+        original = resource_v2(SOURCE)
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder) / 'pak01_dir.vpk'
+            vpk(directory, original, extension='vts_c')
+            found, actual = resources.vpk_file(directory, scoreboard.ASSET, aliases=True, with_path=True)
+            self.assertEqual(actual, 'panorama/scripts/scoreboard.vts_c')
+            self.assertEqual(found, original)
+        changed = resources.patch_installed_script(original, actual,
+            lambda source: scoreboard.patch(source, gameplay_config.DEFAULTS))
+        blocks = dict(resources.script_blocks(changed))
+        self.assertEqual(struct.unpack_from('<H', changed, 6)[0], 2)           # the file's own version is kept
+        self.assertEqual(blocks[b'RED2'], b'resource edit info')              # other blocks are carried over
+        self.assertEqual(blocks[b'STAT'], b'stats')
+        self.assertIn(b'cs2_gc native Premier badges', blocks[b'DATA'])
+        with self.assertRaises(ValueError):                                    # other versions are still refused
+            resources.script_blocks(original[:6] + struct.pack('<H', 3) + original[8:])
+
     def test_raw_installed_js_alias_and_backslash_paths_are_not_compiled_resources(self):
         with tempfile.TemporaryDirectory() as folder:
             directory = Path(folder) / 'pak01_dir.vpk'

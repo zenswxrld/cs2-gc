@@ -72,6 +72,19 @@ class Rewards:
         if not isinstance(premier, dict) or any(type(premier.get(key)) is not int or premier[key] < 0
                 for key in ('rating', 'wins', 'losses', 'ties')) or premier['rating'] > 99999:
             raise ValueError('Invalid local Premier state')
+        # premier_bonus_wins is the total number of extra wins this setting has ever granted. Raising it adds the
+        # difference once (each counts as a normal win, with its rating gain); lowering it removes nothing.
+        applied = self.state.setdefault('premier_bonus_applied', 0)
+        if type(applied) is not int or not 0 <= applied <= 100:
+            raise ValueError('Invalid Premier bonus-win counter')
+        wanted = self.config['premier_bonus_wins']
+        if self.config['premier_enabled'] and wanted > applied:
+            for _ in range(wanted - applied):
+                premier = premier_rating.apply(premier, 'wins', self.config)
+            self.state['premier'] = premier
+            self.state['premier_bonus_applied'] = wanted
+            print(f"Granted {wanted - applied} bonus Premier wins from premier_bonus_wins. "
+                  f"{premier_rating.status(premier, self.config)}", flush=True)
         self.last_received = None
         self.save()
 

@@ -29,6 +29,7 @@ enum class ProxyMode
 struct ProxyConfig
 {
     ProxyMode mode{ProxyMode::Local}; // mode: local | capture
+    bool hideRealItems{true};         // real_items: hide (a fresh inventory, the default) | keep
     std::uint64_t steamId{};          // steam_id: SteamID64 used as the cache owner
     std::uint32_t welcomeVersion{};   // welcome_version
     std::uint32_t ownerType{1};       // owner_type: SO owner type for the steam id

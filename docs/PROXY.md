@@ -94,24 +94,31 @@ their recorded replies. Message types with no recording behave as before. It rep
 the recordings came from; it is a way to test whether a faithful Welcome is enough, not the final
 inventory.
 
-### Custom items in local mode
+### A fresh inventory with your own items (local mode)
 
-If `cs2_gc_inventory.txt` sits next to the DLL (and `cs2_gc_replay` has a recorded Welcome), its items
-are added to your recorded inventory when the Welcome is sent. Delete the file to turn this off.
-The file is the same text format the core saves inventories in, so it is easy to edit:
+Local mode starts you with an **empty inventory**: the items in your recording are removed from the
+replayed Welcome, and only the items in `cs2_gc_inventory.txt` (next to the DLL) appear. Everything
+else in the recording (rank, level, mission data and so on) is kept as recorded. To keep your real
+items as well, set `real_items = keep` in `cs2_gc.cfg`.
+
+The inventory file is the same text format the core saves inventories in:
 
 ```
 "inventory" { "next_id" "3" "items" {
-  "1" { "def_index" "7" "paint_kit" "282" "wear" "0.15" "seed" "661" "stattrak" "0" "rarity" "0" }
+  "1" { "def_index" "7" "paint_kit" "282" "wear" "0.15" "seed" "661" "stattrak" "0" "rarity" "5" }
 } }
 ```
 
-`def_index` and `paint_kit` come from the game's `items_game.txt` (7 is the AK-47, 282 is the
-Redline finish, 801 is Asiimov). `next_id` must be greater than every item id. Seeds are 1 to 1000,
-wear 0 to 1. Items are added with ids from 1000000000001 up, so they cannot clash with your own.
-StatTrak is not encoded yet, and `rarity` is optional (0 leaves it to the game; if the game shows
-the wrong rarity, set the schema's rarity value there). Added items exist only in this session's
-view of the inventory: nothing is stored on Valve's side, and they vanish when you remove the file.
+To avoid looking numbers up by hand, point the helper at the `items_game.txt` you extracted:
+
+```
+py -3 tools/inventory_item.py items_game.txt weapon_ak47 cu_ak47_asiimov --id 2 --wear 0.25 --seed 12
+```
+
+It prints a ready-to-paste entry with the right indices and the rarity the game shows (finish rarity +
+the weapon's base rarity - 1, capped at Covert). `next_id` must be greater than every item id. Seeds
+are 1 to 1000. Items get ids from 1000000000001 up. StatTrak is not encoded yet. Added items exist only
+in this session's view of the inventory: nothing is stored on Valve's side.
 
 ## Config (`cs2_gc.cfg`, optional)
 
@@ -121,6 +128,7 @@ The log says whether the file was found.
 
 ```
 # mode = local (default) or capture
+# real_items = hide (default, a fresh inventory) or keep (your recorded items stay)
 # SteamID64 used as the cache owner. Leave out to read it from the local Steam session.
 steam_id = 7656119XXXXXXXXXX
 welcome_version = 0

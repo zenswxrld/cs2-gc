@@ -97,6 +97,7 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
     InventoryItem item;
     item.defIndex = drop.weaponDefIndex;
     item.paintKitIndex = drop.paintKitIndex;
+    item.rarity = schema.SkinRarity(drop.weaponDefIndex, drop.paintKitIndex).value_or(0);
     item.wear = drop.wearMin + static_cast<float>(Below(random, 1u << 24)) / static_cast<float>(1u << 24) *
                                    (drop.wearMax - drop.wearMin);
     item.seed = static_cast<std::uint32_t>(Below(random, 1000)) + 1;

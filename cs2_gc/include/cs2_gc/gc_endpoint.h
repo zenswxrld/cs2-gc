@@ -57,6 +57,9 @@ public:
     // recorded and PatchFailures() increases.
     using ItemProvider = std::function<std::vector<std::vector<std::uint8_t>>(std::uint64_t steamId)>;
     void SetItemProvider(ItemProvider provider);
+    // Remove the items the recorded Welcome carries, so the inventory starts fresh and holds only
+    // what the provider supplies. Other recorded object types are left alone.
+    void SetDropRecordedItems(bool drop);
     std::size_t PatchFailures() const { return m_patchFailures; }
 
     std::size_t IgnoredMessages() const { return m_ignored; }
@@ -72,5 +75,6 @@ private:
     std::atomic<std::size_t> m_ignored{0};
     std::atomic<std::size_t> m_patchFailures{0};
     ItemProvider m_itemProvider;
+    bool m_dropRecordedItems{};
 };
 }

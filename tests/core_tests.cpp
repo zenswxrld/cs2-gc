@@ -710,6 +710,9 @@ void ProxySupport()
     Check(ParseProxyConfig("mode = capture")->mode == ProxyMode::Capture && ParseProxyConfig("mode=local")->mode == ProxyMode::Local &&
               ParseProxyConfig("")->mode == ProxyMode::Local && !ParseProxyConfig("mode=Capture") && !ParseProxyConfig("mode=") &&
               !ParseProxyConfig("mode=capture extra"), "mode setting is strict");
+    Check(ParseProxyConfig("")->hideRealItems && ParseProxyConfig("real_items = hide")->hideRealItems &&
+              !ParseProxyConfig("real_items=keep")->hideRealItems && !ParseProxyConfig("real_items=yes") && !ParseProxyConfig("real_items="),
+          "real_items setting: fresh inventory by default, strict values");
     const auto defaults = ParseProxyConfig("");
     Check(defaults && defaults->steamId == 0 && defaults->ownerType == 1 && defaults->cacheVersion == 1, "defaults");
     for (const char *bad : {"steam_id=abc", "steam_id=", "steam_id=12x", "steam_id=-1", "welcome_version=4294967296",
@@ -1108,6 +1111,87 @@ void SummaryDiversityAndLocation()
               !has(summary, "\"AU\"") && has(summary, "7: varint 1792458960"), "location redacted, other fields kept");
 }
 
+void SkinRarityAndFreshInventory()
+{
+    // Synthetic schema: rarities, a weapon base rarity through a prefab, and finish rarities.
+    const auto schema = Schema::Load(R"("items_game"
+    {
+        "rarities" { "common" { "value" "1" } "uncommon" { "value" "2" } "mythical" { "value" "4" }
+                     "legendary" { "value" "5" } "ancient" { "value" "6" } }
+        "prefabs" { "rifle" { "item_rarity" "uncommon" } "smg" { "item_rarity" "common" } }
+        "items" { "7" { "name" "weapon_rifle" "prefab" "rifle" } "34" { "name" "weapon_smg" "prefab" "smg" }
+                  "99" { "name" "weapon_bare" } }
+        "paint_kits" { "10" { "name" "k_mythical" } "11" { "name" "k_legendary" } "12" { "name" "k_ancient" }
+                       "13" { "name" "k_unrated" } }
+        "paint_kits_rarity" { "k_mythical" "mythical" "k_legendary" "legendary" "k_ancient" "ancient" }
+    })");
+    Check(schema.has_value(), "rarity fixture loads");
+    Check(schema->SkinRarity(7, 10) == 5u && schema->SkinRarity(7, 11) == 6u, "finish + weapon - 1");
+    Check(schema->SkinRarity(7, 12) == 6u, "capped at Covert");
+    Check(schema->SkinRarity(34, 10) == 4u, "a common-base weapon keeps the finish rarity");
+    Check(!schema->SkinRarity(99, 10) && !schema->SkinRarity(7, 13) && !schema->SkinRarity(7, 999) && !schema->SkinRarity(123, 10),
+          "missing weapon rarity, finish rarity, finish or weapon gives nothing");
+
+    // A fresh inventory: the item objects of the recording are removed, everything else stays.
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 99);
+    PbWriter itemType;
+    itemType.Varint(1, 1);
+    itemType.Bytes(2, Bytes({0x08, 0x01}));
+    itemType.Bytes(2, Bytes({0x08, 0x02}));
+    PbWriter otherType;
+    otherType.Varint(1, 7);
+    otherType.Bytes(2, Bytes({0x08, 0x05}));
+    PbWriter cache;
+    cache.Message(2, itemType);
+    cache.Message(2, otherType);
+    cache.Fixed64(3, 77);
+    cache.Message(4, owner);
+    PbWriter welcome;
+    welcome.Varint(1, 0);
+    welcome.Message(3, cache);
+    welcome.String(11, "XX");
+
+    const std::vector<std::vector<std::uint8_t>> mine{BuildEconItem({0, 7, 282, 0.15f, 661, false, 5}, 1, 1000000000001ull, 1000)};
+    const auto fresh = AppendItemsToWelcome(welcome.bytes(), mine, true);
+    const auto decoded = fresh ? DecodeClientWelcome(*fresh) : std::nullopt;
+    Check(decoded && decoded->outOfDateCaches[0].types.size() == 2, "both object types kept");
+    const auto &types = decoded->outOfDateCaches[0].types;
+    Check(types[0].typeId == 1 && types[0].objects.size() == 1 && types[0].objects[0] == mine[0], "only our item remains");
+    Check(types[1].typeId == 7 && types[1].objects.size() == 1, "other object types untouched");
+    Check(decoded->outOfDateCaches[0].owner.id == 99 && decoded->outOfDateCaches[0].version == 77, "owner and version preserved");
+
+    const auto empty = AppendItemsToWelcome(welcome.bytes(), {}, true);
+    const auto emptyDecoded = DecodeClientWelcome(*empty);
+    Check(emptyDecoded && emptyDecoded->outOfDateCaches[0].types[0].typeId == 1 && emptyDecoded->outOfDateCaches[0].types[0].objects.empty(),
+          "no custom items still gives an empty item list");
+    const auto keep = AppendItemsToWelcome(welcome.bytes(), mine, false);
+    Check(DecodeClientWelcome(*keep)->outOfDateCaches[0].types[0].objects.size() == 3, "keeping the recording adds to it");
+
+    // Through the endpoint: with the drop flag and no provider the recorded items are removed.
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcome.bytes());
+    GcEndpointConfig config;
+    config.owner = {1, 99};
+    LocalGameCoordinator gc(config);
+    gc.EnableReplay(store);
+    gc.SetDropRecordedItems(true);
+    ClientHello hello;
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello, {}, EncodeClientHello(hello), frame);
+    gc.SendMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    std::uint32_t size = 0, type = 0, got = 0;
+    Check(gc.IsMessageAvailable(&size), "welcome queued");
+    std::vector<std::uint8_t> out(size);
+    gc.RetrieveMessage(&type, out.data(), size, &got);
+    FrameView outFrame;
+    ReadProtobufFrame(type, out, outFrame);
+    const auto sent = DecodeClientWelcome(outFrame.body);
+    Check(sent && sent->outOfDateCaches[0].types[0].objects.empty() && sent->outOfDateCaches[0].types[1].objects.size() == 1 &&
+              gc.PatchFailures() == 0, "endpoint sends a fresh inventory");
+}
+
 int main()
 {
     try
@@ -1132,6 +1216,7 @@ int main()
         EconItems(); std::cout << "PASS econ item encoding and welcome patching\n";
         InventoryRarity(); std::cout << "PASS inventory rarity\n";
         SummaryDiversityAndLocation(); std::cout << "PASS summary samples and location redaction\n";
+        SkinRarityAndFreshInventory(); std::cout << "PASS skin rarity and fresh inventory\n";
         return 0;
     }
     catch (const std::exception &error)

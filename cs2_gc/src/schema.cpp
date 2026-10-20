@@ -156,7 +156,14 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
             else if (section.key == "revolving_loot_lists" && !entry.block)
                 revolving[entry.key] = &entry;
             else if (section.key == "paint_kits" && entry.block)
+            {
                 schema.m_paintKits[std::string{entry.Value("name")}] = &entry;
+                std::uint32_t index = 0;
+                if (ParseU32(entry.key, index))
+                    schema.m_paintKitNames[index] = std::string{entry.Value("name")};
+            }
+            else if (section.key == "paint_kits_rarity" && !entry.block)
+                schema.m_paintKitRarity[entry.key] = entry.value;
             else if (section.key == "rarities" && entry.block)
             {
                 std::uint32_t value = 0;
@@ -166,11 +173,16 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
         }
     }
 
+    schema.m_prefabs = prefabs;
     for (const KvNode *item : itemNodes)
     {
         std::uint32_t defIndex = 0;
-        if (ParseU32(item->key, defIndex) && !item->Value("name").empty())
-            schema.m_itemsByName[std::string{item->Value("name")}] = defIndex;
+        if (ParseU32(item->key, defIndex))
+        {
+            schema.m_itemsByIndex[defIndex] = item;
+            if (!item->Value("name").empty())
+                schema.m_itemsByName[std::string{item->Value("name")}] = defIndex;
+        }
     }
 
     for (const KvNode *item : itemNodes)
@@ -289,5 +301,23 @@ std::optional<LootItem> Schema::ResolveLootItem(std::string_view entry) const
     if (item.wearMin > item.wearMax || item.wearMin < 0.0f || item.wearMax > 1.0f)
         return std::nullopt;
     return item;
+}
+
+std::optional<std::uint32_t> Schema::SkinRarity(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
+{
+    const auto weapon = m_itemsByIndex.find(weaponDefIndex);
+    const auto kitName = m_paintKitNames.find(paintKitIndex);
+    if (weapon == m_itemsByIndex.end() || kitName == m_paintKitNames.end())
+        return std::nullopt;
+    const auto kitRarity = m_paintKitRarity.find(kitName->second);
+    if (kitRarity == m_paintKitRarity.end())
+        return std::nullopt;
+    const auto kit = m_rarities.find(kitRarity->second);
+    const auto base = m_rarities.find(std::string{ResolveValue(*weapon->second, "item_rarity", m_prefabs)});
+    if (kit == m_rarities.end() || base == m_rarities.end() || kit->second == 0 || base->second == 0)
+        return std::nullopt;
+    constexpr std::uint32_t Covert = 6;
+    const std::uint32_t combined = kit->second + base->second - 1;
+    return combined > Covert ? Covert : combined;
 }
 }

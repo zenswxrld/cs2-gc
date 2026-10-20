@@ -49,6 +49,9 @@ if(BUILD_TESTING)
         add_test(NAME cs2_gc_protocol_extraction
             COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_extract_gc_protocol.py -v)
         set_tests_properties(cs2_gc_protocol_extraction PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_inventory_item_tool
+            COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_inventory_item.py -v)
+        set_tests_properties(cs2_inventory_item_tool PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_proxy_def_generation
             COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_make_proxy_def.py -v)
         set_tests_properties(cs2_proxy_def_generation PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

@@ -50,6 +50,12 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
     }
 }
 
+void LocalGameCoordinator::SetDropRecordedItems(bool drop)
+{
+    std::lock_guard lock(m_mutex);
+    m_dropRecordedItems = drop;
+}
+
 void LocalGameCoordinator::SetItemProvider(ItemProvider provider)
 {
     std::lock_guard lock(m_mutex);
@@ -117,12 +123,13 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
         {
             std::vector<std::uint8_t> patched;
             std::span<const std::uint8_t> body = *welcome;
-            if (m_itemProvider)
+            if (m_itemProvider || m_dropRecordedItems)
             {
-                const auto items = m_itemProvider(m_config.owner.id);
-                if (!items.empty())
+                const auto items = m_itemProvider ? m_itemProvider(m_config.owner.id)
+                                                  : std::vector<std::vector<std::uint8_t>>{};
+                if (!items.empty() || m_dropRecordedItems)
                 {
-                    if (auto result = AppendItemsToWelcome(*welcome, items))
+                    if (auto result = AppendItemsToWelcome(*welcome, items, m_dropRecordedItems))
                     {
                         patched = std::move(*result);
                         body = patched;

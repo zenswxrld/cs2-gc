@@ -65,6 +65,12 @@ public:
     // or paint kit is missing from the schema, so nothing is guessed.
     std::optional<LootItem> ResolveLootItem(std::string_view entry) const;
 
+    // Rarity value of a paint-kit weapon as the game shows it: the finish's rarity plus the
+    // weapon's base rarity minus one, capped at 6 (Covert). Checked against the target build:
+    // AK-47 (base 2) with a rarity-4 finish is Classified (5), with a rarity-5 finish Covert (6).
+    // Nothing if the weapon, finish or either rarity is missing from the schema.
+    std::optional<std::uint32_t> SkinRarity(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
+
 private:
     Schema() = default;
 
@@ -75,5 +81,9 @@ private:
     std::unordered_map<std::string, std::uint32_t> m_itemsByName;
     std::unordered_map<std::string, const KvNode *> m_paintKits; // by name; key is the index
     std::unordered_map<std::string, std::uint32_t> m_rarities;
+    std::unordered_map<std::string, std::string> m_paintKitRarity;       // kit name -> rarity name
+    std::unordered_map<std::uint32_t, std::string> m_paintKitNames;      // kit index -> name
+    std::unordered_map<std::uint32_t, const KvNode *> m_itemsByIndex;
+    std::unordered_map<std::string, const KvNode *> m_prefabs;
 };
 }

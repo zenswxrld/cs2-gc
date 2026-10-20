@@ -216,6 +216,7 @@ public:
 
     void EnableReplay(std::shared_ptr<const ReplayStore> store) { m_gc.EnableReplay(std::move(store)); }
     void SetItemProvider(LocalGameCoordinator::ItemProvider provider) { m_gc.SetItemProvider(std::move(provider)); }
+    void SetDropRecordedItems(bool drop) { m_gc.SetDropRecordedItems(drop); }
 
     GCResult RetrieveMessage(std::uint32_t *type, void *destination, std::uint32_t capacity,
                              std::uint32_t *size) override
@@ -501,6 +502,10 @@ State &Init()
             if (replay->Size())
             {
                 s.coordinator->EnableReplay(replay);
+                s.coordinator->SetDropRecordedItems(proxy.hideRealItems);
+                s.log->Write(proxy.hideRealItems ? "inventory: fresh. The items in the recording are removed; only "
+                                                   "cs2_gc_inventory.txt items appear (real_items = keep to change)"
+                                                 : "inventory: the recorded items are kept (real_items = keep)");
                 s.log->Write("replay: " + std::to_string(replay->Size()) + " recorded message bodies loaded from "
                              "cs2_gc_replay; they belong to the account they were captured from");
             }

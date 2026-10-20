@@ -27,6 +27,9 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
 // nothing when the Welcome is malformed or has no cache. Every other byte-level field of the
 // Welcome and of the cache is carried over unchanged and in order. A cache with no item type
 // gets one.
+// With dropExisting, the item objects the Welcome already carries are removed first, so the
+// result holds only `items` (a fresh inventory). Other object types are never touched.
 std::optional<std::vector<std::uint8_t>> AppendItemsToWelcome(
-    std::span<const std::uint8_t> welcome, std::span<const std::vector<std::uint8_t>> items);
+    std::span<const std::uint8_t> welcome, std::span<const std::vector<std::uint8_t>> items,
+    bool dropExisting = false);
 }

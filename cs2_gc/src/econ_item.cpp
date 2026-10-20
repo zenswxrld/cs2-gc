@@ -35,18 +35,29 @@ void Reemit(PbWriter &out, const PbField &f)
     }
 }
 
-// CMsgSOCacheSubscribed.SubscribedType, with `items` appended when it is the item type.
+// CMsgSOCacheSubscribed.SubscribedType, with `items` appended when it is the item type (and its
+// existing objects removed first when dropExisting).
 std::optional<std::vector<std::uint8_t>> PatchSubscribedType(std::span<const std::uint8_t> type,
-    std::span<const std::vector<std::uint8_t>> items, bool &isItemType)
+    std::span<const std::vector<std::uint8_t>> items, bool dropExisting, bool &isItemType)
 {
+    isItemType = false;
+    {
+        // The type ID decides how every other field is treated, so read it first.
+        PbReader scan(type);
+        PbField f;
+        while (scan.Next(f))
+            if (f.number == 1 && f.wire == 0 && f.value == ItemTypeId)
+                isItemType = true;
+        if (scan.Failed())
+            return std::nullopt;
+    }
     PbWriter out;
     PbReader reader(type);
     PbField f;
-    isItemType = false;
     while (reader.Next(f))
     {
-        if (f.number == 1 && f.wire == 0 && f.value == ItemTypeId)
-            isItemType = true;
+        if (isItemType && dropExisting && f.number == 2)
+            continue;
         Reemit(out, f);
     }
     if (reader.Failed())
@@ -58,7 +69,7 @@ std::optional<std::vector<std::uint8_t>> PatchSubscribedType(std::span<const std
 }
 
 std::optional<std::vector<std::uint8_t>> PatchCache(std::span<const std::uint8_t> cache,
-    std::span<const std::vector<std::uint8_t>> items)
+    std::span<const std::vector<std::uint8_t>> items, bool dropExisting)
 {
     PbWriter out;
     PbReader reader(cache);
@@ -69,7 +80,7 @@ std::optional<std::vector<std::uint8_t>> PatchCache(std::span<const std::uint8_t
         if (f.number == 2 && f.wire == 2)
         {
             bool isItemType = false;
-            auto type = PatchSubscribedType(f.bytes, items, isItemType);
+            auto type = PatchSubscribedType(f.bytes, items, dropExisting, isItemType);
             if (!type)
                 return std::nullopt;
             patched |= isItemType;
@@ -113,7 +124,7 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
 }
 
 std::optional<std::vector<std::uint8_t>> AppendItemsToWelcome(
-    std::span<const std::uint8_t> welcome, std::span<const std::vector<std::uint8_t>> items)
+    std::span<const std::uint8_t> welcome, std::span<const std::vector<std::uint8_t>> items, bool dropExisting)
 {
     PbWriter out;
     PbReader reader(welcome);
@@ -123,7 +134,7 @@ std::optional<std::vector<std::uint8_t>> AppendItemsToWelcome(
     {
         if (f.number == 3 && f.wire == 2 && !patched)
         {
-            auto cache = PatchCache(f.bytes, items);
+            auto cache = PatchCache(f.bytes, items, dropExisting);
             if (!cache)
                 return std::nullopt;
             out.Bytes(3, *cache);

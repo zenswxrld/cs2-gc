@@ -1,3 +1,5 @@
+> For the current Codex test build, saved ranks/stars, bot-server GC, gold contracts and terminals, see [TEST-BUILD.md](TEST-BUILD.md) and [CLAUDE-HANDOFF.md](CLAUDE-HANDOFF.md). Older implementation notes below describe earlier builds.
+
 # Diagnostic proxy (`steam_api64.dll` stand-in)
 
 **Status: built and cross-compiled, never run.** It has not been tested on Windows or against

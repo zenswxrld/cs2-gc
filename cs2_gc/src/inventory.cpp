@@ -6,9 +6,31 @@
 #include <fstream>
 #include <set>
 #include <sstream>
+#include <limits>
 
 namespace cs2_gc
 {
+bool Inventory::ApplyEarnedXp(std::uint64_t cumulativeXp)
+{
+    if (cumulativeXp <= m_progress.rewardTotal)
+        return false;
+    const auto delta = cumulativeXp - m_progress.rewardTotal;
+    m_progress.rewardTotal = cumulativeXp;
+    const auto needed = std::uint64_t{40 - m_progress.level} * ProfileLevelXp;
+    const auto xp = std::uint64_t{m_progress.xp} + std::min(delta, needed);
+    m_progress.level += static_cast<std::uint32_t>(std::min<std::uint64_t>(xp / ProfileLevelXp, 40 - m_progress.level));
+    m_progress.xp = m_progress.level == 40 ? 0 : static_cast<std::uint32_t>(xp % ProfileLevelXp);
+    std::uint64_t stars = m_armoryCredits.value_or(0);
+    for (auto &track : m_xpTracks)
+    {
+        const auto previous = std::min(track, ArmoryPassMaxXp);
+        track = previous + static_cast<std::uint32_t>(std::min<std::uint64_t>(delta, ArmoryPassMaxXp - previous));
+        stars += track / ArmoryStarXp - previous / ArmoryStarXp;
+    }
+    m_armoryCredits = static_cast<std::uint32_t>(std::min<std::uint64_t>(stars, UINT32_MAX));
+    return true;
+}
+
 std::uint64_t Inventory::Add(InventoryItem item)
 {
     item.id = m_nextId++;
@@ -75,6 +97,10 @@ std::string Inventory::ToText() const
 {
     std::ostringstream out;
     out << "\"inventory\"\n{\n\t\"next_id\"\t\"" << m_nextId << "\"\n";
+    if (m_armoryCredits)
+        out << "\t\"armory_credits\"\t\"" << *m_armoryCredits << "\"\n";
+    out << "\t\"progression\" { \"level\" \"" << m_progress.level << "\" \"xp\" \"" << m_progress.xp
+        << "\" \"reward_total\" \"" << m_progress.rewardTotal << "\" }\n";
     if (!m_xpTracks.empty())
     {
         out << "\t\"xp_tracks\"\t\"";
@@ -96,6 +122,14 @@ std::string Inventory::ToText() const
             << "\t\t\t\"keychain\"\t\"" << item.keychain << "\"\n";
         if (!item.customName.empty())
             out << "\t\t\t\"custom_name\"\t\"" << item.customName << "\"\n";
+        if (item.unusual)
+            out << "\t\t\t\"unusual\"\t\"1\"\n";
+        if (item.terminalRemaining)
+            out << "\t\t\t\"terminal_remaining\"\t\"" << *item.terminalRemaining << "\"\n";
+        if (item.expiration)
+            out << "\t\t\t\"expiration\"\t\"" << item.expiration << "\"\n";
+        if (item.purchasePrice)
+            out << "\t\t\t\"purchase_price\"\t\"" << *item.purchasePrice << "\"\n";
         if (item.slabSticker)
             out << "\t\t\t\"slab_sticker\"\t\"" << item.slabSticker << "\"\n";
         if (item.storedIn)
@@ -127,6 +161,24 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
     Inventory inventory;
     if (!ParseNumber(root->Value("next_id"), inventory.m_nextId) || inventory.m_nextId == 0)
         return std::nullopt;
+
+    if (const KvNode *progress = root->Find("progression"))
+    {
+        if (!progress->block || !ParseNumber(progress->Value("level"), inventory.m_progress.level) ||
+            inventory.m_progress.level < 1 || inventory.m_progress.level > 40 ||
+            !ParseNumber(progress->Value("xp"), inventory.m_progress.xp) || inventory.m_progress.xp >= ProfileLevelXp ||
+            (inventory.m_progress.level == 40 && inventory.m_progress.xp != 0) ||
+            !ParseNumber(progress->Value("reward_total"), inventory.m_progress.rewardTotal))
+            return std::nullopt;
+    }
+
+    if (const KvNode *credits = root->Find("armory_credits"))
+    {
+        std::uint32_t value = 0;
+        if (credits->block || !ParseNumber(credits->value, value))
+            return std::nullopt;
+        inventory.m_armoryCredits = value;
+    }
 
     if (const KvNode *tracks = root->Find("xp_tracks"))
     {
@@ -218,6 +270,23 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             item.customName = name->value;
         }
         item.statTrak = statTrak == 1;
+        if (entry.Find("expiration") && !ParseNumber(entry.Value("expiration"), item.expiration))
+            return std::nullopt;
+        for (const auto &[key, target] : {std::pair{"terminal_remaining", &item.terminalRemaining},
+                                         std::pair{"purchase_price", &item.purchasePrice}})
+            if (const auto *node = entry.Find(key))
+            {
+                std::uint32_t value = 0;
+                if (node->block || !ParseNumber(node->value, value))
+                    return std::nullopt;
+                *target = value;
+            }
+        if (const auto *unusual = entry.Find("unusual"))
+        {
+            if (unusual->block || unusual->value != "1")
+                return std::nullopt;
+            item.unusual = true;
+        }
         inventory.m_items.push_back(item);
     }
     return inventory;

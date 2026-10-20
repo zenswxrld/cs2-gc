@@ -119,7 +119,18 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
     out.Varint(2, accountId);
     out.Varint(3, inventoryPosition);
     out.Varint(4, item.defIndex);
-    out.Varint(7, QualityUnique);
+    out.Varint(7, item.expiration ? 14 : item.unusual ? 3 : item.statTrak ? QualityStrange : QualityUnique);
+    if (item.terminalRemaining)
+        AddIntegerAttribute(out, 169, *item.terminalRemaining);
+    if (item.expiration)
+        AddIntegerAttribute(out, 183, item.expiration);
+    if (item.purchasePrice)
+        AddIntegerAttribute(out, 316, *item.purchasePrice);
+    if (item.statTrak)
+    {
+        AddIntegerAttribute(out, AttributeKillEater, 0);
+        AddIntegerAttribute(out, AttributeKillEaterScoreType, 0);
+    }
     if (item.paintKitIndex)
     {
         AddFloatAttribute(out, AttributePaintIndex, static_cast<float>(item.paintKitIndex));

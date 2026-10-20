@@ -21,6 +21,23 @@ std::uint64_t Below(const RandomSource &random, std::uint64_t bound)
 constexpr std::uint32_t Covert = 6;
 }
 
+const char *TradeUpErrorText(TradeUpError error)
+{
+    switch (error)
+    {
+    case TradeUpError::None: return "success";
+    case TradeUpError::WrongCount: return "expected ten skins, or five Covert skins";
+    case TradeUpError::UnknownItem: return "unknown, duplicate or stored item";
+    case TradeUpError::NotASkin: return "missing weapon finish or rarity";
+    case TradeUpError::MixedRarity: return "mixed skin rarities";
+    case TradeUpError::TopRarity: return "unsupported input rarity";
+    case TradeUpError::MixedStatTrak: return "mixed StatTrak and normal skins";
+    case TradeUpError::NoCollection: return "skin has no collection in items_game.txt";
+    case TradeUpError::NoOutcome: return "collection has no supported next-rarity outcome";
+    }
+    return "unknown error";
+}
+
 TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vector<std::uint64_t> &itemIds,
                       const RandomSource &random)
 {
@@ -29,7 +46,7 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
         result.error = error;
         return result;
     };
-    if (itemIds.size() != TradeUpItemCount)
+    if (itemIds.size() != TradeUpItemCount && itemIds.size() != 5)
         return fail(TradeUpError::WrongCount);
 
     std::set<std::uint64_t> seen;
@@ -37,7 +54,7 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     for (const std::uint64_t id : itemIds)
     {
         const InventoryItem *item = inventory.Find(id);
-        if (!item || !seen.insert(id).second)
+        if (!item || item->storedIn || !seen.insert(id).second)
             return fail(TradeUpError::UnknownItem);
         inputs.push_back(item);
     }
@@ -64,7 +81,9 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
         ++supplied[collections.front()];
         totalWear += item->wear;
     }
-    if (rarity >= Covert)
+    if ((rarity == Covert && itemIds.size() != 5) || (rarity != Covert && itemIds.size() != TradeUpItemCount))
+        return fail(TradeUpError::WrongCount);
+    if (rarity > Covert)
         return fail(TradeUpError::TopRarity);
 
     // For every collection that supplied inputs, its skins of the next rarity.
@@ -78,11 +97,14 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     for (const auto &[collection, count] : supplied)
     {
         Pool pool{count, {}};
-        for (const SkinRef &skin : schema.CollectionSkins(collection))
-            if (schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex) == rarity + 1)
-                pool.skins.push_back(skin);
+        if (rarity == Covert)
+            pool.skins = schema.GoldOutcomes(collection, inputs.front()->statTrak);
+        else
+            for (const SkinRef &skin : schema.CollectionSkins(collection))
+                if (schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex) == rarity + 1)
+                    pool.skins.push_back(skin);
         if (pool.skins.empty())
-            continue;
+            return fail(TradeUpError::NoOutcome);
         totalWeight += pool.weight;
         pools.push_back(std::move(pool));
     }
@@ -108,11 +130,12 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     InventoryItem item;
     item.defIndex = outcome.weaponDefIndex;
     item.paintKitIndex = outcome.paintKitIndex;
-    item.rarity = rarity + 1;
+    item.rarity = rarity == Covert ? Covert : rarity + 1;
     item.statTrak = inputs.front()->statTrak;
+    item.unusual = rarity == Covert;
     item.seed = static_cast<std::uint32_t>(Below(random, 1000)) + 1;
-    const float average = totalWear / static_cast<float>(TradeUpItemCount);
-    item.wear = std::clamp(minted->wearMin + average * (minted->wearMax - minted->wearMin), 0.0f, 1.0f);
+    const float average = totalWear / static_cast<float>(itemIds.size());
+    item.wear = outcome.paintKitIndex ? std::clamp(minted->wearMin + average * (minted->wearMax - minted->wearMin), 0.0f, 1.0f) : 0.0f;
 
     // Nothing above changed the inventory; consume and grant together.
     for (const InventoryItem *input : inputs)

@@ -14,6 +14,8 @@ namespace cs2_gc
 inline constexpr std::uint32_t AttributePaintIndex = 6;
 inline constexpr std::uint32_t AttributePaintSeed = 7;
 inline constexpr std::uint32_t AttributePaintWear = 8;
+inline constexpr std::uint32_t AttributeKillEater = 80;
+inline constexpr std::uint32_t AttributeKillEaterScoreType = 81;
 
 // Sticker (and graffiti) kit id, and charm id. The sticker attribute is what the capture's graffiti
 // item carries; the sticker and charm items themselves are tools (definitions 1209 and 1355).
@@ -51,6 +53,7 @@ inline constexpr std::uint32_t PickupXpShopRedeem = 23;
 
 // Quality "unique" from the same schema; the real item in the capture used it too.
 inline constexpr std::uint32_t QualityUnique = 4;
+inline constexpr std::uint32_t QualityStrange = 9;
 
 // Encodes a CSOEconItem (base_gcmessages.proto of the target client) for a plain paint-kit
 // weapon. StatTrak is not encoded yet. `inventoryPosition` is the backpack slot.

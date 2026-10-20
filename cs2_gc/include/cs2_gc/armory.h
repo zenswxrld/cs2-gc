@@ -19,6 +19,7 @@ public:
     Armory(const Schema &schema, std::uint32_t campaignId, std::uint32_t credits);
 
     std::uint32_t Balance() const { return m_balance; }
+    void SetBalance(std::uint32_t credits) { m_balance = credits; }
     std::uint32_t CampaignId() const { return m_campaignId; }
 
     enum class Status

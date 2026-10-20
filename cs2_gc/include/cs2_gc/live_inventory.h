@@ -19,6 +19,21 @@ public:
     explicit LiveInventory(Inventory inventory);
 
     const Inventory &Items() const { return m_inventory; }
+    std::vector<std::vector<std::uint8_t>> EncodedServerItems(std::uint32_t accountId) const;
+    struct TerminalChange
+    {
+        InventoryItem terminal;
+        std::optional<InventoryItem> offer;
+        std::vector<InventoryItem> removed;
+        bool unsealed{};
+        bool exhausted{};
+    };
+    std::optional<TerminalChange> AdvanceTerminal(const Schema &schema, const OpenCrateRequest &request,
+                                                const RandomSource &random, std::uint32_t now);
+    std::optional<InventoryItem> TerminalOffer(const Schema &schema, std::uint64_t gameId) const;
+    std::optional<TerminalChange> AcceptTerminal(const Schema &schema, std::uint64_t gameId);
+    void SetArmoryCredits(std::uint32_t credits) { m_inventory.SetArmoryCredits(credits); }
+    bool ApplyEarnedXp(std::uint64_t cumulativeXp) { return m_inventory.ApplyEarnedXp(cumulativeXp); }
 
     // Activates one more Armory Pass, starting at `xp`; false when MaxXpTracks are already active.
     bool AddXpTrack(std::uint32_t xp);
@@ -128,6 +143,10 @@ public:
     // Strips stickers and charms from Sticker Slabs. An earlier build wrote a sticker onto a slab item
     // (as if it were a weapon), saved it, and the game crashed on it. Returns how many items were repaired.
     std::size_t RepairSlabs(const Schema &schema);
+
+    // Earlier Armory rolls incorrectly assigned hidden StatTrak to collection-only finishes.
+    // Clear those flags on known collection skins, preserving valid case finishes and unknown items.
+    std::size_t RepairCollectionStatTrak(const Schema &schema);
 
     struct Sealed
     {

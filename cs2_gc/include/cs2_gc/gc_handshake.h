@@ -113,6 +113,7 @@ struct StorePurchaseRequest // CMsgGCStorePurchaseInit: the body of k_EMsgGCStor
     {
         std::uint32_t defIndex{};
         std::uint32_t quantity{};
+        std::uint64_t supplementalData{};
     };
     std::uint32_t currency{};
     std::vector<Line> lines;
@@ -122,6 +123,8 @@ struct OpenCrateRequest // CMsgOpenCrate: the body of k_EMsgGCOpenCrate
 {
     std::uint64_t keyItemId{};   // tool_item_id; zero for containers that need no key
     std::uint64_t crateItemId{}; // subject_item_id
+    std::optional<std::uint32_t> pointsRemaining;
+    std::uint32_t volatileLimit{};
 };
 
 struct CasketRequest // CMsgCasketItem: the body of the storage unit messages

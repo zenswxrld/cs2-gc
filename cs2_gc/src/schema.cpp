@@ -100,6 +100,8 @@ bool ChainContains(const KvNode &item, std::string_view fragment, const ItemMap 
 
 CrateKind Classify(const KvNode &item, std::uint32_t keyDefIndex, const ItemMap &prefabs)
 {
+    if (ChainContains(item, "volatile_pricing", prefabs) && ChainContains(item, "weapon_case_selfopening_collection", prefabs))
+        return CrateKind::Terminal;
     if (ChainContains(item, "_capsule", prefabs))
         return CrateKind::Capsule;
     if (ChainContains(item, "graffiti_box", prefabs))
@@ -262,6 +264,13 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
         schema.m_crates.push_back(std::move(crate));
     }
 
+    for (const CrateInfo &crate : schema.m_crates)
+        if (crate.kind == CrateKind::Case)
+            for (const LootTier &tier : schema.LootTiers(crate.lootListName))
+                for (const std::string &entry : tier.items)
+                    if (const auto skin = schema.ResolveLootItem(entry); skin && skin->kind == LootKind::Skin)
+                        schema.m_statTrakSkins.insert((std::uint64_t{skin->weaponDefIndex} << 32) | skin->paintKitIndex);
+
     // Index the collections once everything they refer to is known. Only "[finish]weapon" entries that resolve
     // to a skin count; stickers, charms, music kits and the like are not trade-up material.
     for (const auto &[name, definition] : schema.m_itemsByName)
@@ -289,6 +298,69 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
     return schema;
 }
 
+bool Schema::CanBeStatTrak(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
+{
+    return m_statTrakSkins.contains((std::uint64_t{weaponDefIndex} << 32) | paintKitIndex);
+}
+
+bool Schema::IsKnife(std::uint32_t defIndex) const
+{
+    const auto item = m_itemsByIndex.find(defIndex);
+    return item != m_itemsByIndex.end() && ResolveValue(*item->second, "item_class", m_prefabs) == "weapon_knife";
+}
+
+bool Schema::LoadGoldPools(std::string_view text)
+{
+    const auto parsed = ParseKeyValues(text);
+    const auto *root = parsed ? parsed->Find("gold_pools") : nullptr;
+    if (!root || !root->block)
+        return false;
+    std::unordered_map<std::string, std::vector<SkinRef>> pools;
+    for (const auto &entry : root->children)
+    {
+        std::uint32_t crateId = 0;
+        if (!entry.block || !ParseU32(entry.key, crateId))
+            return false;
+        const auto crate = m_itemsByIndex.find(crateId);
+        if (crate == m_itemsByIndex.end())
+            continue; // a catalogue may include cases newer than the installed client
+        const auto *tags = crate->second->Find("tags");
+        const auto *set = tags ? tags->Find("ItemSet") : nullptr;
+        if (!set || set->Value("tag_value").empty())
+            return false;
+        std::vector<SkinRef> pool;
+        for (const auto &pair : entry.children)
+        {
+            const auto split = pair.key.find(':');
+            SkinRef skin;
+            if (pair.block || split == std::string::npos ||
+                !ParseU32(std::string_view(pair.key).substr(0, split), skin.weaponDefIndex) ||
+                !ParseU32(std::string_view(pair.key).substr(split + 1), skin.paintKitIndex))
+                return false;
+            const auto weapon = m_itemsByIndex.find(skin.weaponDefIndex);
+            if (weapon == m_itemsByIndex.end() ||
+                (!IsKnife(skin.weaponDefIndex) && !HasPrefab(*weapon->second, "hands_paintable", m_prefabs)) ||
+                (skin.paintKitIndex && !SkinAsLootItem(skin.weaponDefIndex, skin.paintKitIndex)))
+                return false;
+            pool.push_back(skin);
+        }
+        pools[std::string{set->Value("tag_value")}] = std::move(pool);
+    }
+    m_goldPools = std::move(pools);
+    return true;
+}
+
+std::vector<SkinRef> Schema::GoldOutcomes(const std::string &collection, bool statTrak) const
+{
+    std::vector<SkinRef> result;
+    const auto pool = m_goldPools.find(collection);
+    if (pool != m_goldPools.end())
+        for (const auto &skin : pool->second)
+            if (!statTrak || IsKnife(skin.weaponDefIndex))
+                result.push_back(skin);
+    return result;
+}
+
 std::vector<std::string> Schema::CollectionsOf(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
 {
     const auto found = m_skinCollections.find((std::uint64_t{weaponDefIndex} << 32) | paintKitIndex);
@@ -305,6 +377,8 @@ const std::vector<SkinRef> &Schema::CollectionSkins(const std::string &collectio
 std::optional<LootItem> Schema::SkinAsLootItem(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
 {
     const auto weapon = m_weaponNames.find(weaponDefIndex);
+    if (paintKitIndex == 0 && weapon != m_weaponNames.end() && IsKnife(weaponDefIndex))
+        return ResolveLootItem(weapon->second);
     const auto kit = m_paintKitNames.find(paintKitIndex);
     if (weapon == m_weaponNames.end() || kit == m_paintKitNames.end())
         return std::nullopt;

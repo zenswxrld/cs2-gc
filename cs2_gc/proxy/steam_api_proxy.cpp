@@ -34,6 +34,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <charconv>
 #include <vector>
 #include <filesystem>
 #include <fstream>
@@ -184,6 +185,7 @@ void LogFrame(Logger &log, const char *direction, std::uint32_t type, std::span<
     log.Write(text);
 }
 
+std::recursive_mutex g_localGcMutex; // client and listen server share one inventory
 class ProxyCoordinator final : public SteamGameCoordinatorInterface
 {
 public:
@@ -196,6 +198,7 @@ public:
 
     GCResult SendMessage(std::uint32_t type, const void *data, std::uint32_t size) override
     {
+        std::lock_guard lock(g_localGcMutex);
         if (m_provider)
         {
             if (const std::uint64_t id = m_provider())
@@ -220,9 +223,36 @@ public:
     void SetItemProvider(LocalGameCoordinator::ItemProvider provider) { m_gc.SetItemProvider(std::move(provider)); }
     void SetDropRecordedItems(bool drop) { m_gc.SetDropRecordedItems(drop); }
     void SetArmoryCredits(std::optional<std::uint32_t> credits) { m_gc.SetArmoryCredits(credits); }
+    void EnableProgression(std::filesystem::path rewardPath, std::function<void()> afterReward)
+    {
+        m_rewardPath = std::move(rewardPath);
+        m_afterReward = std::move(afterReward);
+    }
+    void PollProgression()
+    {
+        std::lock_guard inventoryLock(g_localGcMutex);
+        std::lock_guard lock(m_rewardMutex);
+        const auto now = std::chrono::steady_clock::now();
+        if (m_rewardPath.empty() || now < m_nextRewardPoll)
+            return;
+        m_nextRewardPoll = now + std::chrono::seconds(1);
+        std::ifstream input(m_rewardPath);
+        std::string text;
+        std::getline(input, text);
+        std::uint64_t total = 0;
+        const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), total);
+        if (input && error == std::errc{} && end == text.data() + text.size())
+            m_gc.ApplyEarnedXp(total, m_afterReward);
+    }
     void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange)
     {
         m_gc.EnableLiveInventory(std::move(inventory), std::move(afterChange));
+    }
+    void EnableServerInventory(std::shared_ptr<LiveInventory> inventory) { m_gc.EnableServerInventory(std::move(inventory)); }
+    void RefreshServerInventory()
+    {
+        std::lock_guard lock(g_localGcMutex);
+        m_gc.RefreshServerInventory();
     }
     void EnableStorePurchaseFailure() { m_gc.EnableStorePurchaseFailure(); }
     void EnableStorePurchases(std::shared_ptr<LiveInventory> inventory, std::function<bool(std::uint32_t)> canSell,
@@ -253,6 +283,10 @@ public:
 
 private:
     LocalGameCoordinator m_gc;
+    std::filesystem::path m_rewardPath;
+    std::function<void()> m_afterReward;
+    std::chrono::steady_clock::time_point m_nextRewardPoll{};
+    std::mutex m_rewardMutex;
     Logger &m_log;
     std::uint32_t m_ownerType;
     std::function<std::uint64_t()> m_provider;
@@ -318,14 +352,18 @@ struct State
     std::wstring directory;
     Logger *log{};
     ProxyCoordinator *coordinator{};
+    ProxyCoordinator *serverCoordinator{};
     ProxyMode mode{ProxyMode::Local};
     using FindFn = void *(__cdecl *)(int, const char *);
     using CreateFn = void *(__cdecl *)(const char *);
     FindFn realFind{};
+    FindFn realFindServer{};
     CreateFn realCreate{};
     void (__cdecl *realRegister)(void *, int){};
     void (__cdecl *realUnregister)(void *){};
     void (__cdecl *realRunCallbacks)(){};
+    void (__cdecl *realServerRunCallbacks)(){};
+    int (__cdecl *realServerPipe)(){};
     int (__cdecl *realGetUser)(){};
     std::uint64_t (__cdecl *realGetSteamId)(void *){};
     std::optional<std::uint32_t> genericSlotOffset; // from the real DLL's own flat-API thunk
@@ -401,7 +439,8 @@ void *__cdecl GenericInterfaceHook(void *self, int user, int pipe, const char *v
     const bool wantsGc = state.active && state.genericSlotOffset && version &&
                          std::string_view(version) == GcInterfaceName;
     if (wantsGc && state.mode == ProxyMode::Local)
-        return state.coordinator;
+        return state.serverCoordinator && state.realServerPipe && pipe == state.realServerPipe()
+                   ? state.serverCoordinator : state.coordinator;
 
     void **vtable = *reinterpret_cast<void ***>(self);
     void **slot = reinterpret_cast<void **>(reinterpret_cast<char *>(vtable) + *state.genericSlotOffset);
@@ -450,10 +489,13 @@ State &Init()
         if (real)
         {
             s.realFind = reinterpret_cast<State::FindFn>(GetProcAddress(real, "SteamInternal_FindOrCreateUserInterface"));
+            s.realFindServer = reinterpret_cast<State::FindFn>(GetProcAddress(real, "SteamInternal_FindOrCreateGameServerInterface"));
             s.realCreate = reinterpret_cast<State::CreateFn>(GetProcAddress(real, "SteamInternal_CreateInterface"));
             s.realRegister = reinterpret_cast<decltype(s.realRegister)>(GetProcAddress(real, "SteamAPI_RegisterCallback"));
             s.realUnregister = reinterpret_cast<decltype(s.realUnregister)>(GetProcAddress(real, "SteamAPI_UnregisterCallback"));
             s.realRunCallbacks = reinterpret_cast<decltype(s.realRunCallbacks)>(GetProcAddress(real, "SteamAPI_RunCallbacks"));
+            s.realServerRunCallbacks = reinterpret_cast<decltype(s.realServerRunCallbacks)>(GetProcAddress(real, "SteamGameServer_RunCallbacks"));
+            s.realServerPipe = reinterpret_cast<decltype(s.realServerPipe)>(GetProcAddress(real, "SteamGameServer_GetHSteamPipe"));
             s.realGetUser = reinterpret_cast<decltype(s.realGetUser)>(GetProcAddress(real, "SteamAPI_GetHSteamUser"));
             s.realGetSteamId = reinterpret_cast<decltype(s.realGetSteamId)>(GetProcAddress(real, "SteamAPI_ISteamUser_GetSteamID"));
             // The flat-API wrapper is `mov rax,[rcx]; jmp [rax+N]`; N is the vtable offset we need.
@@ -504,6 +546,7 @@ State &Init()
             AddRedaction(proxy.steamId);
 
         GcEndpointConfig endpoint;
+        endpoint.diagnostic = [log = s.log](std::string_view message) { log->Write(std::string{message}); };
         endpoint.welcomeVersion = proxy.welcomeVersion;
         endpoint.owner = {proxy.ownerType, proxy.steamId};
         endpoint.cacheVersion = proxy.cacheVersion;
@@ -520,6 +563,7 @@ State &Init()
         }
         if (s.mode == ProxyMode::Local)
         {
+            s.serverCoordinator = new ProxyCoordinator(endpoint, *s.log, provider);
             s.coordinator = new ProxyCoordinator(endpoint, *s.log, std::move(provider));
             auto replay = std::make_shared<ReplayStore>(
                 ReplayStore::LoadDirectory(std::filesystem::path(s.directory + L"cs2_gc_replay")));
@@ -555,7 +599,13 @@ State &Init()
                 loaded = Inventory{};
             }
             auto live = std::make_shared<LiveInventory>(std::move(*loaded));
+            s.serverCoordinator->EnableServerInventory(live);
             Logger *saveLog = s.log;
+            s.coordinator->EnableProgression(std::filesystem::path(s.directory + L"cs2_gc_rewards.txt"),
+                [live, inventoryPath, inventoryFileUsable, saveLog] {
+                    if (inventoryFileUsable && !live->Save(inventoryPath))
+                        saveLog->Write("could not save cs2_gc_inventory.txt");
+                });
             s.coordinator->EnableLiveInventory(live, [live, inventoryPath, inventoryFileUsable, saveLog] {
                 if (inventoryFileUsable && !live->Save(inventoryPath))
                     saveLog->Write("could not save cs2_gc_inventory.txt");
@@ -564,9 +614,6 @@ State &Init()
 
             if (replay->Size())
             {
-                std::size_t statTrak = 0;
-                for (const InventoryItem &item : live->Items().Items())
-                    statTrak += item.statTrak;
                 // Read at each Hello, so items granted during the session are in a reconnect's welcome.
                 s.coordinator->SetItemProvider([live](std::uint64_t steamId) {
                     std::vector<std::vector<std::uint8_t>> encoded;
@@ -577,10 +624,7 @@ State &Init()
                     return encoded;
                 });
                 s.log->Write("custom inventory: " + std::to_string(live->Items().Items().size()) +
-                             " item(s) from cs2_gc_inventory.txt will be added to the welcome" +
-                             (statTrak ? "; StatTrak is not encoded yet, so " + std::to_string(statTrak) +
-                                             " item(s) will appear without it"
-                                       : std::string{}));
+                             " item(s) from cs2_gc_inventory.txt will be added to the welcome");
             }
             else if (!live->Items().Items().empty())
                 s.log->Write("custom inventory: needs a recorded welcome (cs2_gc_replay) to add items to; "
@@ -602,6 +646,17 @@ State &Init()
                 else
                 {
                     Schema *schema = new Schema(std::move(*parsed)); // lives as long as the process
+                    std::ifstream goldFile(std::filesystem::path(s.directory + L"gold_pools.txt"), std::ios::binary);
+                    const std::string goldText((std::istreambuf_iterator<char>(goldFile)), {});
+                    s.log->Write(schema->LoadGoldPools(goldText) ? "gold trade-ups: validated gold_pools.txt loaded"
+                                                               : "gold trade-ups: gold_pools.txt missing or incompatible with items_game.txt");
+                    if (const std::size_t repaired = live->RepairCollectionStatTrak(*schema))
+                    {
+                        s.log->Write("inventory: cleared invalid StatTrak flags on " + std::to_string(repaired) +
+                                     " collection skin(s) from earlier Armory rolls");
+                        if (inventoryFileUsable && !live->Save(inventoryPath))
+                            s.log->Write("could not save cs2_gc_inventory.txt");
+                    }
                     // Store purchases are free and local: any item the schema defines can be bought, so the
                     // Store's own price sheet decides what is offered. The game checks the Armory pass etc. itself.
                     if (const std::size_t repaired = live->RepairSlabs(*schema))
@@ -638,7 +693,12 @@ State &Init()
                         s.log->Write("armory: items_game.txt lists no Armory goods; purchases stay unanswered");
                     else
                     {
-                        auto armory = std::make_shared<Armory>(*schema, campaign, proxy.armoryCredits.value_or(0));
+                        const auto credits = live->Items().ArmoryCredits().value_or(proxy.armoryCredits.value_or(0));
+                        auto armory = std::make_shared<Armory>(*schema, campaign, credits);
+                        live->SetArmoryCredits(credits);
+                        s.coordinator->SetArmoryCredits(credits);
+                        if (inventoryFileUsable && !live->Save(inventoryPath))
+                            s.log->Write("could not save cs2_gc_inventory.txt");
                         std::random_device device;
                         auto engine = std::make_shared<std::mt19937_64>((std::uint64_t{device()} << 32) | device());
                         Logger *log = s.log;
@@ -649,7 +709,7 @@ State &Init()
                                                     });
                         s.log->Write("armory: " + std::to_string(schema->ArmoryRedeemables().size()) + " goods loaded "
                                      "from items_game.txt (campaign " + std::to_string(campaign) + "), " +
-                                     std::to_string(armory->Balance()) + " credits (armory_credits). Purchases are "
+                                     std::to_string(armory->Balance()) + " credits (saved balance; config seeds a new inventory). Purchases are "
                                      "granted locally and saved to cs2_gc_inventory.txt");
                     }
                 }
@@ -661,6 +721,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
+        s.log->Write("test build: codex-20261020-01");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");
@@ -745,13 +806,13 @@ void DeliverMicroTxnAuthorization(State &state, std::uint64_t orderId)
     }
 }
 
-void DeliverGcMessageAvailable(State &state, std::uint32_t size)
+void DeliverGcMessageAvailable(State &state, std::uint32_t size, bool server = false)
 {
     std::vector<CallbackObject *> targets;
     {
         std::lock_guard lock(g_callbackMutex);
         for (const RegisteredCallback &entry : g_callbacks)
-            if (entry.id == GcMessageAvailableId)
+            if (entry.id == GcMessageAvailableId && !!(entry.object->flags & CallbackFlagGameServer) == server)
                 targets.push_back(entry.object);
     }
 
@@ -784,7 +845,7 @@ extern "C" __declspec(dllexport) void __cdecl SteamAPI_RegisterCallback(void *ca
     if (state.active && state.mode == ProxyMode::Local && callback && IsGcCallback(id))
     {
         auto *object = static_cast<CallbackObject *>(callback);
-        if (!(object->flags & CallbackFlagGameServer))
+        if (!(object->flags & CallbackFlagGameServer) || id != MicroTxnAuthorizationId)
         {
             {
                 std::lock_guard lock(g_callbackMutex);
@@ -833,6 +894,8 @@ extern "C" __declspec(dllexport) void __cdecl SteamAPI_RunCallbacks()
     State &state = Init();
     if (state.realRunCallbacks)
         state.realRunCallbacks();
+    if (state.active && state.coordinator && state.mode == ProxyMode::Local)
+        state.coordinator->PollProgression();
     std::uint32_t size = 0;
     if (state.active && state.coordinator && state.coordinator->IsMessageAvailable(&size))
         DeliverGcMessageAvailable(state, size);
@@ -864,6 +927,28 @@ extern "C" __declspec(dllexport) void *__cdecl SteamInternal_CreateInterface(con
     if (state.active && result && version && std::string_view(version) == "SteamClient023")
         PatchSteamClient(state, result);
     return result;
+}
+
+extern "C" __declspec(dllexport) void __cdecl SteamGameServer_RunCallbacks()
+{
+    State &state = Init();
+    if (state.realServerRunCallbacks)
+        state.realServerRunCallbacks();
+    if (state.active && state.mode == ProxyMode::Local && state.serverCoordinator)
+    {
+        state.serverCoordinator->RefreshServerInventory();
+        std::uint32_t size = 0;
+        if (state.serverCoordinator->IsMessageAvailable(&size))
+            DeliverGcMessageAvailable(state, size, true);
+    }
+}
+
+extern "C" __declspec(dllexport) void *__cdecl SteamInternal_FindOrCreateGameServerInterface(int user, const char *version)
+{
+    State &state = Init();
+    if (state.active && state.mode == ProxyMode::Local && version && std::string_view(version) == GcInterfaceName)
+        return state.serverCoordinator;
+    return state.realFindServer ? state.realFindServer(user, version) : nullptr;
 }
 
 extern "C" __declspec(dllexport) void *__cdecl SteamInternal_FindOrCreateUserInterface(int user, const char *version)

@@ -6,11 +6,12 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace cs2_gc
 {
-enum class CrateKind { Case, Capsule, GraffitiBox, Pins, Other }; // Pins: collectible pin capsules, keyless
+enum class CrateKind { Case, Capsule, GraffitiBox, Pins, Terminal, Other }; // Pins: collectible pin capsules, keyless
 
 struct CrateInfo
 {
@@ -103,6 +104,13 @@ public:
     const std::vector<SkinRef> &CollectionSkins(const std::string &collection) const;
     std::size_t CollectionCount() const { return m_collectionSkins.size(); }
 
+    // A finish offered by a keyed weapon case can have StatTrak; collection-only drops cannot.
+    bool CanBeStatTrak(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
+    // Supplement server-only rare pools with a versioned catalogue, validating every definition/finish.
+    bool LoadGoldPools(std::string_view text);
+    std::vector<SkinRef> GoldOutcomes(const std::string &collection, bool statTrak) const;
+    bool IsKnife(std::uint32_t defIndex) const;
+
     // A skin as a loot entry (finish name and wear range) so a trade-up can mint it. Nothing if the
     // weapon or finish is unknown.
     std::optional<LootItem> SkinAsLootItem(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
@@ -155,6 +163,8 @@ private:
     std::vector<const KvNode *> m_itemSets;
     std::unordered_map<std::string, std::vector<SkinRef>> m_collectionSkins;
     std::unordered_map<std::uint64_t, std::vector<std::string>> m_skinCollections; // weapon << 32 | kit
+    std::unordered_set<std::uint64_t> m_statTrakSkins;
+    std::unordered_map<std::string, std::vector<SkinRef>> m_goldPools;
     std::unordered_map<std::uint32_t, std::string> m_weaponNames;                  // definition -> class name
 };
 }

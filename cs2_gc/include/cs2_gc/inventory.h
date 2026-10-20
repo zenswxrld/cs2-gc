@@ -1,4 +1,5 @@
 #pragma once
+#include "cs2_gc/progression.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -53,6 +54,10 @@ struct InventoryItem
     std::string customName;               // set with a name tag; empty when none
     std::vector<AppliedSticker> stickers;
     std::optional<AppliedKeychain> charm; // the charm attached to this weapon, if any // stickers applied to this item, one per slot
+    bool unusual{}; // rare special knife/gloves, including StatTrak knives
+    std::optional<std::uint32_t> terminalRemaining;
+    std::uint32_t expiration{};
+    std::optional<std::uint32_t> purchasePrice;
 };
 
 // Local, in-memory inventory. Persistence and client sync are not wired yet.
@@ -68,6 +73,10 @@ public:
     // The Armory passes the player has activated: one XP value each, saved with the items.
     const std::vector<std::uint32_t> &XpTracks() const { return m_xpTracks; }
     std::vector<std::uint32_t> &XpTracks() { return m_xpTracks; }
+    std::optional<std::uint32_t> ArmoryCredits() const { return m_armoryCredits; }
+    void SetArmoryCredits(std::uint32_t credits) { m_armoryCredits = credits; }
+    const LocalProgress &Progress() const { return m_progress; }
+    bool ApplyEarnedXp(std::uint64_t cumulativeXp);
 
     // KeyValues text, so the file stays hand-editable. FromText is strict: any
     // malformed, duplicate or out-of-range entry rejects the whole file rather
@@ -83,6 +92,8 @@ public:
 private:
     std::vector<InventoryItem> m_items;
     std::vector<std::uint32_t> m_xpTracks;
+    std::optional<std::uint32_t> m_armoryCredits;
+    LocalProgress m_progress;
     std::uint64_t m_nextId{1};
 };
 }

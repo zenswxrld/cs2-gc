@@ -141,6 +141,22 @@ std::optional<ProxyConfig> ParseProxyConfig(std::string_view text)
             else
                 return std::nullopt;
         }
+        else if (key == "armory_credits")
+        {
+            std::uint32_t credits = 0;
+            if (!Number(value, credits) || credits > 1000000)
+                return std::nullopt;
+            config.armoryCredits = credits;
+        }
+        else if (key == "real_items")
+        {
+            if (value == "hide")
+                config.hideRealItems = true;
+            else if (value == "keep")
+                config.hideRealItems = false;
+            else
+                return std::nullopt;
+        }
         else if (key == "welcome_version")
         {
             if (!Number(value, config.welcomeVersion))

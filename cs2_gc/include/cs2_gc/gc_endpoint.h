@@ -1,9 +1,14 @@
 #pragma once
 
+#include "cs2_gc/armory.h"
 #include "cs2_gc/gc_handshake.h"
+#include "cs2_gc/live_inventory.h"
 #include "cs2_gc/message_queue.h"
+#include "cs2_gc/replay.h"
 #include <atomic>
 #include <functional>
+#include <memory>
+#include <optional>
 #include <mutex>
 #include <unordered_map>
 
@@ -41,8 +46,63 @@ public:
 
     // Queue a protobuf reply for the game. `type` is the plain message ID (no flag).
     bool Reply(std::uint32_t type, std::span<const std::uint8_t> body);
+    // With a header, for replies the game matches to its request (see ReplyHeaderFor).
+    bool Reply(std::uint32_t type, std::span<const std::uint8_t> body, std::span<const std::uint8_t> header);
     void SetHandler(std::uint32_t type, Handler handler); // plain ID; replaces any earlier one
     void SetOwner(const SoOwner &owner);                  // used by later welcomes
+
+    // Answers from recorded real-GC bodies. A recorded Welcome replaces the synthetic one and
+    // is followed by the other messages the real GC sent unprompted after it; a request that
+    // the capture showed being answered gets the recorded reply. Message types with no
+    // recording are left exactly as they were. The recorded bodies belong to one account.
+    void EnableReplay(std::shared_ptr<const ReplayStore> store);
+
+    // Extra encoded items (CSOEconItem) to add to a replayed Welcome. Called at each Hello with
+    // the cache owner's SteamID64. If the recorded Welcome cannot be patched it is sent as
+    // recorded and PatchFailures() increases.
+    using ItemProvider = std::function<std::vector<std::vector<std::uint8_t>>(std::uint64_t steamId)>;
+    void SetItemProvider(ItemProvider provider);
+    // Remove the items the recorded Welcome carries, so the inventory starts fresh and holds only
+    // what the provider supplies. Other recorded object types are left alone.
+    void SetDropRecordedItems(bool drop);
+    // Set the Armory credits balance in the replayed Welcome (unset leaves the recording as is).
+    void SetArmoryCredits(std::optional<std::uint32_t> credits);
+
+    // Track the loadout: equip requests change the live inventory and the game is told through a
+    // shared-object update, and a fresh Welcome carries the current slots in place of the recorded ones.
+    // Sticker applications also change the inventory (and are answered by an item update plus the
+    // sticker item's removal); `afterChange` runs after each so the caller can save it.
+    void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange = {});
+
+    // Opening containers and naming items. A container opened with the right key (capsules need none)
+    // is destroyed along with the key, the rolled item is created as found in a crate, and the game is
+    // sent the unlock notification it waits for. Naming sets the item's custom name. `afterChange` runs
+    // after each so the caller can save.
+    void EnableContainers(std::shared_ptr<LiveInventory> inventory, std::shared_ptr<const Schema> schema,
+                          RandomSource random, std::function<void()> afterChange);
+
+    // Sell items for free. A valid purchase (every line an item `canSell` accepts, a sane quantity)
+    // is answered with a transaction id; the proxy then reports the authorisation through the
+    // MicroTxnAuthorizationResponse callback (TakePendingAuthorization), the game sends Finalize, and
+    // the items are created as new, unacknowledged purchases. Nothing is charged anywhere.
+    // `afterGrant` runs after items are added so the caller can save.
+    void EnableStorePurchases(std::shared_ptr<LiveInventory> inventory, std::function<bool(std::uint32_t)> canSell,
+                              std::function<void()> afterGrant);
+
+    // The transaction whose authorisation callback is due, once; nothing otherwise.
+    std::optional<std::uint64_t> TakePendingAuthorization();
+
+    // Answer a store purchase request with a failure instead of leaving it unanswered. Nothing is
+    // charged and nothing is granted.
+    void EnableStorePurchaseFailure();
+
+    // Answer Armory purchases from the schema: a valid redeem creates the item (shown to the game as a
+    // new, unacknowledged one), lowers the credit balance and tells the game about both. The recorded
+    // Welcome (if any) provides the Armory pass object that the balance update is built from. The
+    // Welcome shows the armory's live balance from then on. Invalid requests are ignored.
+    void EnableArmory(std::shared_ptr<Armory> armory, std::shared_ptr<LiveInventory> inventory,
+                      RandomSource random, std::function<void()> afterGrant = {});
+    std::size_t PatchFailures() const { return m_patchFailures; }
 
     std::size_t IgnoredMessages() const { return m_ignored; }
 
@@ -50,9 +110,32 @@ private:
     void OnClientHello(const FrameView &frame);
 
     GcEndpointConfig m_config;
+    std::shared_ptr<const ReplayStore> m_replay;
     MessageQueue m_toGame;
     std::mutex m_mutex;
     std::unordered_map<std::uint32_t, Handler> m_handlers;
     std::atomic<std::size_t> m_ignored{0};
+    std::atomic<std::size_t> m_patchFailures{0};
+    ItemProvider m_itemProvider;
+    bool m_dropRecordedItems{};
+    std::optional<std::uint32_t> m_armoryCredits;
+    std::shared_ptr<LiveInventory> m_live;
+    std::shared_ptr<Armory> m_armory;
+    std::uint64_t m_soVersion{1};
+
+    struct Transaction
+    {
+        std::uint64_t id{};
+        std::vector<StorePurchaseRequest::Line> lines;
+    };
+    std::mutex m_txnMutex;
+    std::vector<std::uint8_t> m_xpShop; // the current Armory pass object (credits and activated passes)
+    std::optional<Transaction> m_txn;
+    std::optional<std::uint64_t> m_pendingAuthorization;
+    std::uint64_t m_lastTxnId{7000000000ull};
 };
+
+// The header for a reply to `request`: the job id the request carried, echoed back as the target so
+// the game can match the reply to it. Empty when the request has no job id.
+std::vector<std::uint8_t> ReplyHeaderFor(const FrameView &request);
 }

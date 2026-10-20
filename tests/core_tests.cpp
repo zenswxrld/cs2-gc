@@ -1,11 +1,15 @@
+#include "cs2_gc/armory.h"
 #include "cs2_gc/armory_catalog.h"
 #include "cs2_gc/case_opening.h"
+#include "cs2_gc/econ_item.h"
 #include "cs2_gc/client_fingerprint.h"
 #include "cs2_gc/gc_endpoint.h"
 #include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/gc_summary.h"
+#include "cs2_gc/live_inventory.h"
 #include "cs2_gc/protobuf.h"
 #include "cs2_gc/protobuf_dump.h"
+#include "cs2_gc/replay.h"
 #include "cs2_gc/proxy_support.h"
 #include "cs2_gc/message_queue.h"
 #include "cs2_gc/progression.h"
@@ -15,7 +19,9 @@
 #include <fstream>
 #include <cmath>
 #include <atomic>
+#include <cstring>
 #include <iostream>
+#include <map>
 #include <limits>
 #include <random>
 #include <stdexcept>
@@ -141,7 +147,7 @@ void Progression()
     Check(profile.level == 6, "zero level threshold is normalized");
 }
 
-void Armory()
+void ArmoryCatalogueTest()
 {
     std::vector<ArmoryGood> goods;
     // Synthetic IDs; these fixtures are not an item catalogue to install.
@@ -706,6 +712,12 @@ void ProxySupport()
     Check(ParseProxyConfig("mode = capture")->mode == ProxyMode::Capture && ParseProxyConfig("mode=local")->mode == ProxyMode::Local &&
               ParseProxyConfig("")->mode == ProxyMode::Local && !ParseProxyConfig("mode=Capture") && !ParseProxyConfig("mode=") &&
               !ParseProxyConfig("mode=capture extra"), "mode setting is strict");
+    Check(ParseProxyConfig("")->hideRealItems && ParseProxyConfig("real_items = hide")->hideRealItems &&
+              !ParseProxyConfig("real_items=keep")->hideRealItems && !ParseProxyConfig("real_items=yes") && !ParseProxyConfig("real_items="),
+          "real_items setting: fresh inventory by default, strict values");
+    Check(ParseProxyConfig("armory_credits = 25")->armoryCredits == 25u && !ParseProxyConfig("")->armoryCredits &&
+              ParseProxyConfig("armory_credits=0")->armoryCredits == 0u && !ParseProxyConfig("armory_credits=-1") &&
+              !ParseProxyConfig("armory_credits=1000001") && !ParseProxyConfig("armory_credits=x"), "armory_credits setting");
     const auto defaults = ParseProxyConfig("");
     Check(defaults && defaults->steamId == 0 && defaults->ownerType == 1 && defaults->cacheVersion == 1, "defaults");
     for (const char *bad : {"steam_id=abc", "steam_id=", "steam_id=12x", "steam_id=-1", "welcome_version=4294967296",
@@ -779,14 +791,1418 @@ void SoSummaries()
           "unrelated or undecodable messages produce no summary");
 }
 
+void Replay()
+{
+    const auto dir = std::filesystem::temp_directory_path() / "cs2_gc_replay_test";
+    std::filesystem::remove_all(dir);
+
+    Check(ReplayStore::LoadDirectory(dir).Size() == 0, "missing directory loads empty");
+    Check(ReplayStore::SaveIfMissing(dir, 4004, Bytes({1, 2, 3})), "first save");
+    Check(!ReplayStore::SaveIfMissing(dir, 4004, Bytes({9, 9})), "an existing recording is never replaced");
+    Check(ReplayStore::SaveIfMissing(dir, 9194, Bytes({})), "empty body is a valid recording");
+    Check(!ReplayStore::SaveIfMissing(dir, 0, Bytes({1})) &&
+              !ReplayStore::SaveIfMissing(dir, 5, std::vector<std::uint8_t>(ReplayStore::MaxBodyBytes + 1)), "bad id and oversize body refused");
+    Check(!std::filesystem::exists(dir / "4004.bin.tmp"), "no temporary file left behind");
+
+    // Hand-made junk next to real recordings is ignored.
+    std::ofstream(dir / "notes.txt") << "x";
+    std::ofstream(dir / "abc.bin") << "x";
+    std::ofstream(dir / "12x.bin") << "x";
+    std::ofstream(dir / "4294967296.bin") << "x";
+    std::ofstream(dir / "0.bin") << "x";
+    std::ofstream(dir / ".bin") << "x";
+    const ReplayStore loaded = ReplayStore::LoadDirectory(dir);
+    Check(loaded.Size() == 2 && *loaded.Find(4004) == Bytes({1, 2, 3}) && loaded.Find(9194)->empty() && !loaded.Find(1), "load ignores junk");
+
+    // The number of recordings is bounded.
+    std::filesystem::remove_all(dir);
+    for (std::uint32_t id = 1; id <= ReplayStore::MaxFiles; ++id)
+        Check(ReplayStore::SaveIfMissing(dir, id, Bytes({1})), "fill to the limit");
+    Check(!ReplayStore::SaveIfMissing(dir, 1000, Bytes({1})) && ReplayStore::LoadDirectory(dir).Size() == ReplayStore::MaxFiles, "recording count capped");
+    std::filesystem::remove_all(dir);
+
+    // Endpoint behaviour with recordings.
+    namespace m = gc_msg;
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(m::EGCBaseClientMsg::k_EMsgGCClientWelcome, Bytes({0x08, 0x2A}));
+    store->Set(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_GC2ClientGlobalStats, Bytes({0x70, 0x01}));
+    store->Set(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate, Bytes({0x0A, 0x00}));
+    store->Set(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema, Bytes({0x0A, 0x01, 0x77}));
+
+    LocalGameCoordinator gc(GcEndpointConfig{});
+    gc.EnableReplay(store);
+    const auto send = [&](std::uint32_t type, const std::vector<std::uint8_t> &body) {
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(type, {}, body, frame);
+        return gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    const auto next = [&](std::uint32_t &type) {
+        std::uint32_t size = 0;
+        std::vector<std::uint8_t> out;
+        if (!gc.IsMessageAvailable(&size))
+            return out;
+        std::vector<std::uint8_t> buffer(size);
+        std::uint32_t got = 0;
+        gc.RetrieveMessage(&type, buffer.data(), size, &got);
+        FrameView frame;
+        ReadProtobufFrame(type, buffer, frame);
+        return std::vector<std::uint8_t>(frame.body.begin(), frame.body.end());
+    };
+
+    ClientHello hello;
+    hello.version = 1;
+    Check(send(m::EGCBaseClientMsg::k_EMsgGCClientHello, EncodeClientHello(hello)) == GCResult::OK, "hello");
+    std::uint32_t type = 0;
+    Check(next(type) == Bytes({0x08, 0x2A}) && type == (m::EGCBaseClientMsg::k_EMsgGCClientWelcome | ProtobufMask), "recorded welcome replayed verbatim");
+    Check(next(type) == Bytes({0x70, 0x01}) && type == (m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_GC2ClientGlobalStats | ProtobufMask), "post-welcome stats");
+    Check(next(type) == Bytes({0x0A, 0x00}) && type == (m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate | ProtobufMask), "post-welcome rank update");
+    std::uint32_t size = 0;
+    Check(!gc.IsMessageAvailable(&size), "nothing else queued");
+
+    Check(send(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RequestRecurringMissionSchedule, {}) == GCResult::OK &&
+              next(type) == Bytes({0x0A, 0x01, 0x77}) &&
+              type == (m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema | ProtobufMask), "recorded reply to a request");
+    Check(send(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate, {}) == GCResult::OK && next(type) == Bytes({0x0A, 0x00}),
+          "rank request answered");
+    // No recording for the store pair, so that request stays ignored, as before replay existed.
+    const std::size_t ignoredBefore = gc.IgnoredMessages();
+    Check(send(m::EGCItemMsg::k_EMsgGCStoreGetUserData, {}) == GCResult::OK && !gc.IsMessageAvailable(&size) &&
+              gc.IgnoredMessages() == ignoredBefore + 1, "request without a recorded reply is unchanged");
+
+    // Without a recorded welcome the synthetic one is still used and nothing extra is sent.
+    LocalGameCoordinator plain(GcEndpointConfig{});
+    plain.EnableReplay(std::make_shared<ReplayStore>());
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(m::EGCBaseClientMsg::k_EMsgGCClientHello, {}, EncodeClientHello(hello), frame);
+    plain.SendMessage(m::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    std::uint32_t plainType = 0, plainSize = 0, plainGot = 0;
+    Check(plain.IsMessageAvailable(&plainSize), "synthetic welcome still sent");
+    std::vector<std::uint8_t> plainBuffer(plainSize);
+    plain.RetrieveMessage(&plainType, plainBuffer.data(), plainSize, &plainGot);
+    FrameView plainFrame;
+    ReadProtobufFrame(plainType, plainBuffer, plainFrame);
+    Check(DecodeClientWelcome(plainFrame.body) && !plain.IsMessageAvailable(&plainSize), "synthetic welcome decodes, nothing follows");
+    plain.EnableReplay(nullptr); // clearing is allowed
+}
+
+void WelcomeOtherFields()
+{
+    const auto has = [](const std::string &text, const char *part) { return text.find(part) != std::string::npos; };
+    PbWriter gameData;
+    gameData.Varint(5, 77);
+    PbWriter welcomeBody;
+    welcomeBody.Varint(1, 3);
+    welcomeBody.Bytes(2, gameData.bytes());
+    PbWriter cacheOwner;
+    cacheOwner.Varint(1, 1);
+    cacheOwner.Varint(2, 555);
+    PbWriter cache;
+    cache.Fixed64(3, 9);
+    cache.Message(4, cacheOwner);
+    welcomeBody.Message(3, cache);
+    welcomeBody.String(10, "https://example.invalid/balance");
+    const std::string summary = SummarizeSoMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcomeBody.bytes(), DumpOptions{});
+    Check(has(summary, "other welcome fields:") && has(summary, "1: varint 3") && has(summary, "5: varint 77") &&
+              has(summary, "10: text \"https://example.invalid/balance\""), "non-cache welcome fields are shown");
+    Check(!has(summary, "3: message"), "the cache itself is not repeated in the other fields");
+}
+
+// Reads a CSOEconItem back into its parts, independently of the encoder.
+struct DecodedItem
+{
+    std::uint64_t id{};
+    std::uint32_t account{}, inventory{}, defIndex{}, quality{}, rarity{};
+    std::map<std::uint32_t, std::uint32_t> floatBits; // attribute def index -> value_bytes as LE uint32
+    bool ok{true};
+};
+
+DecodedItem DecodeItem(const std::vector<std::uint8_t> &bytes)
+{
+    DecodedItem item;
+    PbReader reader(bytes);
+    PbField f;
+    while (reader.Next(f))
+    {
+        switch (f.number)
+        {
+        case 1: item.id = f.value; break;
+        case 2: item.account = static_cast<std::uint32_t>(f.value); break;
+        case 3: item.inventory = static_cast<std::uint32_t>(f.value); break;
+        case 4: item.defIndex = static_cast<std::uint32_t>(f.value); break;
+        case 7: item.quality = static_cast<std::uint32_t>(f.value); break;
+        case 19: item.rarity = static_cast<std::uint32_t>(f.value); break;
+        case 12:
+        {
+            PbReader inner(f.bytes);
+            PbField g;
+            std::uint32_t def = 0;
+            while (inner.Next(g))
+            {
+                if (g.number == 1)
+                    def = static_cast<std::uint32_t>(g.value);
+                else if (g.number == 3 && g.bytes.size() == 4)
+                    item.floatBits[def] = std::uint32_t{g.bytes[0]} | (std::uint32_t{g.bytes[1]} << 8) |
+                                          (std::uint32_t{g.bytes[2]} << 16) | (std::uint32_t{g.bytes[3]} << 24);
+                else
+                    item.ok = false;
+            }
+            break;
+        }
+        default: item.ok = false; break;
+        }
+    }
+    item.ok = item.ok && !reader.Failed();
+    return item;
+}
+
+float AsFloat(std::uint32_t bits)
+{
+    float value;
+    std::memcpy(&value, &bits, sizeof value);
+    return value;
+}
+
+void EconItems()
+{
+    InventoryItem skin{0, 7, 282, 0.15f, 661, false, 4};
+    const auto bytes = BuildEconItem(skin, 123456, 1000000000005ull, 1002);
+    const DecodedItem item = DecodeItem(bytes);
+    Check(item.ok && item.id == 1000000000005ull && item.account == 123456 && item.inventory == 1002 && item.defIndex == 7 &&
+              item.quality == QualityUnique && item.rarity == 4, "item fields");
+    Check(AsFloat(item.floatBits.at(AttributePaintIndex)) == 282.0f && AsFloat(item.floatBits.at(AttributePaintSeed)) == 661.0f &&
+              AsFloat(item.floatBits.at(AttributePaintWear)) == 0.15f && item.floatBits.size() == 3, "paint attributes are floats");
+    InventoryItem plain{0, 4001, 0, 0.0f, 1, false, 0};
+    const DecodedItem noPaint = DecodeItem(BuildEconItem(plain, 1, 2, 3));
+    Check(noPaint.ok && noPaint.floatBits.empty() && noPaint.rarity == 0, "no paint attributes or rarity for a plain item");
+
+    // Welcome patching: every other field survives, in order, and only the item type grows.
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 99);
+    const auto existing = Bytes({0x08, 0x01});
+    PbWriter itemType;
+    itemType.Varint(1, 1);
+    itemType.Bytes(2, existing);
+    PbWriter otherType;
+    otherType.Varint(1, 7);
+    otherType.Bytes(2, Bytes({0x08, 0x05}));
+    PbWriter cache;
+    cache.Message(2, otherType);
+    cache.Message(2, itemType);
+    cache.Fixed64(3, 77);
+    cache.Message(4, owner);
+    cache.Varint(15, 12345); // unknown to the patcher; must survive
+    PbWriter welcome;
+    welcome.Varint(1, 0);
+    welcome.Bytes(2, Bytes({0x28, 0x03})); // game data
+    welcome.Message(3, cache);
+    welcome.String(11, "XX");
+
+    const std::vector<std::vector<std::uint8_t>> extra{bytes, BuildEconItem(plain, 1, 2, 3)};
+    const auto patched = AppendItemsToWelcome(welcome.bytes(), extra);
+    Check(patched.has_value(), "welcome patched");
+    const auto decoded = DecodeClientWelcome(*patched);
+    Check(decoded && decoded->version == 0 && decoded->outOfDateCaches.size() == 1, "patched welcome decodes");
+    const SoCacheSubscribed &patchedCache = decoded->outOfDateCaches[0];
+    Check(patchedCache.types.size() == 2 && patchedCache.types[0].typeId == 7 && patchedCache.types[0].objects.size() == 1, "other type untouched");
+    Check(patchedCache.types[1].typeId == 1 && patchedCache.types[1].objects.size() == 3 && patchedCache.types[1].objects[0] == existing &&
+              patchedCache.types[1].objects[1] == bytes, "items appended after the existing ones");
+    Check(patchedCache.owner.id == 99 && patchedCache.version == 77, "owner and version preserved");
+
+    // Byte-level: removing the appended items must give back the original bytes exactly.
+    const auto unpatched = AppendItemsToWelcome(welcome.bytes(), {});
+    Check(unpatched && *unpatched == welcome.bytes(), "patching with no items reproduces the welcome byte for byte");
+    PbReader fieldReader(*patched);
+    PbField field;
+    std::vector<std::uint32_t> order;
+    while (fieldReader.Next(field))
+        order.push_back(field.number);
+    Check(order == std::vector<std::uint32_t>({1, 2, 3, 11}), "top-level field order preserved");
+
+    // A cache without an item type gets one; malformed or cache-less welcomes are refused.
+    PbWriter bareCache;
+    bareCache.Fixed64(3, 1);
+    bareCache.Message(4, owner);
+    PbWriter bareWelcome;
+    bareWelcome.Message(3, bareCache);
+    const auto created = DecodeClientWelcome(*AppendItemsToWelcome(bareWelcome.bytes(), extra));
+    Check(created && created->outOfDateCaches[0].types.size() == 1 && created->outOfDateCaches[0].types[0].typeId == 1 &&
+              created->outOfDateCaches[0].types[0].objects.size() == 2, "item type created when missing");
+    PbWriter noCache;
+    noCache.Varint(1, 5);
+    Check(!AppendItemsToWelcome(noCache.bytes(), extra) && !AppendItemsToWelcome(Bytes({0x1A, 0x09, 1}), extra) &&
+              !AppendItemsToWelcome(Bytes({0x08}), extra), "no cache, truncated or malformed welcome refused");
+    for (std::size_t n = 0; n < welcome.bytes().size(); ++n)
+        AppendItemsToWelcome(std::span(welcome.bytes()).first(n), extra); // never crashes on a prefix
+
+    // The endpoint applies the provider to a replayed welcome, and survives a bad recording.
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcome.bytes());
+    GcEndpointConfig config;
+    config.owner = {1, 99};
+    LocalGameCoordinator gc(config);
+    gc.EnableReplay(store);
+    std::uint64_t askedFor = 0;
+    gc.SetItemProvider([&](std::uint64_t steamId) {
+        askedFor = steamId;
+        return extra;
+    });
+    ClientHello hello;
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello, {}, EncodeClientHello(hello), frame);
+    gc.SendMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    std::uint32_t size = 0, type = 0, got = 0;
+    Check(gc.IsMessageAvailable(&size), "welcome queued");
+    std::vector<std::uint8_t> out(size);
+    gc.RetrieveMessage(&type, out.data(), size, &got);
+    FrameView outFrame;
+    ReadProtobufFrame(type, out, outFrame);
+    const auto sent = DecodeClientWelcome(outFrame.body);
+    Check(askedFor == 99 && sent && sent->outOfDateCaches[0].types[1].objects.size() == 3, "endpoint added the provided items");
+
+    auto broken = std::make_shared<ReplayStore>();
+    broken->Set(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, Bytes({0x08, 0x01})); // valid protobuf, no cache
+    LocalGameCoordinator gc2(config);
+    gc2.EnableReplay(broken);
+    gc2.SetItemProvider([&](std::uint64_t) { return extra; });
+    gc2.SendMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    Check(gc2.PatchFailures() == 1 && gc2.IsMessageAvailable(&size), "unpatchable welcome is sent as recorded and counted");
+}
+
+void InventoryRarity()
+{
+    Inventory inventory;
+    inventory.Add({0, 7, 282, 0.15f, 661, false, 4});
+    const auto back = Inventory::FromText(inventory.ToText());
+    Check(back && back->Items()[0].rarity == 4, "rarity round trip");
+    // Files written before the field existed still load, with rarity zero.
+    std::string text = inventory.ToText();
+    const std::size_t at = text.find("\t\t\t\"rarity\"");
+    text.erase(at, text.find('\n', at) - at + 1);
+    const auto old = Inventory::FromText(text);
+    Check(old && old->Items()[0].rarity == 0, "older files without rarity load");
+    text = inventory.ToText();
+    text.replace(text.find("\"rarity\"\t\"4\""), 12, "\"rarity\"\t\"100\"");
+    Check(!Inventory::FromText(text), "out of range rarity rejected");
+}
+
+void SummaryDiversityAndLocation()
+{
+    const auto has = [](const std::string &text, const char *part) { return text.find(part) != std::string::npos; };
+    // Items of different shape each get a sample; identical shapes share one.
+    const auto skin = BuildEconItem({0, 7, 282, 0.15f, 661, false, 4}, 1, 11, 1);
+    const auto skin2 = BuildEconItem({0, 9, 801, 0.30f, 5, false, 5}, 1, 12, 2);
+    const auto crate = BuildEconItem({0, 4001, 0, 0.0f, 1, false, 0}, 1, 13, 3);
+    SoCacheSubscribed cache;
+    cache.owner = {1, 9};
+    cache.types.push_back({1, {skin, skin2, crate}});
+    PbWriter locationInner;
+    locationInner.Fixed32(1, 0xc217418b);
+    locationInner.Fixed32(2, 0x4310f692);
+    locationInner.String(3, "AU");
+    ClientWelcome welcome;
+    welcome.outOfDateCaches.push_back(cache);
+    auto raw = EncodeClientWelcome(welcome);
+    PbWriter withLocation;
+    withLocation.Varint(1, 0);
+    withLocation.Message(5, locationInner);
+    withLocation.Varint(7, 1792458960);
+    std::vector<std::uint8_t> combined = raw;
+    combined.insert(combined.end(), withLocation.bytes().begin(), withLocation.bytes().end());
+    const std::string summary = SummarizeSoMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, combined, DumpOptions{});
+    Check(has(summary, "object type_id=1 count=3") && has(summary, "sample 1") && has(summary, "sample 2"), "distinct shapes sampled");
+    Check(!has(summary, "sample 3"), "same-shaped items share a sample"); // the two skins have the same shape
+    Check(has(summary, "other welcome fields") && has(summary, "5: <location redacted>") && !has(summary, "0xc217418b") &&
+              !has(summary, "\"AU\"") && has(summary, "7: varint 1792458960"), "location redacted, other fields kept");
+}
+
+void SkinRarityAndFreshInventory()
+{
+    // Synthetic schema: rarities, a weapon base rarity through a prefab, and finish rarities.
+    const auto schema = Schema::Load(R"("items_game"
+    {
+        "rarities" { "common" { "value" "1" } "uncommon" { "value" "2" } "mythical" { "value" "4" }
+                     "legendary" { "value" "5" } "ancient" { "value" "6" } }
+        "prefabs" { "rifle" { "item_rarity" "uncommon" } "smg" { "item_rarity" "common" } }
+        "items" { "7" { "name" "weapon_rifle" "prefab" "rifle" } "34" { "name" "weapon_smg" "prefab" "smg" }
+                  "99" { "name" "weapon_bare" } }
+        "paint_kits" { "10" { "name" "k_mythical" } "11" { "name" "k_legendary" } "12" { "name" "k_ancient" }
+                       "13" { "name" "k_unrated" } }
+        "paint_kits_rarity" { "k_mythical" "mythical" "k_legendary" "legendary" "k_ancient" "ancient" }
+    })");
+    Check(schema.has_value(), "rarity fixture loads");
+    Check(schema->SkinRarity(7, 10) == 5u && schema->SkinRarity(7, 11) == 6u, "finish + weapon - 1");
+    Check(schema->SkinRarity(7, 12) == 6u, "capped at Covert");
+    Check(schema->SkinRarity(34, 10) == 4u, "a common-base weapon keeps the finish rarity");
+    Check(!schema->SkinRarity(99, 10) && !schema->SkinRarity(7, 13) && !schema->SkinRarity(7, 999) && !schema->SkinRarity(123, 10),
+          "missing weapon rarity, finish rarity, finish or weapon gives nothing");
+
+    // A fresh inventory: the item objects of the recording are removed, everything else stays.
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 99);
+    PbWriter itemType;
+    itemType.Varint(1, 1);
+    itemType.Bytes(2, Bytes({0x08, 0x01}));
+    itemType.Bytes(2, Bytes({0x08, 0x02}));
+    PbWriter otherType;
+    otherType.Varint(1, 7);
+    otherType.Bytes(2, Bytes({0x08, 0x05}));
+    PbWriter cache;
+    cache.Message(2, itemType);
+    cache.Message(2, otherType);
+    cache.Fixed64(3, 77);
+    cache.Message(4, owner);
+    PbWriter welcome;
+    welcome.Varint(1, 0);
+    welcome.Message(3, cache);
+    welcome.String(11, "XX");
+
+    const std::vector<std::vector<std::uint8_t>> mine{BuildEconItem({0, 7, 282, 0.15f, 661, false, 5}, 1, 1000000000001ull, 1000)};
+    const auto fresh = AppendItemsToWelcome(welcome.bytes(), mine, true);
+    const auto decoded = fresh ? DecodeClientWelcome(*fresh) : std::nullopt;
+    Check(decoded && decoded->outOfDateCaches[0].types.size() == 2, "both object types kept");
+    const auto &types = decoded->outOfDateCaches[0].types;
+    Check(types[0].typeId == 1 && types[0].objects.size() == 1 && types[0].objects[0] == mine[0], "only our item remains");
+    Check(types[1].typeId == 7 && types[1].objects.size() == 1, "other object types untouched");
+    Check(decoded->outOfDateCaches[0].owner.id == 99 && decoded->outOfDateCaches[0].version == 77, "owner and version preserved");
+
+    const auto empty = AppendItemsToWelcome(welcome.bytes(), {}, true);
+    const auto emptyDecoded = DecodeClientWelcome(*empty);
+    Check(emptyDecoded && emptyDecoded->outOfDateCaches[0].types[0].typeId == 1 && emptyDecoded->outOfDateCaches[0].types[0].objects.empty(),
+          "no custom items still gives an empty item list");
+    const auto keep = AppendItemsToWelcome(welcome.bytes(), mine, false);
+    Check(DecodeClientWelcome(*keep)->outOfDateCaches[0].types[0].objects.size() == 3, "keeping the recording adds to it");
+
+    // Through the endpoint: with the drop flag and no provider the recorded items are removed.
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcome.bytes());
+    GcEndpointConfig config;
+    config.owner = {1, 99};
+    LocalGameCoordinator gc(config);
+    gc.EnableReplay(store);
+    gc.SetDropRecordedItems(true);
+    ClientHello hello;
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello, {}, EncodeClientHello(hello), frame);
+    gc.SendMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    std::uint32_t size = 0, type = 0, got = 0;
+    Check(gc.IsMessageAvailable(&size), "welcome queued");
+    std::vector<std::uint8_t> out(size);
+    gc.RetrieveMessage(&type, out.data(), size, &got);
+    FrameView outFrame;
+    ReadProtobufFrame(type, out, outFrame);
+    const auto sent = DecodeClientWelcome(outFrame.body);
+    Check(sent && sent->outOfDateCaches[0].types[0].objects.empty() && sent->outOfDateCaches[0].types[1].objects.size() == 1 &&
+              gc.PatchFailures() == 0, "endpoint sends a fresh inventory");
+}
+
+void ArmoryBalance()
+{
+    // Synthetic XpShop-shaped object: generation time, balance 0, two track ids.
+    PbWriter shop;
+    shop.Varint(1, 1781273308);
+    shop.Varint(2, 0);
+    shop.Varint(3, 1361);
+    shop.Varint(3, 1362);
+    PbWriter shopNoBalance;
+    shopNoBalance.Varint(1, 5);
+    shopNoBalance.Varint(3, 7);
+    PbWriter shopType;
+    shopType.Varint(1, XpShopTypeId);
+    shopType.Bytes(2, shop.bytes());
+    shopType.Bytes(2, shopNoBalance.bytes());
+    PbWriter otherType;
+    otherType.Varint(1, 4);
+    otherType.Bytes(2, Bytes({0x10, 0x07})); // field 2 = 7 here must NOT be changed
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 99);
+    PbWriter cache;
+    cache.Message(2, otherType);
+    cache.Message(2, shopType);
+    cache.Fixed64(3, 5);
+    cache.Message(4, owner);
+    PbWriter welcome;
+    welcome.Varint(1, 0);
+    welcome.Message(3, cache);
+    welcome.String(11, "XX");
+
+    const auto result = SetArmoryBalance(welcome.bytes(), 25);
+    const auto decoded = result ? DecodeClientWelcome(*result) : std::nullopt;
+    Check(decoded && decoded->outOfDateCaches[0].types.size() == 2, "types preserved");
+    const auto &types = decoded->outOfDateCaches[0].types;
+    Check(types[0].typeId == 4 && types[0].objects[0] == Bytes({0x10, 0x07}), "other types untouched, even with a field 2");
+
+    const auto object = [&](std::size_t i) {
+        std::map<std::uint32_t, std::vector<std::uint64_t>> fields;
+        PbReader reader(types[1].objects[i]);
+        PbField f;
+        while (reader.Next(f))
+            fields[f.number].push_back(f.value);
+        return fields;
+    };
+    const auto first = object(0);
+    Check(first.at(2) == std::vector<std::uint64_t>{25} && first.at(1) == std::vector<std::uint64_t>{1781273308} &&
+              first.at(3) == (std::vector<std::uint64_t>{1361, 1362}), "balance set, other fields and repeated tracks kept");
+    const auto second = object(1);
+    Check(second.at(2) == std::vector<std::uint64_t>{25} && second.at(1) == std::vector<std::uint64_t>{5}, "missing balance is added");
+    Check(decoded->outOfDateCaches[0].owner.id == 99 && decoded->outOfDateCaches[0].version == 5, "owner and version preserved");
+
+    // A welcome without that object type comes back byte for byte; bad input is refused.
+    PbWriter plainCache;
+    plainCache.Message(2, otherType);
+    plainCache.Message(4, owner);
+    PbWriter plain;
+    plain.Message(3, plainCache);
+    Check(SetArmoryBalance(plain.bytes(), 9) == plain.bytes(), "no XpShop object: unchanged");
+    PbWriter noCache;
+    noCache.Varint(1, 1);
+    Check(!SetArmoryBalance(noCache.bytes(), 1) && !SetArmoryBalance(Bytes({0x1A, 0x05, 1}), 1) && !SetArmoryBalance(Bytes({0x08}), 1),
+          "no cache or malformed input refused");
+    for (std::size_t n = 0; n < welcome.bytes().size(); ++n)
+        SetArmoryBalance(std::span(welcome.bytes()).first(n), 3);
+
+    // Through the endpoint, together with the fresh-inventory patch.
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcome.bytes());
+    GcEndpointConfig config;
+    config.owner = {1, 99};
+    LocalGameCoordinator gc(config);
+    gc.EnableReplay(store);
+    gc.SetDropRecordedItems(true);
+    gc.SetArmoryCredits(12);
+    ClientHello hello;
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello, {}, EncodeClientHello(hello), frame);
+    gc.SendMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    std::uint32_t size = 0, type = 0, got = 0;
+    Check(gc.IsMessageAvailable(&size), "welcome queued");
+    std::vector<std::uint8_t> out(size);
+    gc.RetrieveMessage(&type, out.data(), size, &got);
+    FrameView outFrame;
+    ReadProtobufFrame(type, out, outFrame);
+    const auto sent = DecodeClientWelcome(outFrame.body);
+    // types: the two that were there, the created (empty) item type, and the created loadout-slot type
+    Check(sent && gc.PatchFailures() == 0 && sent->outOfDateCaches[0].types.size() == 4, "both patches applied without failures");
+    // The drop patch created an (empty) item type; the XpShop balance carries the credits.
+    bool found = false;
+    for (const auto &t : sent->outOfDateCaches[0].types)
+        if (t.typeId == static_cast<std::int32_t>(XpShopTypeId))
+        {
+            PbReader reader(t.objects[0]);
+            PbField f;
+            while (reader.Next(f))
+                found |= f.number == 2 && f.value == 12;
+        }
+    Check(found, "endpoint sends the configured balance");
+}
+
+void LoadoutAndPurchases()
+{
+    namespace m = gc_msg;
+    Inventory inventory;
+    inventory.Add({0, 7, 282, 0.15f, 661, false, 5}); // id 1 -> CustomItemIdBase + 1
+    const std::uint64_t mine = CustomItemIdBase + 1;
+    const std::uint64_t defaultAk = 0xF000000000000007ull;
+    LiveInventory live(inventory);
+
+    Check(live.DefinitionOf(mine) == 7u && live.DefinitionOf(defaultAk) == 7u, "own and default items resolve");
+    Check(!live.DefinitionOf(CustomItemIdBase + 2) && !live.DefinitionOf(CustomItemIdBase) && !live.DefinitionOf(12345) &&
+              !live.DefinitionOf(0xF000000000000000ull), "unknown ids do not");
+
+    AdjustEquipSlots request;
+    request.slots = {{2, 14, mine}, {3, 14, defaultAk}};
+    request.changeNum = 1;
+    const auto changed = live.Adjust(request, 555);
+    Check(changed && changed->size() == 2, "equip applied");
+    const auto slotFields = [](const std::vector<std::uint8_t> &bytes) {
+        std::map<std::uint32_t, std::uint64_t> fields;
+        PbReader reader(bytes);
+        PbField f;
+        while (reader.Next(f))
+            fields[f.number] = f.value;
+        return fields;
+    };
+    const auto first = slotFields((*changed)[0]);
+    Check(first.at(1) == 555 && first.at(2) == 2 && first.at(3) == 14 && first.at(4) == mine && first.at(5) == 7, "equip slot object");
+    Check(live.EncodedSlots(555).size() == 2, "slots remembered");
+
+    // One unknown item rejects the whole request, and nothing changes.
+    AdjustEquipSlots bad;
+    bad.slots = {{2, 15, mine}, {2, 16, 99999}};
+    Check(!live.Adjust(bad, 555) && live.EncodedSlots(555).size() == 2, "unknown item: nothing changes");
+    // Clearing a slot empties it; it drops out of the welcome slots.
+    AdjustEquipSlots clear;
+    clear.slots = {{2, 14, 0}};
+    const auto cleared = live.Adjust(clear, 555);
+    Check(cleared && slotFields((*cleared)[0]).at(4) == 0 && slotFields((*cleared)[0]).at(5) == 0 && live.EncodedSlots(555).size() == 1,
+          "cleared slot");
+
+    // Message codecs.
+    PbWriter slotMsg;
+    slotMsg.Varint(1, 2);
+    slotMsg.Varint(2, 14);
+    slotMsg.Varint(3, mine);
+    PbWriter body;
+    body.Message(1, slotMsg);
+    body.Varint(2, 1);
+    const auto decoded = DecodeAdjustEquipSlots(body.bytes());
+    Check(decoded && decoded->slots.size() == 1 && decoded->slots[0].itemId == mine && decoded->changeNum == 1, "equip request decode");
+    PbWriter wrongWire;
+    wrongWire.Fixed64(1, 3);
+    Check(!DecodeAdjustEquipSlots(wrongWire.bytes()) && !DecodeAdjustEquipSlots(Bytes({0x0A, 0x09, 1})), "malformed equip request rejected");
+    SoMultipleObjects update;
+    update.objects.push_back({3, Bytes({1, 2})});
+    update.version = 9;
+    update.owner = {1, 77};
+    const auto roundTrip = DecodeSoMultipleObjects(EncodeSoMultipleObjects(update));
+    Check(roundTrip && roundTrip->objects.size() == 1 && roundTrip->objects[0].typeId == 3 && roundTrip->version == 9 && roundTrip->owner.id == 77,
+          "SO update round trip");
+
+    // The job id of a request comes back as the target of the reply.
+    PbWriter jobHeader;
+    jobHeader.Fixed64(10, 8);
+    FrameView withJob;
+    withJob.header = jobHeader.bytes();
+    const auto echoed = ReplyHeaderFor(withJob); // kept alive: the reader only views it
+    PbReader headerReader(echoed);
+    PbField hf;
+    Check(headerReader.Next(hf) && hf.number == 11 && hf.wire == 1 && hf.value == 8, "job id echoed as target");
+    Check(ReplyHeaderFor(FrameView{}).empty(), "no job id, no header");
+
+    // Endpoint: equipping answers with an update, and a fresh welcome carries the live slots.
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 555);
+    PbWriter equipType;
+    equipType.Varint(1, EquipSlotTypeId);
+    equipType.Bytes(2, EncodeEquipSlot(555, 2, 14, 777, 7)); // recorded slot for a recorded item
+    PbWriter cache;
+    cache.Message(2, equipType);
+    cache.Fixed64(3, 40);
+    cache.Message(4, owner);
+    PbWriter welcome;
+    welcome.Varint(1, 0);
+    welcome.Message(3, cache);
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(m::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcome.bytes());
+
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    gc.EnableReplay(store);
+    gc.SetDropRecordedItems(true);
+    auto liveForEndpoint = std::make_shared<LiveInventory>(inventory);
+    gc.EnableLiveInventory(liveForEndpoint);
+    gc.EnableStorePurchaseFailure();
+
+    const auto send = [&](std::uint32_t type, const std::vector<std::uint8_t> &payload, const std::vector<std::uint8_t> &header = {}) {
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(type, header, payload, frame);
+        return gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    struct Out { std::uint32_t type{}; std::vector<std::uint8_t> header, body; bool any{}; };
+    const auto next = [&]() {
+        Out out;
+        std::uint32_t size = 0, got = 0;
+        if (!gc.IsMessageAvailable(&size))
+            return out;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&out.type, buffer.data(), size, &got);
+        FrameView frame;
+        ReadProtobufFrame(out.type, buffer, frame);
+        out.header.assign(frame.header.begin(), frame.header.end());
+        out.body.assign(frame.body.begin(), frame.body.end());
+        out.any = true;
+        return out;
+    };
+
+    ClientHello hello;
+    send(m::EGCBaseClientMsg::k_EMsgGCClientHello, EncodeClientHello(hello));
+    const auto slotObjects = [](const std::optional<ClientWelcome> &w) -> const std::vector<std::vector<std::uint8_t>> * {
+        if (w)
+            for (const auto &type : w->outOfDateCaches[0].types)
+                if (type.typeId == static_cast<std::int32_t>(EquipSlotTypeId))
+                    return &type.objects;
+        return nullptr;
+    };
+    const Out w1 = next();
+    const auto w1Decoded = DecodeClientWelcome(w1.body);
+    Check(slotObjects(w1Decoded) && slotObjects(w1Decoded)->empty(), "fresh welcome: recorded slots removed, none equipped yet");
+
+    send(m::EGCItemMsg::k_EMsgGCAdjustEquipSlotsManual, body.bytes());
+    const Out u = next();
+    const auto updateOut = DecodeSoMultipleObjects(u.body);
+    Check(u.any && u.type == (m::ESOMsg::k_ESOMsg_UpdateMultiple | ProtobufMask) && updateOut && updateOut->objects.size() == 1 &&
+              updateOut->objects[0].typeId == 3 && updateOut->owner.id == 555 && updateOut->version == 41, "equip answered with an SO update, version past the recorded one");
+    PbWriter second;
+    second.Message(1, slotMsg);
+    send(m::EGCItemMsg::k_EMsgGCAdjustEquipSlotsManual, second.bytes());
+    Check(next().any && true, "another equip answered");
+    PbWriter unknownSlot;
+    PbWriter unknownMsg;
+    unknownMsg.Varint(1, 2);
+    unknownMsg.Varint(2, 14);
+    unknownMsg.Varint(3, 424242);
+    unknownSlot.Message(1, unknownMsg);
+    const std::size_t ignoredBefore = gc.IgnoredMessages();
+    send(m::EGCItemMsg::k_EMsgGCAdjustEquipSlotsManual, unknownSlot.bytes());
+    Check(!next().any && gc.IgnoredMessages() == ignoredBefore + 1, "equip of an unknown item is ignored");
+
+    send(m::EGCBaseClientMsg::k_EMsgGCClientHello, EncodeClientHello(hello));
+    const Out w2 = next();
+    const auto w2Decoded = DecodeClientWelcome(w2.body);
+    Check(slotObjects(w2Decoded) && slotObjects(w2Decoded)->size() == 1, "a reconnect's welcome carries the equipped slot");
+
+    // A purchase fails cleanly, with the job id echoed so the game can match the reply.
+    PbWriter purchase;
+    purchase.Varint(3, 21);
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, purchase.bytes(), jobHeader.bytes());
+    const Out r = next();
+    PbReader resultReader(r.body);
+    PbField rf;
+    Check(r.any && r.type == (m::EGCItemMsg::k_EMsgGCStorePurchaseInitResponse | ProtobufMask) && resultReader.Next(rf) && rf.number == 1 && rf.value == 2,
+          "purchase refused with result 2");
+    PbReader echoReader(r.header);
+    PbField ef;
+    Check(echoReader.Next(ef) && ef.number == 11 && ef.value == 8, "refusal carries the request's job id");
+    Check(gc.PatchFailures() == 0, "no patch failures");
+}
+
+constexpr const char *ArmoryFixture = R"("items_game"
+{
+    "rarities" { "common" { "value" "1" } "uncommon" { "value" "2" } "rare" { "value" "3" } "mythical" { "value" "4" }
+                 "legendary" { "value" "5" } "ancient" { "value" "6" } }
+    "prefabs"
+    {
+        "weapon_case_base" { }
+        "weapon_case" { "prefab" "weapon_case_base" "associated_item" "50" }
+        "rifle" { "item_rarity" "uncommon" }
+    }
+    "items"
+    {
+        "50" { "name" "the_key" }
+        "60" { "name" "the_case" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
+        "7" { "name" "weapon_rifle" "prefab" "rifle" }
+        "1209" { "name" "sticker" }
+        "1355" { "name" "keychain" }
+    }
+    "paint_kits" { "10" { "name" "k_a" } "11" { "name" "k_b" } }
+    "sticker_kits" { "300" { "name" "stk_a" } "301" { "name" "stk_b" } }
+    "keychain_definitions" { "17" { "name" "kc_a" } }
+    "client_loot_lists"
+    {
+        "set_test" { "set_test_uncommon" "1" "set_test_rare" "1" }
+        "set_test_uncommon" { "[k_a]weapon_rifle" "1" }
+        "set_test_rare" { "[k_b]weapon_rifle" "1" }
+        "stickers_test" { "stickers_test_rare" "1" }
+        "stickers_test_rare" { "[stk_a]sticker" "1" "[stk_b]sticker" "1" }
+        "kc_test" { "kc_test_rare" "1" }
+        "kc_test_rare" { "[kc_a]keychain" "1" }
+    }
+    "seasonaloperations"
+    {
+        "11"
+        {
+            "redeemable_goods" "xpshop"
+            "operational_point_redeemable" { "points" "4" "item_name" "lootlist:set_test" }
+            "operational_point_redeemable" { "points" "2" "item_name" "the_case" }
+            "operational_point_redeemable" { "points" "1" "item_name" "lootlist:stickers_test" }
+            "operational_point_redeemable" { "points" "3" "item_name" "lootlist:kc_test" }
+            "operational_point_redeemable" { "points" "5" "item_name" "lootlist:missing_list" }
+            "operational_point_redeemable" { "item_name" "no_points_given" }
+        }
+        "12" { "redeemable_goods" "credits" "operational_point_redeemable" { "points" "1" "item_name" "ignored" } }
+    }
+})";
+
+void ArmoryRedeems()
+{
+    Check(Crc32("123456789") == 0xCBF43926u && Crc32("") == 0u, "CRC32 check value");
+    Check(Crc32("lootlist:set_overpass_2024") == 2917110498u && Crc32("lootlist:keychain_pack_kc_weapon_01_lootlist") == 2218434721u,
+          "CRC32 reproduces the redeem ids captured from the game");
+
+    const auto schema = Schema::Load(ArmoryFixture);
+    Check(schema.has_value(), "armory fixture loads");
+    Check(schema->ArmoryRedeemables().size() == 5, "five usable tiles; the one without points and the credits campaign are skipped");
+    const auto *collection = schema->FindRedeemable(11, Crc32("lootlist:set_test"));
+    Check(collection && collection->points == 4 && collection->shopIndex == 0, "collection tile");
+    const auto *theCase = schema->FindRedeemable(11, Crc32("the_case"));
+    Check(theCase && theCase->points == 2 && theCase->shopIndex == 1, "case tile");
+    Check(!schema->FindRedeemable(12, Crc32("ignored")) && !schema->FindRedeemable(11, 12345) && !schema->FindRedeemable(10, Crc32("the_case")),
+          "unknown campaign or id");
+    Check(schema->ItemRarity(7) == 2 && schema->ItemRarity(60) == 0 && schema->ItemRarity(999) == 0, "item rarity from the prefab chain");
+
+    const auto sticker = schema->ResolveLootItem("[stk_a]sticker");
+    const auto charm = schema->ResolveLootItem("[kc_a]keychain");
+    const auto skin = schema->ResolveLootItem("[k_a]weapon_rifle");
+    Check(sticker && sticker->kind == LootKind::Sticker && sticker->weaponDefIndex == 1209 && sticker->stickerKitIndex == 300 &&
+              charm && charm->kind == LootKind::Keychain && charm->weaponDefIndex == 1355 && charm->keychainIndex == 17 &&
+              skin && skin->kind == LootKind::Skin && skin->paintKitIndex == 10, "skins, stickers and charms resolve");
+    Check(!schema->ResolveLootItem("[nope]sticker") && !schema->ResolveLootItem("[nope]keychain"), "unknown sticker or charm rejected");
+
+    std::mt19937_64 engine(99);
+    const RandomSource random = [&] { return engine(); };
+    const auto request = [&](const char *name, std::uint32_t cost, std::uint32_t campaign = 11) {
+        return RedeemRequest{campaign, Crc32(name), 100, cost};
+    };
+
+    // A collection: skins by tier position, uncommon being the lowest tier.
+    Inventory inventory;
+    LiveInventory live(inventory);
+    Armory armory(*schema, 11, 50);
+    const auto first = armory.Redeem(request("lootlist:set_test", 4), live, random);
+    Check(first.status == Armory::Status::Ok && first.item.defIndex == 7 && first.item.id == 1 &&
+              (first.item.paintKitIndex == 10 || first.item.paintKitIndex == 11) && first.item.seed >= 1 && armory.Balance() == 46 &&
+              live.Items().Items().size() == 1, "collection redeem grants a skin and costs 4");
+    Check(first.item.rarity == (first.item.paintKitIndex == 10 ? 2u : 3u), "the item carries its tier's rarity");
+
+    const auto caseRedeem = armory.Redeem(request("the_case", 2), live, random);
+    Check(caseRedeem.status == Armory::Status::Ok && caseRedeem.item.defIndex == 60 && caseRedeem.item.paintKitIndex == 0 &&
+              armory.Balance() == 44, "a plain item name grants that item");
+    const auto stickerRedeem = armory.Redeem(request("lootlist:stickers_test", 1), live, random);
+    Check(stickerRedeem.status == Armory::Status::Ok && stickerRedeem.item.defIndex == 1209 &&
+              (stickerRedeem.item.stickerKit == 300 || stickerRedeem.item.stickerKit == 301) && stickerRedeem.item.rarity == 3, "sticker pack");
+    const auto charmRedeem = armory.Redeem(request("lootlist:kc_test", 3), live, random);
+    Check(charmRedeem.status == Armory::Status::Ok && charmRedeem.item.defIndex == 1355 && charmRedeem.item.keychain == 17, "charm pack");
+    Check(armory.Balance() == 40 && live.Items().Items().size() == 4, "balance and inventory after four redeems");
+
+    // Every failure leaves the balance and the inventory exactly as they were.
+    const auto unchanged = [&](Armory::Status want, const RedeemRequest &r, const char *what) {
+        const auto before = live.Items().Items().size();
+        const auto balance = armory.Balance();
+        const auto result = armory.Redeem(r, live, random);
+        Check(result.status == want && live.Items().Items().size() == before && armory.Balance() == balance, what);
+    };
+    unchanged(Armory::Status::WrongCampaign, request("the_case", 2, 12), "wrong campaign");
+    unchanged(Armory::Status::UnknownGoods, RedeemRequest{11, 4242, 40, 2}, "unknown goods");
+    unchanged(Armory::Status::CostMismatch, request("the_case", 1), "the client's cost differs from the schema's");
+    unchanged(Armory::Status::NothingToGrant, request("lootlist:missing_list", 5), "a loot list that does not exist");
+    Armory poor(*schema, 11, 1);
+    const auto tooDear = poor.Redeem(request("lootlist:set_test", 4), live, random);
+    Check(tooDear.status == Armory::Status::NotEnoughCredits && poor.Balance() == 1 && live.Items().Items().size() == 4, "not enough credits");
+
+    // Odds follow tier position: the lowest tier of a collection is the common one.
+    Armory rich(*schema, 11, 1000000);
+    int uncommon = 0;
+    constexpr int Rolls = 20000;
+    LiveInventory scratch{Inventory{}};
+    for (int i = 0; i < Rolls; ++i)
+        uncommon += rich.Redeem(request("lootlist:set_test", 4), scratch, random).item.paintKitIndex == 10;
+    Check(std::abs(uncommon / double(Rolls) - 7992.0 / (7992 + 1598)) < 0.015, "collection odds: lowest tier is the common one");
+}
+
+void ArmoryEndpoint()
+{
+    namespace m = gc_msg;
+    const auto schema = Schema::Load(ArmoryFixture);
+    Check(schema.has_value(), "fixture loads");
+
+    // A recorded welcome whose pass object has generation time 5, balance 10 and one track.
+    PbWriter pass;
+    pass.Varint(1, 5);
+    pass.Varint(2, 10);
+    pass.Varint(3, 77);
+    PbWriter passType;
+    passType.Varint(1, XpShopTypeId);
+    passType.Bytes(2, pass.bytes());
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 555);
+    PbWriter cache;
+    cache.Message(2, passType);
+    cache.Fixed64(3, 100);
+    cache.Message(4, owner);
+    PbWriter welcome;
+    welcome.Varint(1, 0);
+    welcome.Message(3, cache);
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(m::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcome.bytes());
+
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    gc.EnableReplay(store);
+    auto live = std::make_shared<LiveInventory>(Inventory{});
+    auto armory = std::make_shared<Armory>(*schema, 11, 10);
+    std::mt19937_64 engine(7);
+    int grants = 0;
+    gc.EnableArmory(armory, live, [&] { return engine(); }, [&] { ++grants; });
+
+    const auto send = [&](std::uint32_t type, const std::vector<std::uint8_t> &payload) {
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(type, {}, payload, frame);
+        return gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    struct Out { std::uint32_t type{}; std::vector<std::uint8_t> body; bool any{}; };
+    const auto next = [&]() {
+        Out out;
+        std::uint32_t size = 0, got = 0;
+        if (!gc.IsMessageAvailable(&size))
+            return out;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&out.type, buffer.data(), size, &got);
+        FrameView frame;
+        ReadProtobufFrame(out.type, buffer, frame);
+        out.body.assign(frame.body.begin(), frame.body.end());
+        out.any = true;
+        return out;
+    };
+    const auto redeem = [&](const char *name, std::uint32_t cost, std::uint32_t balance = 10) {
+        PbWriter body;
+        body.Varint(1, 11);
+        body.Varint(2, Crc32(name));
+        body.Varint(3, balance);
+        body.Varint(4, cost);
+        return send(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemMissionReward, body.bytes());
+    };
+
+    // The same message as the real client sends decodes to what the handler sees.
+    PbWriter probe;
+    probe.Varint(1, 11);
+    probe.Varint(2, 2917110498u);
+    probe.Varint(3, 25);
+    probe.Varint(4, 4);
+    const auto decoded = DecodeRedeemRequest(probe.bytes());
+    Check(decoded && decoded->campaignId == 11 && decoded->redeemId == 2917110498u && decoded->redeemableBalance == 25 &&
+              decoded->expectedCost == 4, "redeem request decode");
+    Check(!DecodeRedeemRequest(Bytes({0x08})) && !DecodeRedeemRequest(Bytes({0x10, 0x80, 0x80, 0x80, 0x80, 0x10})), "malformed or oversized request rejected");
+
+    // A valid redeem: the item is created as a new unacknowledged one, then the pass balance changes.
+    Check(redeem("the_case", 2) == GCResult::OK, "redeem accepted");
+    const Out created = next();
+    const auto createdObject = DecodeSoSingleObject(created.body);
+    Check(created.any && created.type == (m::ESOMsg::k_ESOMsg_Create | ProtobufMask) && createdObject && createdObject->typeId == 1 &&
+              createdObject->owner.id == 555, "an item is created");
+    const DecodedItem item = DecodeItem(createdObject->data);
+    Check(item.ok && item.defIndex == 60 && item.account == 555 && item.id == CustomItemIdBase + 1 &&
+              item.inventory == (InventoryUnacknowledgedBit | PickupXpShopRedeem), "a new, unacknowledged Armory item");
+    const Out updated = next();
+    const auto updatedObject = DecodeSoSingleObject(updated.body);
+    Check(updated.any && updated.type == (m::ESOMsg::k_ESOMsg_Update | ProtobufMask) && updatedObject &&
+              updatedObject->typeId == static_cast<std::int32_t>(XpShopTypeId), "the pass object is updated");
+    std::map<std::uint32_t, std::vector<std::uint64_t>> fields;
+    {
+        PbReader reader(updatedObject->data);
+        PbField f;
+        while (reader.Next(f))
+            fields[f.number].push_back(f.value);
+    }
+    Check(fields.at(2) == std::vector<std::uint64_t>{8} && fields.at(1) == std::vector<std::uint64_t>{5} &&
+              fields.at(3) == std::vector<std::uint64_t>{77}, "balance 10 - 2 = 8, other fields kept");
+    Check(createdObject->version > 100 && updatedObject->version == createdObject->version + 1, "object versions move on");
+    Check(grants == 1 && live->Items().Items().size() == 1 && armory->Balance() == 8 && !next().any, "one grant, balance 8, nothing else sent");
+
+    // Bad requests send nothing, change nothing and do not call the grant hook.
+    redeem("the_case", 9);   // a cost that is not the schema's
+    redeem("not a tile", 2); // goods the schema does not list
+    Check(!next().any && armory->Balance() == 8 && grants == 1, "rejected requests change nothing and send nothing");
+    redeem("lootlist:set_test", 4); // 8 -> 4
+    Check(next().any && next().any && armory->Balance() == 4, "a later valid redeem still works");
+    redeem("lootlist:set_test", 4); // 4 -> 0
+    Check(next().any && next().any && armory->Balance() == 0 && grants == 3, "credits can be spent to zero");
+    const std::size_t ignoredBefore = gc.IgnoredMessages();
+    redeem("the_case", 2); // credits are 0
+    Check(!next().any && gc.IgnoredMessages() == ignoredBefore + 1 && armory->Balance() == 0, "no credits left: ignored");
+    send(m::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemMissionReward, Bytes({0x08}));
+    Check(!next().any, "malformed request ignored");
+
+    // A reconnect's welcome shows the live balance.
+    ClientHello hello;
+    send(m::EGCBaseClientMsg::k_EMsgGCClientHello, EncodeClientHello(hello));
+    const Out w = next();
+    const auto passObjects = ExtractObjects(w.body, XpShopTypeId);
+    Check(passObjects.size() == 1, "the welcome carries the pass object");
+    PbReader passReader(passObjects[0]);
+    PbField pf;
+    std::uint64_t balance = 99;
+    while (passReader.Next(pf))
+        if (pf.number == 2)
+            balance = pf.value;
+    Check(balance == 0, "a reconnect's welcome shows the live balance");
+}
+
+void StickerApplication()
+{
+    namespace m = gc_msg;
+    Inventory inventory;
+    InventoryItem weapon;
+    weapon.defIndex = 7;
+    weapon.paintKitIndex = 282;
+    weapon.wear = 0.1f;
+    weapon.seed = 5;
+    inventory.Add(weapon);
+    InventoryItem sticker;
+    sticker.defIndex = DefinitionSticker;
+    sticker.stickerKit = 77;
+    inventory.Add(sticker);
+    const std::uint64_t weaponId = CustomItemIdBase + 1, stickerId = CustomItemIdBase + 2;
+
+    PbWriter body;
+    body.Varint(1, stickerId);
+    body.Varint(2, weaponId);
+    body.Varint(3, 3);
+    body.Fixed32(6, std::bit_cast<std::uint32_t>(15.0f));
+    body.Fixed32(8, std::bit_cast<std::uint32_t>(0.25f));
+    const auto request = DecodeApplyStickerRequest(body.bytes());
+    Check(request && request->stickerItemId == stickerId && request->targetItemId == weaponId && request->slot == 3 &&
+              request->rotation == 15.0f && request->offsetX == 0.25f && request->scale == 0.0f,
+          "apply-sticker request decodes");
+    PbWriter wrongWire;
+    wrongWire.Varint(6, 1);
+    Check(!DecodeApplyStickerRequest(wrongWire.bytes()) && !DecodeApplyStickerRequest(Bytes({0x0A, 0x09, 1})),
+          "malformed apply-sticker request rejected");
+
+    auto live = std::make_shared<LiveInventory>(inventory);
+    ApplyStickerRequest bad = *request;
+    bad.slot = 5;
+    Check(!live->ApplySticker(bad), "slot past the last is refused");
+    bad = *request;
+    bad.stickerItemId = weaponId;
+    Check(!live->ApplySticker(bad), "a non-sticker item cannot be applied");
+    bad = *request;
+    bad.targetItemId = 4242;
+    Check(!live->ApplySticker(bad) && live->Items().Items().size() == 2, "unknown target refused, nothing changed");
+
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    int saves = 0;
+    gc.EnableLiveInventory(live, [&saves] { ++saves; });
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCApplySticker, {}, body.bytes(), frame);
+    gc.SendMessage(m::EGCItemMsg::k_EMsgGCApplySticker | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    const auto read = [&]() -> std::optional<std::pair<std::uint32_t, SoSingleObject>> {
+        std::uint32_t size = 0, got = 0, type = 0;
+        if (!gc.IsMessageAvailable(&size))
+            return std::nullopt;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&type, buffer.data(), size, &got);
+        FrameView view;
+        ReadProtobufFrame(type, buffer, view);
+        auto object = DecodeSoSingleObject(view.body);
+        if (!object)
+            return std::nullopt;
+        return std::make_pair(type & ~ProtobufMask, *object);
+    };
+    const auto destroyed = read();
+    const auto updated = read();
+    Check(updated && updated->first == m::ESOMsg::k_ESOMsg_Update && updated->second.typeId == 1, "item updated");
+    Check(destroyed && destroyed->first == m::ESOMsg::k_ESOMsg_Destroy && destroyed->second.typeId == 1,
+          "sticker item destroyed");
+    {
+        // Then the notification the apply screen waits for: request 1086 (apply sticker), the weapon's id.
+        std::uint32_t size = 0, got = 0, type = 0;
+        Check(gc.IsMessageAvailable(&size), "a notification follows");
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&type, buffer.data(), size, &got);
+        FrameView view;
+        ReadProtobufFrame(type, buffer, view);
+        std::uint64_t item = 0, request = 0;
+        PbReader reader(view.body);
+        PbField f;
+        while (reader.Next(f))
+            (f.number == 1 ? item : request) = f.value;
+        Check((type & ~ProtobufMask) == m::EGCItemMsg::k_EMsgGCItemCustomizationNotification && request == 1086 &&
+                  item == weaponId,
+              "apply-sticker notification names the weapon");
+    }
+    Check(saves == 1 && live->Items().Items().size() == 1, "inventory saved, sticker item consumed");
+    const InventoryItem &applied = live->Items().Items()[0];
+    Check(applied.stickers.size() == 1 && applied.stickers[0].slot == 3 && applied.stickers[0].kit == 77 &&
+              applied.stickers[0].rotation == 15.0f,
+          "sticker recorded on the weapon");
+
+    // The attributes the game reads: slot 3 id is 125, rotation 128, offset x 284.
+    const auto encoded = BuildEconItem(applied, 555, weaponId, ItemPositionBase);
+    const auto has = [&](std::uint32_t attribute) {
+        PbReader reader(encoded);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 12 && f.wire == 2)
+            {
+                PbReader inner(f.bytes);
+                PbField g;
+                while (inner.Next(g))
+                    if (g.number == 1 && g.value == attribute)
+                        return true;
+            }
+        return false;
+    };
+    Check(has(125) && has(128) && has(284) && !has(126) && !has(127), "sticker attributes encoded for slot 3");
+    Check(updated && updated->second.data == encoded, "the update carries the item with its sticker");
+
+    Check(!live->ApplySticker(*request), "a sticker cannot be applied twice");
+    const auto restored = Inventory::FromText(live->Items().ToText());
+    Check(restored && restored->Items().size() == 1 && restored->Items()[0].stickers.size() == 1 &&
+              restored->Items()[0].stickers[0].offsetX == 0.25f,
+          "applied stickers survive a save and load");
+    Check(!Inventory::FromText("\"inventory\" { \"next_id\" \"2\" \"items\" { \"1\" { \"def_index\" \"7\" \"paint_kit\" \"0\" "
+                               "\"wear\" \"0\" \"seed\" \"0\" \"stattrak\" \"0\" \"sticker_0\" \"0 0 0 0 0 0\" } } }"),
+          "a sticker with no kit is rejected on load");
+}
+
+void StorePurchases()
+{
+    namespace m = gc_msg;
+    auto live = std::make_shared<LiveInventory>(Inventory{});
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    int saves = 0;
+    gc.EnableStorePurchases(live, [](std::uint32_t def) { return def == 4001 || def == 1203; }, [&saves] { ++saves; });
+
+    struct Out { std::uint32_t type{}; std::vector<std::uint8_t> header, body; };
+    const auto read = [&]() -> std::optional<Out> {
+        std::uint32_t size = 0, got = 0;
+        if (!gc.IsMessageAvailable(&size))
+            return std::nullopt;
+        Out out;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&out.type, buffer.data(), size, &got);
+        FrameView view;
+        ReadProtobufFrame(out.type, buffer, view);
+        out.type &= ~ProtobufMask;
+        out.header.assign(view.header.begin(), view.header.end());
+        out.body.assign(view.body.begin(), view.body.end());
+        return out;
+    };
+    const auto send = [&](std::uint32_t type, const PbWriter &body, std::uint64_t job) {
+        PbWriter header;
+        header.Fixed64(10, job);
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(type, header.bytes(), body.bytes(), frame);
+        gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    const auto init = [](std::initializer_list<std::pair<std::uint32_t, std::uint32_t>> lines) {
+        PbWriter body;
+        body.Varint(3, 21);
+        for (const auto &[def, quantity] : lines)
+        {
+            PbWriter line;
+            line.Varint(1, def);
+            line.Varint(2, quantity);
+            line.Varint(3, 140);
+            body.Message(4, line);
+        }
+        return body;
+    };
+    const auto result = [](const Out &out) {
+        PbReader reader(out.body);
+        PbField f;
+        std::uint64_t value = 0;
+        while (reader.Next(f))
+            if (f.number == 1)
+                value = f.value;
+        return value;
+    };
+
+    // Refused: an item the schema does not sell, a zero quantity, an empty cart.
+    for (const auto &bad : {init({{9999, 1}}), init({{4001, 0}}), init({})})
+    {
+        send(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, bad, 9);
+        const auto reply = read();
+        Check(reply && reply->type == m::EGCItemMsg::k_EMsgGCStorePurchaseInitResponse && result(*reply) == 2,
+              "an invalid purchase is refused");
+        Check(!gc.TakePendingAuthorization(), "a refused purchase authorises nothing");
+    }
+
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, init({{4001, 2}, {1203, 1}}), 7);
+    const auto accepted = read();
+    std::uint64_t txn = 0;
+    if (accepted)
+    {
+        PbReader reader(accepted->body);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 2)
+                txn = f.value;
+    }
+    Check(accepted && result(*accepted) == 1 && txn != 0, "a valid purchase is accepted with a transaction id");
+    Check(accepted && !accepted->header.empty(), "the job id is echoed");
+    Check(gc.TakePendingAuthorization() == txn && !gc.TakePendingAuthorization(), "the authorisation is due once");
+
+    // A second purchase while one is open is refused.
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, init({{4001, 1}}), 8);
+    const auto second = read();
+    Check(second && result(*second) == 2, "only one transaction at a time");
+
+    PbWriter wrong;
+    wrong.Varint(1, txn + 1);
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseFinalize, wrong, 10);
+    const auto refused = read();
+    Check(refused && result(*refused) == 2 && live->Items().Items().empty() && saves == 0,
+          "finalize with the wrong transaction id grants nothing");
+
+    PbWriter finalize;
+    finalize.Varint(1, txn);
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseFinalize, finalize, 11);
+    int creates = 0;
+    std::optional<Out> response;
+    while (const auto out = read())
+    {
+        if (out->type == m::ESOMsg::k_ESOMsg_Create)
+        {
+            ++creates;
+            const auto object = DecodeSoSingleObject(out->body);
+            PbReader reader(object ? std::span<const std::uint8_t>(object->data) : std::span<const std::uint8_t>{});
+            PbField f;
+            std::uint64_t inventory = 0;
+            while (reader.Next(f))
+                if (f.number == 3)
+                    inventory = f.value;
+            Check(inventory == (InventoryUnacknowledgedBit | PickupPurchased), "bought items arrive unacknowledged as purchases");
+        }
+        else if (out->type == m::EGCItemMsg::k_EMsgGCStorePurchaseFinalizeResponse)
+            response = out;
+    }
+    Check(creates == 3 && live->Items().Items().size() == 3 && saves == 1, "three items created and saved");
+    std::vector<std::uint64_t> ids;
+    if (response)
+    {
+        PbReader reader(response->body);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 2)
+                ids.push_back(f.value);
+    }
+    Check(response && result(*response) == 1 && ids.size() == 3 && ids[0] == CustomItemIdBase + 1,
+          "finalize answers with the new item ids");
+
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseFinalize, finalize, 12);
+    const auto again = read();
+    Check(again && result(*again) == 2 && live->Items().Items().size() == 3, "a transaction finalizes once");
+
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, init({{4001, 1}}), 13);
+    const auto third = read();
+    PbWriter cancel;
+    cancel.Varint(1, third ? [&] { PbReader r(third->body); PbField f; std::uint64_t t = 0; while (r.Next(f)) if (f.number == 2) t = f.value; return t; }() : 0);
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseCancel, cancel, 14);
+    const auto cancelled = read();
+    Check(cancelled && cancelled->type == m::EGCItemMsg::k_EMsgGCStorePurchaseCancelResponse &&
+              !gc.TakePendingAuthorization(),
+          "cancel drops the transaction");
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, init({{4001, 1}}), 15);
+    const auto fresh = read();
+    Check(fresh && result(*fresh) == 1, "a new purchase can start after a cancel");
+}
+
+void ArmoryPassActivation()
+{
+    namespace m = gc_msg;
+    const auto schema = Schema::Load(ArmoryFixture);
+    PbWriter pass;
+    pass.Varint(1, 5);
+    pass.Varint(2, 10);
+    pass.Varint(3, 77);
+    PbWriter passType;
+    passType.Varint(1, XpShopTypeId);
+    passType.Bytes(2, pass.bytes());
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 555);
+    PbWriter cache;
+    cache.Message(2, passType);
+    cache.Fixed64(3, 100);
+    cache.Message(4, owner);
+    PbWriter welcome;
+    welcome.Varint(1, 0);
+    welcome.Message(3, cache);
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(m::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcome.bytes());
+
+    Inventory inventory;
+    InventoryItem ticket;
+    ticket.defIndex = DefinitionArmoryPass;
+    inventory.Add(ticket);
+    InventoryItem other;
+    other.defIndex = 7;
+    inventory.Add(other);
+
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    gc.EnableReplay(store);
+    auto live = std::make_shared<LiveInventory>(inventory);
+    auto armory = std::make_shared<Armory>(*schema, 11, 30);
+    std::mt19937_64 engine(7);
+    int saves = 0;
+    gc.EnableArmory(armory, live, [&] { return engine(); }, [&] { ++saves; });
+
+    const auto use = [&](std::uint64_t itemId) {
+        PbWriter body;
+        body.Varint(1, itemId);
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCUseItemRequest, {}, body.bytes(), frame);
+        gc.SendMessage(m::EGCItemMsg::k_EMsgGCUseItemRequest | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    struct Out { std::uint32_t type{}; std::vector<std::uint8_t> body; bool any{}; };
+    const auto next = [&]() {
+        Out out;
+        std::uint32_t size = 0, got = 0;
+        if (!gc.IsMessageAvailable(&size))
+            return out;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&out.type, buffer.data(), size, &got);
+        FrameView frame;
+        ReadProtobufFrame(out.type, buffer, frame);
+        out.body.assign(frame.body.begin(), frame.body.end());
+        out.type &= ~ProtobufMask;
+        out.any = true;
+        return out;
+    };
+    const auto tracks = [](std::span<const std::uint8_t> object) {
+        std::vector<std::uint64_t> values;
+        PbReader reader(object);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 3)
+                values.push_back(f.value);
+        return values;
+    };
+
+    use(CustomItemIdBase + 2); // not a pass
+    use(0xF000000000000000ull | DefinitionArmoryPass); // a built-in default is not one of ours
+    use(424242);
+    Check(!next().any && live->Items().Items().size() == 2 && saves == 0, "anything but one of our passes is ignored");
+
+    use(CustomItemIdBase + 1);
+    const Out updated = next();
+    const Out destroyed = next();
+    const auto pass1 = DecodeSoSingleObject(updated.body);
+    Check(updated.type == m::ESOMsg::k_ESOMsg_Update && pass1 && pass1->typeId == static_cast<std::int32_t>(XpShopTypeId) &&
+              tracks(pass1->data) == std::vector<std::uint64_t>({77, 0}), "activating adds an empty pass, keeps the recorded one");
+    Check(destroyed.type == m::ESOMsg::k_ESOMsg_Destroy && live->Items().Items().size() == 1 && saves == 1,
+          "the ticket is consumed and the inventory saved");
+    use(CustomItemIdBase + 1);
+    Check(!next().any, "a ticket activates once");
+
+    ClientHello hello;
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(m::EGCBaseClientMsg::k_EMsgGCClientHello, {}, EncodeClientHello(hello), frame);
+    gc.SendMessage(m::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    const Out w = next();
+    const auto objects = ExtractObjects(w.body, XpShopTypeId);
+    Check(objects.size() == 1 && tracks(objects[0]) == std::vector<std::uint64_t>({77, 0}),
+          "a reconnect's welcome keeps the activated pass");
+    PbReader reader(objects.empty() ? std::span<const std::uint8_t>{} : std::span<const std::uint8_t>(objects[0]));
+    PbField f;
+    std::uint64_t balance = 0;
+    while (reader.Next(f))
+        if (f.number == 2)
+            balance = f.value;
+    Check(balance == 30, "and shows the configured credits, not the recorded ones");
+}
+
+void ContainersAndNaming()
+{
+    namespace m = gc_msg;
+    const auto schema = Schema::Load(ArmoryFixture);
+    Check(schema.has_value(), "fixture loads");
+    const auto shared = std::shared_ptr<const Schema>(&*schema, [](const Schema *) {});
+
+    Inventory inventory;
+    InventoryItem crate;
+    crate.defIndex = 60; // "the_case" in the fixture
+    inventory.Add(crate);
+    InventoryItem wrongKey;
+    wrongKey.defIndex = 7;
+    inventory.Add(wrongKey);
+    auto live = std::make_shared<LiveInventory>(inventory);
+
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    std::mt19937_64 engine(3);
+    int saves = 0;
+    gc.EnableContainers(live, shared, [&] { return engine(); }, [&saves] { ++saves; });
+
+    const auto send = [&](std::uint32_t type, const PbWriter &body) {
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(type, {}, body.bytes(), frame);
+        gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    struct Out { std::uint32_t type{}; std::vector<std::uint8_t> body; };
+    const auto read = [&]() -> std::optional<Out> {
+        std::uint32_t size = 0, got = 0;
+        if (!gc.IsMessageAvailable(&size))
+            return std::nullopt;
+        Out out;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&out.type, buffer.data(), size, &got);
+        FrameView view;
+        ReadProtobufFrame(out.type, buffer, view);
+        out.type &= ~ProtobufMask;
+        out.body.assign(view.body.begin(), view.body.end());
+        return out;
+    };
+    const auto open = [&](std::uint64_t key, std::uint64_t crateId) {
+        PbWriter body;
+        body.Varint(1, key);
+        body.Varint(2, crateId);
+        send(m::EGCItemMsg::k_EMsgGCOpenCrate, body);
+    };
+
+    const std::size_t ignored = gc.IgnoredMessages();
+    open(0, CustomItemIdBase + 1);                    // a case with no key
+    open(CustomItemIdBase + 2, CustomItemIdBase + 1); // the wrong key
+    open(0, 424242);                                  // not ours
+    Check(!read() && gc.IgnoredMessages() == ignored + 3 && live->Items().Items().size() == 2 && saves == 0,
+          "bad open requests change nothing");
+    PbWriter malformed;
+    malformed.Varint(1, 5); // no container
+    send(m::EGCItemMsg::k_EMsgGCOpenCrate, malformed);
+    Check(!read(), "an open request without a container is ignored");
+
+    // A name sticks to an item, and the game is told.
+    PbWriter name;
+    name.Varint(1, 0);
+    name.Varint(2, CustomItemIdBase + 2);
+    name.String(4, "Stuff");
+    send(m::EGCItemMsg::k_EMsgGCNameItem, name);
+    const auto update = read();
+    const auto notice = read();
+    Check(update && update->type == m::ESOMsg::k_ESOMsg_Update && notice &&
+              notice->type == m::EGCItemMsg::k_EMsgGCItemCustomizationNotification && saves == 1,
+          "naming updates the item and notifies");
+    const auto named = Inventory::FromText(live->Items().ToText());
+    Check(named && named->Items().size() == 2 && named->Items()[1].customName == "Stuff", "the name is saved");
+    const auto econ = BuildEconItem(named->Items()[1], 555, CustomItemIdBase + 2, ItemPositionBase);
+    bool hasName = false;
+    {
+        PbReader reader(econ);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 12 && f.wire == 2)
+            {
+                PbReader inner(f.bytes);
+                PbField g;
+                while (inner.Next(g))
+                    if (g.number == 1 && g.value == AttributeCustomName)
+                        hasName = true;
+            }
+    }
+    Check(hasName, "the custom name attribute is encoded");
+    PbWriter bad;
+    bad.Varint(2, CustomItemIdBase + 2);
+    bad.String(4, "a\"b");
+    send(m::EGCItemMsg::k_EMsgGCNameItem, bad);
+    Check(!read() && live->Items().Items()[1].customName == "Stuff", "a name with a quote is refused");
+}
+
 int main()
 {
     try
     {
+        ContainersAndNaming(); std::cout << "PASS containers and naming\n";
+        ArmoryPassActivation(); std::cout << "PASS armory pass activation\n";
+        StorePurchases(); std::cout << "PASS store purchases\n";
+        StickerApplication(); std::cout << "PASS sticker application\n";
         Frames(); std::cout << "PASS protocol framing and malformed input\n";
         Queues(); std::cout << "PASS bounded Steam-style message queue\n";
         Progression(); std::cout << "PASS XP and star reward rules\n";
-        Armory(); std::cout << "PASS Armory categories, search and pagination\n";
+        ArmoryCatalogueTest(); std::cout << "PASS Armory categories, search and pagination\n";
         KeyValuesParsing(); std::cout << "PASS KeyValues parser and malformed input\n";
         SchemaCrates(); std::cout << "PASS schema crates, keys and loot tiers\n";
         CaseOpening(); std::cout << "PASS case opening odds and atomic consumption\n";
@@ -798,6 +2214,16 @@ int main()
         ProtobufDump(); std::cout << "PASS protobuf dump and SteamID redaction\n";
         ProxySupport(); std::cout << "PASS launch guard and proxy config parsing\n";
         SoSummaries(); std::cout << "PASS object message decoders, summaries and account redaction\n";
+        Replay(); std::cout << "PASS replay store and recorded-reply endpoint\n";
+        WelcomeOtherFields(); std::cout << "PASS welcome summary shows non-cache fields\n";
+        EconItems(); std::cout << "PASS econ item encoding and welcome patching\n";
+        InventoryRarity(); std::cout << "PASS inventory rarity\n";
+        SummaryDiversityAndLocation(); std::cout << "PASS summary samples and location redaction\n";
+        SkinRarityAndFreshInventory(); std::cout << "PASS skin rarity and fresh inventory\n";
+        ArmoryBalance(); std::cout << "PASS armory balance patch\n";
+        LoadoutAndPurchases(); std::cout << "PASS loadout equipping, purchase refusal and job id echo\n";
+        ArmoryRedeems(); std::cout << "PASS armory redeems from the schema\n";
+        ArmoryEndpoint(); std::cout << "PASS armory over the endpoint\n";
         return 0;
     }
     catch (const std::exception &error)

@@ -4,6 +4,18 @@
 
 namespace cs2_gc
 {
+std::uint32_t Crc32(std::string_view text)
+{
+    std::uint32_t crc = 0xFFFFFFFFu;
+    for (const char c : text)
+    {
+        crc ^= static_cast<std::uint8_t>(c);
+        for (int bit = 0; bit < 8; ++bit)
+            crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    return ~crc;
+}
+
 namespace
 {
 using ItemMap = std::unordered_map<std::string, const KvNode *>;
@@ -156,7 +168,47 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
             else if (section.key == "revolving_loot_lists" && !entry.block)
                 revolving[entry.key] = &entry;
             else if (section.key == "paint_kits" && entry.block)
+            {
                 schema.m_paintKits[std::string{entry.Value("name")}] = &entry;
+                std::uint32_t index = 0;
+                if (ParseU32(entry.key, index))
+                    schema.m_paintKitNames[index] = std::string{entry.Value("name")};
+            }
+            else if (section.key == "paint_kits_rarity" && !entry.block)
+                schema.m_paintKitRarity[entry.key] = entry.value;
+            else if (section.key == "sticker_kits" && entry.block)
+            {
+                std::uint32_t index = 0;
+                if (ParseU32(entry.key, index) && !entry.Value("name").empty())
+                    schema.m_stickerKits.try_emplace(std::string{entry.Value("name")}, index);
+            }
+            else if (section.key == "keychain_definitions" && entry.block)
+            {
+                std::uint32_t index = 0;
+                if (ParseU32(entry.key, index) && !entry.Value("name").empty())
+                    schema.m_keychains.try_emplace(std::string{entry.Value("name")}, index);
+            }
+            else if (section.key == "seasonaloperations" && entry.block && entry.Value("redeemable_goods") == "xpshop")
+            {
+                std::uint32_t campaign = 0;
+                if (ParseU32(entry.key, campaign))
+                {
+                    std::uint32_t shopIndex = 0;
+                    for (const KvNode &good : entry.children)
+                    {
+                        if (good.key != "operational_point_redeemable" || !good.block)
+                            continue;
+                        ArmoryRedeemable armory;
+                        armory.campaignId = campaign;
+                        armory.shopIndex = shopIndex++;
+                        armory.itemName = good.Value("item_name");
+                        if (!ParseU32(good.Value("points"), armory.points) || armory.itemName.empty())
+                            continue; // an unusable tile still occupies its position in the game's list
+                        armory.redeemId = Crc32(armory.itemName);
+                        schema.m_armoryRedeemables.push_back(std::move(armory));
+                    }
+                }
+            }
             else if (section.key == "rarities" && entry.block)
             {
                 std::uint32_t value = 0;
@@ -166,11 +218,16 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
         }
     }
 
+    schema.m_prefabs = prefabs;
     for (const KvNode *item : itemNodes)
     {
         std::uint32_t defIndex = 0;
-        if (ParseU32(item->key, defIndex) && !item->Value("name").empty())
-            schema.m_itemsByName[std::string{item->Value("name")}] = defIndex;
+        if (ParseU32(item->key, defIndex))
+        {
+            schema.m_itemsByIndex[defIndex] = item;
+            if (!item->Value("name").empty())
+                schema.m_itemsByName[std::string{item->Value("name")}] = defIndex;
+        }
     }
 
     for (const KvNode *item : itemNodes)
@@ -259,6 +316,29 @@ std::vector<LootTier> Schema::LootTiers(std::string_view lootListName) const
     return tiers;
 }
 
+const ArmoryRedeemable *Schema::FindRedeemable(std::uint32_t campaignId, std::uint32_t redeemId) const
+{
+    for (const ArmoryRedeemable &good : m_armoryRedeemables)
+        if (good.campaignId == campaignId && good.redeemId == redeemId)
+            return &good;
+    return nullptr;
+}
+
+std::uint32_t Schema::ItemRarity(std::uint32_t defIndex) const
+{
+    const auto item = m_itemsByIndex.find(defIndex);
+    if (item == m_itemsByIndex.end())
+        return 0;
+    const auto rarity = m_rarities.find(std::string{ResolveValue(*item->second, "item_rarity", m_prefabs)});
+    return rarity == m_rarities.end() ? 0 : rarity->second;
+}
+
+std::optional<std::uint32_t> Schema::ItemDefIndex(std::string_view name) const
+{
+    const auto it = m_itemsByName.find(std::string{name});
+    return it == m_itemsByName.end() ? std::nullopt : std::optional<std::uint32_t>{it->second};
+}
+
 std::optional<LootItem> Schema::ResolveLootItem(std::string_view entry) const
 {
     if (!entry.starts_with('['))
@@ -272,10 +352,32 @@ std::optional<LootItem> Schema::ResolveLootItem(std::string_view entry) const
     item.weaponClass = entry.substr(close + 1);
 
     const auto weapon = m_itemsByName.find(item.weaponClass);
-    const auto kit = m_paintKits.find(item.paintKitName);
-    if (weapon == m_itemsByName.end() || kit == m_paintKits.end() || !ParseU32(kit->second->key, item.paintKitIndex))
+    if (weapon == m_itemsByName.end())
         return std::nullopt;
     item.weaponDefIndex = weapon->second;
+
+    if (item.weaponClass == "sticker")
+    {
+        const auto kit = m_stickerKits.find(item.paintKitName);
+        if (kit == m_stickerKits.end())
+            return std::nullopt;
+        item.kind = LootKind::Sticker;
+        item.stickerKitIndex = kit->second;
+        return item;
+    }
+    if (item.weaponClass == "keychain")
+    {
+        const auto charm = m_keychains.find(item.paintKitName);
+        if (charm == m_keychains.end())
+            return std::nullopt;
+        item.kind = LootKind::Keychain;
+        item.keychainIndex = charm->second;
+        return item;
+    }
+
+    const auto kit = m_paintKits.find(item.paintKitName);
+    if (kit == m_paintKits.end() || !ParseU32(kit->second->key, item.paintKitIndex))
+        return std::nullopt;
 
     const auto parseWear = [&](std::string_view name, float &out) {
         const std::string_view text = kit->second->Value(name);
@@ -289,5 +391,23 @@ std::optional<LootItem> Schema::ResolveLootItem(std::string_view entry) const
     if (item.wearMin > item.wearMax || item.wearMin < 0.0f || item.wearMax > 1.0f)
         return std::nullopt;
     return item;
+}
+
+std::optional<std::uint32_t> Schema::SkinRarity(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
+{
+    const auto weapon = m_itemsByIndex.find(weaponDefIndex);
+    const auto kitName = m_paintKitNames.find(paintKitIndex);
+    if (weapon == m_itemsByIndex.end() || kitName == m_paintKitNames.end())
+        return std::nullopt;
+    const auto kitRarity = m_paintKitRarity.find(kitName->second);
+    if (kitRarity == m_paintKitRarity.end())
+        return std::nullopt;
+    const auto kit = m_rarities.find(kitRarity->second);
+    const auto base = m_rarities.find(std::string{ResolveValue(*weapon->second, "item_rarity", m_prefabs)});
+    if (kit == m_rarities.end() || base == m_rarities.end() || kit->second == 0 || base->second == 0)
+        return std::nullopt;
+    constexpr std::uint32_t Covert = 6;
+    const std::uint32_t combined = kit->second + base->second - 1;
+    return combined > Covert ? Covert : combined;
 }
 }

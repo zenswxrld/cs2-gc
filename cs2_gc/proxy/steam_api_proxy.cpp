@@ -18,11 +18,13 @@
 // It only activates when the game was launched with -insecure; otherwise every call goes to
 // the real library untouched and nothing is written. Windows x64 only.
 #include "cs2_gc/client_fingerprint.h"
+#include "cs2_gc/econ_item.h"
 #include "cs2_gc/gc_endpoint.h"
 #include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/gc_summary.h"
 #include "cs2_gc/protobuf_dump.h"
 #include "cs2_gc/proxy_support.h"
+#include "cs2_gc/replay.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -36,7 +38,10 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
+#include <algorithm>
 #include <map>
+#include <random>
 #include <cstring>
 #include <utility>
 #include <mutex>
@@ -211,6 +216,32 @@ public:
 
     bool IsMessageAvailable(std::uint32_t *size) override { return m_gc.IsMessageAvailable(size); }
 
+    void EnableReplay(std::shared_ptr<const ReplayStore> store) { m_gc.EnableReplay(std::move(store)); }
+    void SetItemProvider(LocalGameCoordinator::ItemProvider provider) { m_gc.SetItemProvider(std::move(provider)); }
+    void SetDropRecordedItems(bool drop) { m_gc.SetDropRecordedItems(drop); }
+    void SetArmoryCredits(std::optional<std::uint32_t> credits) { m_gc.SetArmoryCredits(credits); }
+    void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange)
+    {
+        m_gc.EnableLiveInventory(std::move(inventory), std::move(afterChange));
+    }
+    void EnableStorePurchaseFailure() { m_gc.EnableStorePurchaseFailure(); }
+    void EnableStorePurchases(std::shared_ptr<LiveInventory> inventory, std::function<bool(std::uint32_t)> canSell,
+                              std::function<void()> afterGrant)
+    {
+        m_gc.EnableStorePurchases(std::move(inventory), std::move(canSell), std::move(afterGrant));
+    }
+    std::optional<std::uint64_t> TakePendingAuthorization() { return m_gc.TakePendingAuthorization(); }
+    void EnableContainers(std::shared_ptr<LiveInventory> inventory, std::shared_ptr<const Schema> schema,
+                          RandomSource random, std::function<void()> afterChange)
+    {
+        m_gc.EnableContainers(std::move(inventory), std::move(schema), std::move(random), std::move(afterChange));
+    }
+    void EnableArmory(std::shared_ptr<Armory> armory, std::shared_ptr<LiveInventory> inventory, RandomSource random,
+                      std::function<void()> afterGrant)
+    {
+        m_gc.EnableArmory(std::move(armory), std::move(inventory), std::move(random), std::move(afterGrant));
+    }
+
     GCResult RetrieveMessage(std::uint32_t *type, void *destination, std::uint32_t capacity,
                              std::uint32_t *size) override
     {
@@ -231,8 +262,9 @@ private:
 class CaptureCoordinator final : public SteamGameCoordinatorInterface
 {
 public:
-    CaptureCoordinator(SteamGameCoordinatorInterface *real, Logger &log, std::function<void()> identity)
-        : m_real(real), m_log(log), m_identity(std::move(identity))
+    CaptureCoordinator(SteamGameCoordinatorInterface *real, Logger &log, std::function<void()> identity,
+                       std::filesystem::path replayDirectory)
+        : m_real(real), m_log(log), m_identity(std::move(identity)), m_replayDirectory(std::move(replayDirectory))
     {
     }
 
@@ -253,15 +285,31 @@ public:
         if (result == GCResult::OK && type && size && destination)
         {
             m_identity();
-            LogFrame(m_log, "<< REAL GC->GAME", *type, {static_cast<const std::uint8_t *>(destination), *size});
+            const std::span<const std::uint8_t> bytes{static_cast<const std::uint8_t *>(destination), *size};
+            LogFrame(m_log, "<< REAL GC->GAME", *type, bytes);
+            Record(*type, bytes);
         }
         return result;
     }
 
 private:
+    // Keeps the first body of each message type so local mode can replay it. The files hold
+    // account data and stay on this machine.
+    void Record(std::uint32_t type, std::span<const std::uint8_t> bytes)
+    {
+        FrameView frame;
+        if (ReadProtobufFrame(type, bytes, frame) != FrameError::None)
+            return;
+        const std::uint32_t id = type & ~ProtobufMask;
+        if (ReplayStore::SaveIfMissing(m_replayDirectory, id, frame.body))
+            m_log.Write("saved a replay recording for message " + std::to_string(id) + " (" +
+                        std::to_string(frame.body.size()) + " bytes)");
+    }
+
     SteamGameCoordinatorInterface *m_real;
     Logger &m_log;
     std::function<void()> m_identity;
+    std::filesystem::path m_replayDirectory;
 };
 
 struct State
@@ -331,7 +379,8 @@ void *GcInterfaceFor(State &state, void *realObject)
     if (!wrapper)
     {
         wrapper = new CaptureCoordinator(static_cast<SteamGameCoordinatorInterface *>(realObject), *state.log,
-                                         [] { ResolveIdentity(); });
+                                         [] { ResolveIdentity(); },
+                                         std::filesystem::path(state.directory + L"cs2_gc_replay"));
         state.log->Write("capture: wrapping Valve's real SteamGameCoordinator001");
     }
     return wrapper;
@@ -472,6 +521,132 @@ State &Init()
         if (s.mode == ProxyMode::Local)
         {
             s.coordinator = new ProxyCoordinator(endpoint, *s.log, std::move(provider));
+            auto replay = std::make_shared<ReplayStore>(
+                ReplayStore::LoadDirectory(std::filesystem::path(s.directory + L"cs2_gc_replay")));
+            if (replay->Size())
+            {
+                s.coordinator->EnableReplay(replay);
+                s.coordinator->SetDropRecordedItems(proxy.hideRealItems);
+                if (proxy.armoryCredits)
+                {
+                    s.coordinator->SetArmoryCredits(proxy.armoryCredits);
+                    s.log->Write("armory: the credits balance is set to " + std::to_string(*proxy.armoryCredits) +
+                                 " in the welcome (armory_credits)");
+                }
+                s.log->Write(proxy.hideRealItems ? "inventory: fresh. The items in the recording are removed; only "
+                                                   "cs2_gc_inventory.txt items appear (real_items = keep to change)"
+                                                 : "inventory: the recorded items are kept (real_items = keep)");
+                s.log->Write("replay: " + std::to_string(replay->Size()) + " recorded message bodies loaded from "
+                             "cs2_gc_replay; they belong to the account they were captured from");
+            }
+            else
+                s.log->Write("replay: no recordings in cs2_gc_replay, using the synthetic welcome");
+
+            // One live inventory serves the welcome, equipping and the Armory. It starts from
+            // cs2_gc_inventory.txt (same text format the core saves in, so it can be edited by hand).
+            const std::filesystem::path inventoryPath(s.directory + L"cs2_gc_inventory.txt");
+            std::optional<Inventory> loaded = std::filesystem::exists(inventoryPath) ? Inventory::Load(inventoryPath)
+                                                                                     : std::optional<Inventory>(Inventory{});
+            const bool inventoryFileUsable = loaded.has_value();
+            if (!loaded)
+            {
+                // Never saved over later: it may be a hand-edited file with a mistake in it.
+                s.log->Write("custom inventory: cs2_gc_inventory.txt is invalid, starting empty and not saving over it");
+                loaded = Inventory{};
+            }
+            auto live = std::make_shared<LiveInventory>(std::move(*loaded));
+            Logger *saveLog = s.log;
+            s.coordinator->EnableLiveInventory(live, [live, inventoryPath, inventoryFileUsable, saveLog] {
+                if (inventoryFileUsable && !live->Save(inventoryPath))
+                    saveLog->Write("could not save cs2_gc_inventory.txt");
+            });
+            s.coordinator->EnableStorePurchaseFailure();
+
+            if (replay->Size())
+            {
+                std::size_t statTrak = 0;
+                for (const InventoryItem &item : live->Items().Items())
+                    statTrak += item.statTrak;
+                // Read at each Hello, so items granted during the session are in a reconnect's welcome.
+                s.coordinator->SetItemProvider([live](std::uint64_t steamId) {
+                    std::vector<std::vector<std::uint8_t>> encoded;
+                    std::uint32_t position = ItemPositionBase;
+                    for (const InventoryItem &item : live->Items().Items())
+                        encoded.push_back(BuildEconItem(item, static_cast<std::uint32_t>(steamId & 0xFFFFFFFFull),
+                                                        CustomItemIdBase + item.id, position++));
+                    return encoded;
+                });
+                s.log->Write("custom inventory: " + std::to_string(live->Items().Items().size()) +
+                             " item(s) from cs2_gc_inventory.txt will be added to the welcome" +
+                             (statTrak ? "; StatTrak is not encoded yet, so " + std::to_string(statTrak) +
+                                             " item(s) will appear without it"
+                                       : std::string{}));
+            }
+            else if (!live->Items().Items().empty())
+                s.log->Write("custom inventory: needs a recorded welcome (cs2_gc_replay) to add items to; "
+                             "no custom items added");
+
+            // The Armory is built from the game's own schema, so it needs items_game.txt next to the DLL.
+            const std::filesystem::path schemaPath(s.directory + L"items_game.txt");
+            if (!std::filesystem::exists(schemaPath))
+                s.log->Write("armory: items_game.txt not found next to steam_api64.dll; Armory purchases stay "
+                             "unanswered (extract it from the game, see README)");
+            else
+            {
+                std::ifstream schemaFile(schemaPath, std::ios::binary);
+                std::ostringstream schemaText;
+                schemaText << schemaFile.rdbuf();
+                auto parsed = Schema::Load(schemaText.str());
+                if (!parsed)
+                    s.log->Write("armory: items_game.txt could not be read; Armory purchases stay unanswered");
+                else
+                {
+                    Schema *schema = new Schema(std::move(*parsed)); // lives as long as the process
+                    // Store purchases are free and local: any item the schema defines can be bought, so the
+                    // Store's own price sheet decides what is offered. The game checks the Armory pass etc. itself.
+                    s.coordinator->EnableStorePurchases(
+                        live, [schema](std::uint32_t defIndex) { return schema->HasItem(defIndex); },
+                        [live, inventoryPath, inventoryFileUsable, saveLog] {
+                            if (inventoryFileUsable && !live->Save(inventoryPath))
+                                saveLog->Write("could not save cs2_gc_inventory.txt");
+                        });
+                    std::random_device containerDevice;
+                    auto containerEngine = std::make_shared<std::mt19937_64>((std::uint64_t{containerDevice()} << 32) |
+                                                                              containerDevice());
+                    s.coordinator->EnableContainers(
+                        live, std::shared_ptr<const Schema>(schema, [](const Schema *) {}),
+                        [containerEngine] { return (*containerEngine)(); },
+                        [live, inventoryPath, inventoryFileUsable, saveLog] {
+                            if (inventoryFileUsable && !live->Save(inventoryPath))
+                                saveLog->Write("could not save cs2_gc_inventory.txt");
+                        });
+                    s.log->Write("containers: cases (with their key), sticker capsules and graffiti boxes open "
+                                 "locally; naming items works. Music kit boxes and souvenir packages are not handled");
+                    s.log->Write("store: purchases are granted locally and free (needs the Store price sheet to list "
+                                 "the item); saved to cs2_gc_inventory.txt");
+                    std::uint32_t campaign = 0;
+                    for (const ArmoryRedeemable &goods : schema->ArmoryRedeemables())
+                        campaign = std::max(campaign, goods.campaignId);
+                    if (!campaign)
+                        s.log->Write("armory: items_game.txt lists no Armory goods; purchases stay unanswered");
+                    else
+                    {
+                        auto armory = std::make_shared<Armory>(*schema, campaign, proxy.armoryCredits.value_or(0));
+                        std::random_device device;
+                        auto engine = std::make_shared<std::mt19937_64>((std::uint64_t{device()} << 32) | device());
+                        Logger *log = s.log;
+                        s.coordinator->EnableArmory(armory, live, [engine] { return (*engine)(); },
+                                                    [live, inventoryPath, inventoryFileUsable, log] {
+                                                        if (inventoryFileUsable && !live->Save(inventoryPath))
+                                                            log->Write("could not save cs2_gc_inventory.txt");
+                                                    });
+                        s.log->Write("armory: " + std::to_string(schema->ArmoryRedeemables().size()) + " goods loaded "
+                                     "from items_game.txt (campaign " + std::to_string(campaign) + "), " +
+                                     std::to_string(armory->Balance()) + " credits (armory_credits). Purchases are "
+                                     "granted locally and saved to cs2_gc_inventory.txt");
+                    }
+                }
+            }
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=local. Targets Steam build " +
                          std::string(TargetSteamBuildId) + "; the GC is local and nothing is sent to Valve.");
         }
@@ -501,6 +676,8 @@ State &Init()
 // through a C++ virtual call.
 constexpr int GcMessageAvailableId = 1701; // k_iSteamGameCoordinatorCallbacks + 1
 constexpr int GcMessageFailedId = 1702;    // + 2
+constexpr int MicroTxnAuthorizationId = 152; // k_iSteamUserCallbacks + 52
+constexpr std::uint32_t CounterStrikeAppId = 730;
 constexpr std::size_t RunSlot = 1;
 constexpr std::size_t SizeSlot = 2;
 constexpr std::uint8_t CallbackFlagRegistered = 0x01;
@@ -523,7 +700,42 @@ std::vector<RegisteredCallback> g_callbacks;
 
 bool IsGcCallback(int id)
 {
-    return id == GcMessageAvailableId || id == GcMessageFailedId;
+    return id == GcMessageAvailableId || id == GcMessageFailedId || id == MicroTxnAuthorizationId;
+}
+
+// MicroTxnAuthorizationResponse_t as the game reads it (8-byte packing on 64-bit Windows).
+struct MicroTxnAuthorizationResponse
+{
+    std::uint32_t appId;
+    std::uint64_t orderId;
+    std::uint8_t authorized;
+};
+static_assert(sizeof(MicroTxnAuthorizationResponse) == 24);
+
+void DeliverMicroTxnAuthorization(State &state, std::uint64_t orderId)
+{
+    std::vector<CallbackObject *> targets;
+    {
+        std::lock_guard lock(g_callbackMutex);
+        for (const RegisteredCallback &entry : g_callbacks)
+            if (entry.id == MicroTxnAuthorizationId)
+                targets.push_back(entry.object);
+    }
+    if (targets.empty())
+        state.log->Write("purchase: the game has not registered for MicroTxnAuthorizationResponse_t; "
+                         "the authorisation was not delivered");
+    for (CallbackObject *object : targets)
+    {
+        const auto sizeFn = reinterpret_cast<int(__cdecl *)(void *)>(object->vtable[SizeSlot]);
+        if (sizeFn(object) != static_cast<int>(sizeof(MicroTxnAuthorizationResponse)))
+        {
+            state.log->Write("callback object does not look like MicroTxnAuthorizationResponse_t; not delivering");
+            continue;
+        }
+        MicroTxnAuthorizationResponse response{CounterStrikeAppId, orderId, 1};
+        state.log->Write("delivering MicroTxnAuthorizationResponse_t for the purchase");
+        reinterpret_cast<void(__cdecl *)(void *, void *)>(object->vtable[RunSlot])(object, &response);
+    }
 }
 
 void DeliverGcMessageAvailable(State &state, std::uint32_t size)
@@ -617,6 +829,22 @@ extern "C" __declspec(dllexport) void __cdecl SteamAPI_RunCallbacks()
     std::uint32_t size = 0;
     if (state.active && state.coordinator && state.coordinator->IsMessageAvailable(&size))
         DeliverGcMessageAvailable(state, size);
+
+    // The authorisation follows the Init reply by a moment, so the game has stored the transaction id
+    // its Finalize will use (the CS:GO fork waits 150 ms too).
+    static std::optional<std::pair<std::uint64_t, std::chrono::steady_clock::time_point>> due;
+    if (state.active && state.coordinator)
+    {
+        if (!due)
+            if (const auto order = state.coordinator->TakePendingAuthorization())
+                due = {*order, std::chrono::steady_clock::now() + std::chrono::milliseconds(150)};
+        if (due && std::chrono::steady_clock::now() >= due->second)
+        {
+            const std::uint64_t order = due->first;
+            due.reset();
+            DeliverMicroTxnAuthorization(state, order);
+        }
+    }
 }
 
 extern "C" __declspec(dllexport) void *__cdecl SteamInternal_CreateInterface(const char *version)

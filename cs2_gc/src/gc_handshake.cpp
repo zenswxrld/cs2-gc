@@ -1,5 +1,7 @@
 #include "cs2_gc/gc_handshake.h"
 #include "cs2_gc/protobuf.h"
+#include <bit>
+#include <cmath>
 #include <limits>
 
 namespace cs2_gc
@@ -231,6 +233,222 @@ std::optional<SoMultipleObjects> DecodeSoMultipleObjects(std::span<const std::ui
     if (reader.Failed())
         return std::nullopt;
     return result;
+}
+
+std::optional<RedeemRequest> DecodeRedeemRequest(std::span<const std::uint8_t> body)
+{
+    RedeemRequest request;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+    {
+        if (f.number == 1 && !U32(f, request.campaignId))
+            return std::nullopt;
+        if (f.number == 2 && !U32(f, request.redeemId))
+            return std::nullopt;
+        if (f.number == 3 && !U32(f, request.redeemableBalance))
+            return std::nullopt;
+        if (f.number == 4 && !U32(f, request.expectedCost))
+            return std::nullopt;
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    return request;
+}
+
+std::optional<StorePurchaseRequest> DecodeStorePurchaseRequest(std::span<const std::uint8_t> body)
+{
+    StorePurchaseRequest request;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+    {
+        if (f.number == 3 && !U32(f, request.currency))
+            return std::nullopt;
+        if (f.number != 4)
+            continue;
+        if (f.wire != 2)
+            return std::nullopt;
+        StorePurchaseRequest::Line line;
+        PbReader inner(f.bytes);
+        PbField g;
+        while (inner.Next(g))
+        {
+            if (g.number == 1 && !U32(g, line.defIndex))
+                return std::nullopt;
+            if (g.number == 2 && !U32(g, line.quantity))
+                return std::nullopt;
+        }
+        if (inner.Failed())
+            return std::nullopt;
+        request.lines.push_back(line);
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    return request;
+}
+
+std::optional<std::uint64_t> DecodeUseItemRequest(std::span<const std::uint8_t> body)
+{
+    return DecodeTxnId(body); // field 1, a varint: the same shape
+}
+
+std::optional<std::uint64_t> DecodeTxnId(std::span<const std::uint8_t> body)
+{
+    std::optional<std::uint64_t> txn;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+        if (f.number == 1)
+        {
+            if (f.wire != 0)
+                return std::nullopt;
+            txn = f.value;
+        }
+    if (reader.Failed())
+        return std::nullopt;
+    return txn;
+}
+
+std::optional<OpenCrateRequest> DecodeOpenCrateRequest(std::span<const std::uint8_t> body)
+{
+    OpenCrateRequest request;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+        if (f.number == 1 || f.number == 2)
+        {
+            if (f.wire != 0)
+                return std::nullopt;
+            (f.number == 1 ? request.keyItemId : request.crateItemId) = f.value;
+        }
+    if (reader.Failed() || request.crateItemId == 0)
+        return std::nullopt;
+    return request;
+}
+
+std::optional<NameItemRequest> DecodeNameItemRequest(std::span<const std::uint8_t> body)
+{
+    NameItemRequest request;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+    {
+        if ((f.number == 1 || f.number == 2) && f.wire != 0)
+            return std::nullopt;
+        if (f.number == 1)
+            request.tagItemId = f.value;
+        else if (f.number == 2)
+            request.itemId = f.value;
+        else if (f.number == 4)
+        {
+            if (f.wire != 2)
+                return std::nullopt;
+            request.name.assign(reinterpret_cast<const char *>(f.bytes.data()), f.bytes.size());
+        }
+    }
+    if (reader.Failed() || request.itemId == 0)
+        return std::nullopt;
+    return request;
+}
+
+std::optional<ApplyStickerRequest> DecodeApplyStickerRequest(std::span<const std::uint8_t> body)
+{
+    ApplyStickerRequest request;
+    PbReader reader(body);
+    PbField f;
+    auto asFloat = [](const PbField &field, float &out) {
+        if (field.wire != 5)
+            return false;
+        out = std::bit_cast<float>(static_cast<std::uint32_t>(field.value));
+        return std::isfinite(out);
+    };
+    while (reader.Next(f))
+    {
+        switch (f.number)
+        {
+        case 1:
+        case 2:
+            if (f.wire != 0)
+                return std::nullopt;
+            (f.number == 1 ? request.stickerItemId : request.targetItemId) = f.value;
+            break;
+        case 3: if (!U32(f, request.slot)) return std::nullopt; break;
+        case 5: if (!asFloat(f, request.wear)) return std::nullopt; break;
+        case 6: if (!asFloat(f, request.rotation)) return std::nullopt; break;
+        case 7: if (!asFloat(f, request.scale)) return std::nullopt; break;
+        case 8: if (!asFloat(f, request.offsetX)) return std::nullopt; break;
+        case 9: if (!asFloat(f, request.offsetY)) return std::nullopt; break;
+        default: break;
+        }
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    return request;
+}
+
+std::vector<std::uint8_t> EncodeSoSingleObject(const SoSingleObject &object)
+{
+    PbWriter w;
+    w.Varint(2, static_cast<std::uint64_t>(static_cast<std::int64_t>(object.typeId)));
+    w.Bytes(3, object.data);
+    w.Fixed64(4, object.version);
+    w.Message(5, OwnerWriter(object.owner));
+    return w.bytes();
+}
+
+std::optional<AdjustEquipSlots> DecodeAdjustEquipSlots(std::span<const std::uint8_t> body)
+{
+    AdjustEquipSlots result;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+    {
+        if (f.number == 1)
+        {
+            if (f.wire != 2)
+                return std::nullopt;
+            EquipSlotChange change;
+            PbReader inner(f.bytes);
+            PbField g;
+            while (inner.Next(g))
+            {
+                if (g.number == 1 && !U32(g, change.classId))
+                    return std::nullopt;
+                if (g.number == 2 && !U32(g, change.slotId))
+                    return std::nullopt;
+                if (g.number == 3)
+                {
+                    if (g.wire != 0)
+                        return std::nullopt;
+                    change.itemId = g.value;
+                }
+            }
+            if (inner.Failed())
+                return std::nullopt;
+            result.slots.push_back(change);
+        }
+        else if (f.number == 2 && !U32(f, result.changeNum))
+            return std::nullopt;
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    return result;
+}
+
+std::vector<std::uint8_t> EncodeSoMultipleObjects(const SoMultipleObjects &objects)
+{
+    PbWriter w;
+    for (const auto &object : objects.objects)
+    {
+        PbWriter o;
+        o.Varint(1, static_cast<std::uint64_t>(static_cast<std::int64_t>(object.typeId)));
+        o.Bytes(2, object.data);
+        w.Message(2, o);
+    }
+    w.Fixed64(3, objects.version);
+    w.Message(6, OwnerWriter(objects.owner));
+    return w.bytes();
 }
 
 std::vector<std::uint8_t> EncodeSoCacheSubscribed(const SoCacheSubscribed &cache)

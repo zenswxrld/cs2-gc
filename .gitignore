@@ -3,3 +3,9 @@
 /.idea
 __pycache__/
 /cs2-build*.json
+
+# Local diagnostics: logs and recorded GC replies contain account data. Never commit these.
+cs2_gc_log.txt
+cs2_gc_replay/
+cs2_gc.cfg
+cs2_gc.cfg.txt

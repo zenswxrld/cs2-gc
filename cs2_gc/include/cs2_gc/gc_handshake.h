@@ -103,6 +103,17 @@ struct ApplyStickerRequest // CMsgApplySticker: the body of k_EMsgGCApplySticker
     float offsetY{};
 };
 
+struct StorePurchaseRequest // CMsgGCStorePurchaseInit: the body of k_EMsgGCStorePurchaseInit
+{
+    struct Line // CGCStorePurchaseInit_LineItem
+    {
+        std::uint32_t defIndex{};
+        std::uint32_t quantity{};
+    };
+    std::uint32_t currency{};
+    std::vector<Line> lines;
+};
+
 // Decoders reject malformed input outright; unknown fields are skipped.
 std::optional<ClientHello> DecodeClientHello(std::span<const std::uint8_t> body);
 std::optional<SoCacheSubscribed> DecodeSoCacheSubscribed(std::span<const std::uint8_t> body);
@@ -111,6 +122,8 @@ std::optional<SoSingleObject> DecodeSoSingleObject(std::span<const std::uint8_t>
 std::optional<SoMultipleObjects> DecodeSoMultipleObjects(std::span<const std::uint8_t> body);
 
 std::optional<ApplyStickerRequest> DecodeApplyStickerRequest(std::span<const std::uint8_t> body);
+std::optional<StorePurchaseRequest> DecodeStorePurchaseRequest(std::span<const std::uint8_t> body);
+std::optional<std::uint64_t> DecodeTxnId(std::span<const std::uint8_t> body); // Finalize / Cancel: field 1
 std::optional<RedeemRequest> DecodeRedeemRequest(std::span<const std::uint8_t> body);
 std::vector<std::uint8_t> EncodeSoSingleObject(const SoSingleObject &object);
 std::optional<AdjustEquipSlots> DecodeAdjustEquipSlots(std::span<const std::uint8_t> body);

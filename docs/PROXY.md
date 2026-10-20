@@ -173,7 +173,18 @@ py -3 tools/price_sheet.py add-cases cs2_gc_replay/2501.bin items_game.txt --out
 
 `add-cases` adds an entry for every standard case (and any key that has none), copying the prices of an
 existing entry (`--price-from`, default "Weapon Case Key"). Back up your recorded `2501.bin`, then put
-`new_2501.bin` in `cs2_gc_replay` under the name `2501.bin`; local mode replays it. Buying is still refused.
+`new_2501.bin` in `cs2_gc_replay` under the name `2501.bin`; local mode replays it.
+
+The Store builds its tabs from the sheet's `store_banner_layout` (keyed by item index), not from `entries`.
+In Valve's sheet 21 cases are banner entries with `market_link`, which the Market tab shows as "View On
+Market" and never sells. `add-cases` removes that flag, adds a tile for every other case and key, and adds the
+priced `entries` rows they need.
+
+Purchases (needs `items_game.txt` next to the DLL): `StorePurchaseInit` (2510) for items the schema defines is
+answered with a transaction id, the proxy then fires `MicroTxnAuthorizationResponse_t` (callback 152, 150 ms
+later, as the CS:GO fork does), the game sends `StorePurchaseFinalize` (2504) and the proxy creates the items
+as unacknowledged purchases, answers with their ids and saves the inventory. It is free and never reaches
+Valve. This flow is copied from CS:GO and not yet confirmed in the CS2 client.
 
 ### Armory setup
 

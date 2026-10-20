@@ -2,7 +2,8 @@
 
 The price sheet is Valve binary KeyValues inside an "LZMA" container inside field 8 of that message.
 `dump` prints what a recorded 2501.bin holds. `add-cases` adds a Store entry for every standard case
-and any key that has none, taking prices from an existing entry, and writes a new 2501.bin to put in
+and any key that has none, taking prices from an existing entry, puts them in the banner layout (and makes
+Valve's "View On Market" case tiles sellable), and writes a new 2501.bin to put in
 the cs2_gc_replay folder. Output files are never overwritten. Python 3.9+ standard library only.
 """
 import argparse
@@ -205,7 +206,12 @@ def section(tree, *path):
 
 
 def find_cases(sections):
-    """(case name, key name or None) for every standard case, from items_game sections."""
+    """(case name, key name) for every keyed standard case, from items_game sections."""
+    return [(case, key) for case, key, _, _ in find_case_items(sections)]
+
+
+def find_case_items(sections):
+    """(case name, key name, case index, key index) for every keyed standard case."""
     items = {k: v for k, v in sections.get("items", {}).items() if isinstance(v, list)}
     prefabs = sections.get("prefabs", {})
 
@@ -244,7 +250,7 @@ def find_cases(sections):
         key_name = items_game.as_dict(key_node).get("name") if key_node else None
         if key_node is None:  # a case that opens without a key is not sold with one
             continue
-        cases.append((items_game.as_dict(node).get("name"), key_name))
+        cases.append((items_game.as_dict(node).get("name"), key_name, str(index), str(key_index)))
     return cases
 
 
@@ -266,6 +272,26 @@ def add_entries(tree, wanted, price_from):
     return added
 
 
+def add_banner_entries(tree, indices):
+    """Make each item index a plain Store tile; returns (tiles added, Steam Market links turned into sales).
+
+    The Store builds its tabs from the banner layout, keyed by item index. An entry with `market_link`
+    is shown on the Market tab as "View On Market" instead of being sold; removing it makes the
+    item an ordinary tile, priced from its `entries` row.
+    """
+    layout = section(tree, "store", "store_banner_layout")
+    added = unlinked = 0
+    for index in dict.fromkeys(indices):
+        entry = next((v for k, v in layout if k == index and isinstance(v, list)), None)
+        if entry is None:
+            layout.append((index, [("custom_format", "single")]))
+            added += 1
+        elif any(k == "market_link" for k, _ in entry):
+            entry[:] = [(k, v) for k, v in entry if k != "market_link"]
+            unlinked += 1
+    return added, unlinked
+
+
 def command_dump(args):
     tree = load_sheet(args.sheet)
     entries = section(tree, "store", "entries")
@@ -279,9 +305,11 @@ def command_dump(args):
 def command_add_cases(args):
     tree = load_sheet(args.sheet)
     sections = items_game.collect(items_game.parse(args.items_game.read_text(encoding="utf-8-sig", errors="replace")))
-    cases = find_cases(sections)
+    items = find_case_items(sections)
+    cases = [(case, key) for case, key, _, _ in items]
     wanted = [name for case, key in cases for name in (case, key)]
     added = add_entries(tree, wanted, args.price_from)
+    tiles, unlinked = add_banner_entries(tree, [i for _, _, case, key in items for i in (case, key)])
     raw = encode_kv(tree)
     message = build_message(raw)
     verify = decode_kv(decompress(read_message(message)[2]))  # the same steps the game takes
@@ -289,7 +317,8 @@ def command_add_cases(args):
         raise ValueError("the rebuilt sheet does not decode back to what was written")
     with args.out.open("xb") as destination:
         destination.write(message)
-    print(f"{len(cases)} cases found; {added} new entries added ({len(raw)} bytes before compression). Wrote {args.out}.")
+    print(f"{len(cases)} cases found; {added} new price entries, {tiles} new Store tiles, {unlinked} Steam Market "
+          f"links turned into sales ({len(raw)} bytes before compression). Wrote {args.out}.")
     return 0
 
 

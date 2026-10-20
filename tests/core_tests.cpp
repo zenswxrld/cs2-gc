@@ -1826,10 +1826,156 @@ void StickerApplication()
           "a sticker with no kit is rejected on load");
 }
 
+void StorePurchases()
+{
+    namespace m = gc_msg;
+    auto live = std::make_shared<LiveInventory>(Inventory{});
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    int saves = 0;
+    gc.EnableStorePurchases(live, [](std::uint32_t def) { return def == 4001 || def == 1203; }, [&saves] { ++saves; });
+
+    struct Out { std::uint32_t type{}; std::vector<std::uint8_t> header, body; };
+    const auto read = [&]() -> std::optional<Out> {
+        std::uint32_t size = 0, got = 0;
+        if (!gc.IsMessageAvailable(&size))
+            return std::nullopt;
+        Out out;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&out.type, buffer.data(), size, &got);
+        FrameView view;
+        ReadProtobufFrame(out.type, buffer, view);
+        out.type &= ~ProtobufMask;
+        out.header.assign(view.header.begin(), view.header.end());
+        out.body.assign(view.body.begin(), view.body.end());
+        return out;
+    };
+    const auto send = [&](std::uint32_t type, const PbWriter &body, std::uint64_t job) {
+        PbWriter header;
+        header.Fixed64(10, job);
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(type, header.bytes(), body.bytes(), frame);
+        gc.SendMessage(type | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    const auto init = [](std::initializer_list<std::pair<std::uint32_t, std::uint32_t>> lines) {
+        PbWriter body;
+        body.Varint(3, 21);
+        for (const auto &[def, quantity] : lines)
+        {
+            PbWriter line;
+            line.Varint(1, def);
+            line.Varint(2, quantity);
+            line.Varint(3, 140);
+            body.Message(4, line);
+        }
+        return body;
+    };
+    const auto result = [](const Out &out) {
+        PbReader reader(out.body);
+        PbField f;
+        std::uint64_t value = 0;
+        while (reader.Next(f))
+            if (f.number == 1)
+                value = f.value;
+        return value;
+    };
+
+    // Refused: an item the schema does not sell, a zero quantity, an empty cart.
+    for (const auto &bad : {init({{9999, 1}}), init({{4001, 0}}), init({})})
+    {
+        send(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, bad, 9);
+        const auto reply = read();
+        Check(reply && reply->type == m::EGCItemMsg::k_EMsgGCStorePurchaseInitResponse && result(*reply) == 2,
+              "an invalid purchase is refused");
+        Check(!gc.TakePendingAuthorization(), "a refused purchase authorises nothing");
+    }
+
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, init({{4001, 2}, {1203, 1}}), 7);
+    const auto accepted = read();
+    std::uint64_t txn = 0;
+    if (accepted)
+    {
+        PbReader reader(accepted->body);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 2)
+                txn = f.value;
+    }
+    Check(accepted && result(*accepted) == 1 && txn != 0, "a valid purchase is accepted with a transaction id");
+    Check(accepted && !accepted->header.empty(), "the job id is echoed");
+    Check(gc.TakePendingAuthorization() == txn && !gc.TakePendingAuthorization(), "the authorisation is due once");
+
+    // A second purchase while one is open is refused.
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, init({{4001, 1}}), 8);
+    const auto second = read();
+    Check(second && result(*second) == 2, "only one transaction at a time");
+
+    PbWriter wrong;
+    wrong.Varint(1, txn + 1);
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseFinalize, wrong, 10);
+    const auto refused = read();
+    Check(refused && result(*refused) == 2 && live->Items().Items().empty() && saves == 0,
+          "finalize with the wrong transaction id grants nothing");
+
+    PbWriter finalize;
+    finalize.Varint(1, txn);
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseFinalize, finalize, 11);
+    int creates = 0;
+    std::optional<Out> response;
+    while (const auto out = read())
+    {
+        if (out->type == m::ESOMsg::k_ESOMsg_Create)
+        {
+            ++creates;
+            const auto object = DecodeSoSingleObject(out->body);
+            PbReader reader(object ? std::span<const std::uint8_t>(object->data) : std::span<const std::uint8_t>{});
+            PbField f;
+            std::uint64_t inventory = 0;
+            while (reader.Next(f))
+                if (f.number == 3)
+                    inventory = f.value;
+            Check(inventory == (InventoryUnacknowledgedBit | PickupPurchased), "bought items arrive unacknowledged as purchases");
+        }
+        else if (out->type == m::EGCItemMsg::k_EMsgGCStorePurchaseFinalizeResponse)
+            response = out;
+    }
+    Check(creates == 3 && live->Items().Items().size() == 3 && saves == 1, "three items created and saved");
+    std::vector<std::uint64_t> ids;
+    if (response)
+    {
+        PbReader reader(response->body);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 2)
+                ids.push_back(f.value);
+    }
+    Check(response && result(*response) == 1 && ids.size() == 3 && ids[0] == CustomItemIdBase + 1,
+          "finalize answers with the new item ids");
+
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseFinalize, finalize, 12);
+    const auto again = read();
+    Check(again && result(*again) == 2 && live->Items().Items().size() == 3, "a transaction finalizes once");
+
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, init({{4001, 1}}), 13);
+    const auto third = read();
+    PbWriter cancel;
+    cancel.Varint(1, third ? [&] { PbReader r(third->body); PbField f; std::uint64_t t = 0; while (r.Next(f)) if (f.number == 2) t = f.value; return t; }() : 0);
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseCancel, cancel, 14);
+    const auto cancelled = read();
+    Check(cancelled && cancelled->type == m::EGCItemMsg::k_EMsgGCStorePurchaseCancelResponse &&
+              !gc.TakePendingAuthorization(),
+          "cancel drops the transaction");
+    send(m::EGCItemMsg::k_EMsgGCStorePurchaseInit, init({{4001, 1}}), 15);
+    const auto fresh = read();
+    Check(fresh && result(*fresh) == 1, "a new purchase can start after a cancel");
+}
+
 int main()
 {
     try
     {
+        StorePurchases(); std::cout << "PASS store purchases\n";
         StickerApplication(); std::cout << "PASS sticker application\n";
         Frames(); std::cout << "PASS protocol framing and malformed input\n";
         Queues(); std::cout << "PASS bounded Steam-style message queue\n";

@@ -225,6 +225,12 @@ public:
         m_gc.EnableLiveInventory(std::move(inventory), std::move(afterChange));
     }
     void EnableStorePurchaseFailure() { m_gc.EnableStorePurchaseFailure(); }
+    void EnableStorePurchases(std::shared_ptr<LiveInventory> inventory, std::function<bool(std::uint32_t)> canSell,
+                              std::function<void()> afterGrant)
+    {
+        m_gc.EnableStorePurchases(std::move(inventory), std::move(canSell), std::move(afterGrant));
+    }
+    std::optional<std::uint64_t> TakePendingAuthorization() { return m_gc.TakePendingAuthorization(); }
     void EnableArmory(std::shared_ptr<Armory> armory, std::shared_ptr<LiveInventory> inventory, RandomSource random,
                       std::function<void()> afterGrant)
     {
@@ -591,6 +597,16 @@ State &Init()
                 else
                 {
                     Schema *schema = new Schema(std::move(*parsed)); // lives as long as the process
+                    // Store purchases are free and local: any item the schema defines can be bought, so the
+                    // Store's own price sheet decides what is offered. The game checks the Armory pass etc. itself.
+                    s.coordinator->EnableStorePurchases(
+                        live, [schema](std::uint32_t defIndex) { return schema->HasItem(defIndex); },
+                        [live, inventoryPath, inventoryFileUsable, saveLog] {
+                            if (inventoryFileUsable && !live->Save(inventoryPath))
+                                saveLog->Write("could not save cs2_gc_inventory.txt");
+                        });
+                    s.log->Write("store: purchases are granted locally and free (needs the Store price sheet to list "
+                                 "the item); saved to cs2_gc_inventory.txt");
                     std::uint32_t campaign = 0;
                     for (const ArmoryRedeemable &goods : schema->ArmoryRedeemables())
                         campaign = std::max(campaign, goods.campaignId);
@@ -643,6 +659,8 @@ State &Init()
 // through a C++ virtual call.
 constexpr int GcMessageAvailableId = 1701; // k_iSteamGameCoordinatorCallbacks + 1
 constexpr int GcMessageFailedId = 1702;    // + 2
+constexpr int MicroTxnAuthorizationId = 152; // k_iSteamUserCallbacks + 52
+constexpr std::uint32_t CounterStrikeAppId = 730;
 constexpr std::size_t RunSlot = 1;
 constexpr std::size_t SizeSlot = 2;
 constexpr std::uint8_t CallbackFlagRegistered = 0x01;
@@ -665,7 +683,42 @@ std::vector<RegisteredCallback> g_callbacks;
 
 bool IsGcCallback(int id)
 {
-    return id == GcMessageAvailableId || id == GcMessageFailedId;
+    return id == GcMessageAvailableId || id == GcMessageFailedId || id == MicroTxnAuthorizationId;
+}
+
+// MicroTxnAuthorizationResponse_t as the game reads it (8-byte packing on 64-bit Windows).
+struct MicroTxnAuthorizationResponse
+{
+    std::uint32_t appId;
+    std::uint64_t orderId;
+    std::uint8_t authorized;
+};
+static_assert(sizeof(MicroTxnAuthorizationResponse) == 24);
+
+void DeliverMicroTxnAuthorization(State &state, std::uint64_t orderId)
+{
+    std::vector<CallbackObject *> targets;
+    {
+        std::lock_guard lock(g_callbackMutex);
+        for (const RegisteredCallback &entry : g_callbacks)
+            if (entry.id == MicroTxnAuthorizationId)
+                targets.push_back(entry.object);
+    }
+    if (targets.empty())
+        state.log->Write("purchase: the game has not registered for MicroTxnAuthorizationResponse_t; "
+                         "the authorisation was not delivered");
+    for (CallbackObject *object : targets)
+    {
+        const auto sizeFn = reinterpret_cast<int(__cdecl *)(void *)>(object->vtable[SizeSlot]);
+        if (sizeFn(object) != static_cast<int>(sizeof(MicroTxnAuthorizationResponse)))
+        {
+            state.log->Write("callback object does not look like MicroTxnAuthorizationResponse_t; not delivering");
+            continue;
+        }
+        MicroTxnAuthorizationResponse response{CounterStrikeAppId, orderId, 1};
+        state.log->Write("delivering MicroTxnAuthorizationResponse_t for the purchase");
+        reinterpret_cast<void(__cdecl *)(void *, void *)>(object->vtable[RunSlot])(object, &response);
+    }
 }
 
 void DeliverGcMessageAvailable(State &state, std::uint32_t size)
@@ -759,6 +812,22 @@ extern "C" __declspec(dllexport) void __cdecl SteamAPI_RunCallbacks()
     std::uint32_t size = 0;
     if (state.active && state.coordinator && state.coordinator->IsMessageAvailable(&size))
         DeliverGcMessageAvailable(state, size);
+
+    // The authorisation follows the Init reply by a moment, so the game has stored the transaction id
+    // its Finalize will use (the CS:GO fork waits 150 ms too).
+    static std::optional<std::pair<std::uint64_t, std::chrono::steady_clock::time_point>> due;
+    if (state.active && state.coordinator)
+    {
+        if (!due)
+            if (const auto order = state.coordinator->TakePendingAuthorization())
+                due = {*order, std::chrono::steady_clock::now() + std::chrono::milliseconds(150)};
+        if (due && std::chrono::steady_clock::now() >= due->second)
+        {
+            const std::uint64_t order = due->first;
+            due.reset();
+            DeliverMicroTxnAuthorization(state, order);
+        }
+    }
 }
 
 extern "C" __declspec(dllexport) void *__cdecl SteamInternal_CreateInterface(const char *version)

@@ -256,6 +256,55 @@ std::optional<RedeemRequest> DecodeRedeemRequest(std::span<const std::uint8_t> b
     return request;
 }
 
+std::optional<StorePurchaseRequest> DecodeStorePurchaseRequest(std::span<const std::uint8_t> body)
+{
+    StorePurchaseRequest request;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+    {
+        if (f.number == 3 && !U32(f, request.currency))
+            return std::nullopt;
+        if (f.number != 4)
+            continue;
+        if (f.wire != 2)
+            return std::nullopt;
+        StorePurchaseRequest::Line line;
+        PbReader inner(f.bytes);
+        PbField g;
+        while (inner.Next(g))
+        {
+            if (g.number == 1 && !U32(g, line.defIndex))
+                return std::nullopt;
+            if (g.number == 2 && !U32(g, line.quantity))
+                return std::nullopt;
+        }
+        if (inner.Failed())
+            return std::nullopt;
+        request.lines.push_back(line);
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    return request;
+}
+
+std::optional<std::uint64_t> DecodeTxnId(std::span<const std::uint8_t> body)
+{
+    std::optional<std::uint64_t> txn;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+        if (f.number == 1)
+        {
+            if (f.wire != 0)
+                return std::nullopt;
+            txn = f.value;
+        }
+    if (reader.Failed())
+        return std::nullopt;
+    return txn;
+}
+
 std::optional<ApplyStickerRequest> DecodeApplyStickerRequest(std::span<const std::uint8_t> body)
 {
     ApplyStickerRequest request;

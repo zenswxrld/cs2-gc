@@ -14,7 +14,8 @@ spec.loader.exec_module(tool)
 # Synthetic data shaped like the real sheet and items_game.txt; not real game data.
 PRICES = [("USD", 249), ("AUD", 355), ("EUR", 219)]
 SHEET = [("store", [
-    ("store_banner_layout", [("1201", [("custom_format", "single")]), ("7042", [("custom_format", "coupon"), ("w", 18.5)])]),
+    ("store_banner_layout", [("1201", [("custom_format", "single")]), ("7042", [("custom_format", "coupon"), ("w", 18.5)]),
+                             ("4001", [("custom_format", "double"), ("market_link", 1)])]),
     ("store_metadata", [("categories", [("Misc", [("label_token", "#Store_Misc"), ("home", 1), ("default", 1)])])]),
     ("entries", [
         ("Weapon Case Key", [("item_link", "Weapon Case Key"), ("category_tags", "Misc"), ("prices", list(PRICES))]),
@@ -106,6 +107,15 @@ class PriceSheetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tool.add_entries(tree, ["x"], "No Such Entry")
 
+    def test_banner_entries_sell_cases_and_keys(self):
+        tree = tool.decode_kv(tool.encode_kv(SHEET))
+        added, unlinked = tool.add_banner_entries(tree, ["4001", "4002", "9000", "4002", "1201"])
+        self.assertEqual((added, unlinked), (2, 1))  # 4002 and 9000 are new, 4001 loses its market link
+        layout = dict(tool.section(tree, "store", "store_banner_layout"))
+        self.assertEqual(layout["4001"], [("custom_format", "double")])
+        self.assertEqual(layout["4002"], [("custom_format", "single")])
+        self.assertEqual(layout["1201"], [("custom_format", "single")])  # untouched
+
     def test_unrecognised_sheets_are_refused_not_edited(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "2501.bin"
@@ -127,6 +137,7 @@ class PriceSheetTests(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()) as captured:
                 self.assertEqual(tool.main(["add-cases", str(sheet), str(games), "--out", str(out)]), 0)
             self.assertIn("2 cases found", captured.getvalue())
+            self.assertIn("3 new Store tiles, 1 Steam Market links", captured.getvalue())
             entries = tool.section(tool.load_sheet(out), "store", "entries")
             self.assertEqual([k for k, _ in entries], ["Weapon Case Key", "Name Tag", "crate_one", "crate_two", "extra_key"])
             before = out.read_bytes()

@@ -74,6 +74,17 @@ public:
     // sticker item's removal); `afterChange` runs after each so the caller can save it.
     void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange = {});
 
+    // Sell items for free. A valid purchase (every line an item `canSell` accepts, a sane quantity)
+    // is answered with a transaction id; the proxy then reports the authorisation through the
+    // MicroTxnAuthorizationResponse callback (TakePendingAuthorization), the game sends Finalize, and
+    // the items are created as new, unacknowledged purchases. Nothing is charged anywhere.
+    // `afterGrant` runs after items are added so the caller can save.
+    void EnableStorePurchases(std::shared_ptr<LiveInventory> inventory, std::function<bool(std::uint32_t)> canSell,
+                              std::function<void()> afterGrant);
+
+    // The transaction whose authorisation callback is due, once; nothing otherwise.
+    std::optional<std::uint64_t> TakePendingAuthorization();
+
     // Answer a store purchase request with a failure instead of leaving it unanswered. Nothing is
     // charged and nothing is granted.
     void EnableStorePurchaseFailure();
@@ -104,6 +115,16 @@ private:
     std::shared_ptr<LiveInventory> m_live;
     std::shared_ptr<Armory> m_armory;
     std::uint64_t m_soVersion{1};
+
+    struct Transaction
+    {
+        std::uint64_t id{};
+        std::vector<StorePurchaseRequest::Line> lines;
+    };
+    std::mutex m_txnMutex;
+    std::optional<Transaction> m_txn;
+    std::optional<std::uint64_t> m_pendingAuthorization;
+    std::uint64_t m_lastTxnId{7000000000ull};
 };
 
 // The header for a reply to `request`: the job id the request carried, echoed back as the target so

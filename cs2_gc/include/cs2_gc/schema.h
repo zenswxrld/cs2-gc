@@ -92,6 +92,8 @@ public:
     // The rarity value of an item definition by its own `item_rarity` (0 when it has none).
     std::uint32_t ItemRarity(std::uint32_t defIndex) const;
 
+    bool HasItem(std::uint32_t defIndex) const { return m_itemsByIndex.count(defIndex) != 0; }
+
     // The item definition index for an item name such as "crate_community_35".
     std::optional<std::uint32_t> ItemDefIndex(std::string_view name) const;
 

@@ -2,6 +2,7 @@
 #include "cs2_gc/econ_item.h"
 #include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/protobuf.h"
+#include <utility>
 
 namespace cs2_gc
 {
@@ -107,6 +108,119 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                        updated.owner = gc.m_config.owner;
                        gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
                    }
+                   if (afterGrant)
+                       afterGrant();
+               });
+}
+
+std::optional<std::uint64_t> LocalGameCoordinator::TakePendingAuthorization()
+{
+    std::lock_guard lock(m_txnMutex);
+    return std::exchange(m_pendingAuthorization, std::nullopt);
+}
+
+void LocalGameCoordinator::EnableStorePurchases(std::shared_ptr<LiveInventory> inventory,
+                                                std::function<bool(std::uint32_t)> canSell,
+                                                std::function<void()> afterGrant)
+{
+    constexpr std::uint32_t ResultOk = 1;
+    constexpr std::uint32_t ResultFail = 2;
+    constexpr std::uint32_t MaxQuantity = 100;
+
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseInit,
+               [canSell](const FrameView &frame, LocalGameCoordinator &gc) {
+                   const auto request = DecodeStorePurchaseRequest(frame.body);
+                   bool valid = request && !request->lines.empty();
+                   std::uint64_t total = 0;
+                   if (valid)
+                       for (const auto &line : request->lines)
+                       {
+                           total += line.quantity;
+                           valid = valid && line.quantity > 0 && total <= MaxQuantity && canSell(line.defIndex);
+                       }
+                   PbWriter response;
+                   {
+                       std::lock_guard lock(gc.m_txnMutex);
+                       valid = valid && !gc.m_txn;
+                       if (valid)
+                       {
+                           gc.m_txn = Transaction{++gc.m_lastTxnId, request->lines};
+                           gc.m_pendingAuthorization = gc.m_txn->id;
+                           response.Varint(1, ResultOk);
+                           response.Varint(2, gc.m_txn->id);
+                           response.String(3, "https://checkout.steampowered.com/checkout/approvetxn/" +
+                                                  std::to_string(gc.m_txn->id) + "/?returnurl=steam");
+                       }
+                   }
+                   if (!valid)
+                   {
+                       ++gc.m_ignored;
+                       response.Varint(1, ResultFail);
+                   }
+                   gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseInitResponse, response.bytes(),
+                            ReplyHeaderFor(frame));
+               });
+
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseCancel, [](const FrameView &frame, LocalGameCoordinator &gc) {
+        const auto txn = DecodeTxnId(frame.body);
+        {
+            std::lock_guard lock(gc.m_txnMutex);
+            if (txn && gc.m_txn && gc.m_txn->id == *txn)
+            {
+                gc.m_txn.reset();
+                gc.m_pendingAuthorization.reset();
+            }
+        }
+        PbWriter response;
+        response.Varint(1, ResultOk);
+        gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseCancelResponse, response.bytes(), ReplyHeaderFor(frame));
+    });
+
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseFinalize,
+               [inventory, afterGrant](const FrameView &frame, LocalGameCoordinator &gc) {
+                   const auto txnId = DecodeTxnId(frame.body);
+                   std::optional<Transaction> txn;
+                   {
+                       std::lock_guard lock(gc.m_txnMutex);
+                       if (txnId && gc.m_txn && gc.m_txn->id == *txnId)
+                       {
+                           txn = std::move(gc.m_txn);
+                           gc.m_txn.reset();
+                           gc.m_pendingAuthorization.reset();
+                       }
+                   }
+                   PbWriter response;
+                   if (!txn)
+                   {
+                       ++gc.m_ignored;
+                       response.Varint(1, ResultFail);
+                       gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseFinalizeResponse, response.bytes(),
+                                ReplyHeaderFor(frame));
+                       return;
+                   }
+                   const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                   std::vector<std::uint64_t> itemIds;
+                   // The creates go out before the response so the ids in it already resolve in the cache.
+                   for (const auto &line : txn->lines)
+                       for (std::uint32_t i = 0; i < line.quantity; ++i)
+                       {
+                           InventoryItem item;
+                           item.defIndex = line.defIndex;
+                           item = inventory->AddItem(item);
+                           SoSingleObject created;
+                           created.typeId = static_cast<std::int32_t>(ItemTypeId);
+                           created.data = BuildEconItem(item, accountId, CustomItemIdBase + item.id,
+                                                        InventoryUnacknowledgedBit | PickupPurchased);
+                           created.version = ++gc.m_soVersion;
+                           created.owner = gc.m_config.owner;
+                           gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
+                           itemIds.push_back(CustomItemIdBase + item.id);
+                       }
+                   response.Varint(1, ResultOk);
+                   for (const std::uint64_t id : itemIds)
+                       response.Varint(2, id);
+                   gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseFinalizeResponse, response.bytes(),
+                            ReplyHeaderFor(frame));
                    if (afterGrant)
                        afterGrant();
                });

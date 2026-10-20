@@ -176,3 +176,6 @@ while CS2 runs (the DLL processes the request); native-picker support needs a di
   displayed item do not match. Check `tools/armory_rotation_catalog.py` (generated catalogue rows) and
   `tools/rotate_armory.py` (which tiles are hidden per category) against the stock Armory catalogue.
 - Native trade-up picker mixes StatTrak and normal (confirmed). Contract result not yet reported.
+- Armory nav bar (live): the rotation countdown shows ("Armory refresh: 3:58"), so the timer runs. Two of the category
+  nav buttons have blank icons (between Train and Fracture, and between Fracture and LTD) - probably the sticker
+  capsule / Sugarface entries whose nav icon is not resolved for generated catalogue rows.

@@ -15,16 +15,18 @@ ASSET = 'botprofile.db'
 SEED_FILE = 'cs2_gc_bot_names_seed.txt'
 
 HANDLES = '''
-kyro zenix frostbyte vortexx n0va slyde ghostie kaiz3n blitzer remy jinx0 orbit drift voidy tempo
-sh4dow pyro kenji maverik lux3 hollow skye razr nimbus quill echo7 vexa colt ronin tundra
-zeph flick spade raven juno dusty bolt cypher m1lo trix nyx atlas ember wraith kobi halo
-saber fizz rook vapor mako jett onyx slick kairo bash nomad lynx crisp glint dex ace
-boomer zappy toxic panda mochi tofu biscuit noodle waffle pickles muffin taco nacho sushi
-yuki hiro sora ryu kenta daiki akira bjorn sven lars olek dima vlad tomasz kuba matti
-luca enzo matteo diego pablo rafa nico theo felix hugo otto karl emil anton ivan
-lowkey nofear deadeye oneTap headhuntr flashbang smokey molly clutchy aimbotnt eco_king
-wallbang spraygod pistolpete awper entryfrag lurker igl_dad baiter ninjadefuse thrifty
-xXslayerXx hypebeast sk8r gr1nd tilted calmdown gg_ez noscope quickscope eagle_eye
+Kaizen_ zyrex frosty jxnny Snoopz w1nterz dxrk_ Vexoo fl1ckz Kiwi_ trxpz zeno kxsh
+NightOwl_ sleepy_k shxdow xLuna Rexy2k toxicpanda Mochi_ blxze Ravenzz zKai noodlez
+eth4n_ tylerr07 jakey_ mattyB Liamxo noahh_ Oskarr kubaz Mikk0 d1ma_ vlad1k Artemka
+Lukas_ jonas_cs Felixx n1ko_ theoo_ maxi_ Bruno Diegoo rafitaa Tomi_ Sebaa santi_
+ColdCoffee GhostFace_ silentstep DeadAim_ HeadHunter7 lowkeygod notaim clutchm0de
+pistolprince ecoround_ forcebuy flashme_ smokecrime tapz onetap_ sprayNpray awpaholic
+entryguy lurkmaster rushB_ ctside_ midcontrol bananaking_ ramp_ apartment_ connector
+drop_ sitecheck tradeplease juiced_ peeky eco_merchant halfbuy savegod_ nadeking
+hazy_ sunny bluee_ redd1t_ grayfox_ jadee lime violetz cherryy_ peachy_ minty_
+Zyn_ Ari_ Kye_ Juno Nova_ Ezra_ Rhys_ Milo Arlo_ Ivo_ Kenzo_ Taro_ Yuki Hiro_ Ren_
+xyz_ qwerty_ asdf zxc 1337_ n00b l0l_ gg_wp ez4me_ ggwp noscope_ lag_ fps 144hz_
+cs2enjoyer goldnova_ silverlife faceitlvl3 premierpls dmonly retakeking aimlabsrat
 '''.split()
 
 
@@ -37,7 +39,7 @@ def _names(count, seed):
         if len(result) == count: break
         used.add(name.lower()); result.append(name)
     while len(result) < count:
-        name = rng.choice(HANDLES) + str(rng.randint(2, 999))
+        name = rng.choice(HANDLES).rstrip('_-') + rng.choice(('', '_', '.')) + str(rng.randint(1, 99))
         if name.lower() not in used:
             used.add(name.lower()); result.append(name)
     return result

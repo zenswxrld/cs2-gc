@@ -221,7 +221,7 @@ std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text)
 #define NUMBER_OPTION(name, low, high) if (key == #name) { target = &config.name; minimum = low; maximum = high; } else
         NUMBER_OPTION(armory_collection_slots, 0, 6)
         NUMBER_OPTION(armory_charm_slots, 0, 6)
-        NUMBER_OPTION(free_case_keys, 0, 1)
+        NUMBER_OPTION(free_case_keys, 0, 1) NUMBER_OPTION(skip_key_selection, 0, 1)
         NUMBER_OPTION(armory_sticker_slots, 0, 6)
         NUMBER_OPTION(armory_case_slots, 0, 6)
         NUMBER_OPTION(armory_capsule_slots, 0, 6)

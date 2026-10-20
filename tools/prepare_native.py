@@ -13,6 +13,7 @@ from native_item_sales import prepare as sales
 from native_endmatch import prepare as results
 from native_offer_numbers import prepare as offers
 from native_bot_names import prepare as bot_names
+from skip_key_select import prepare as key_select
 from native_resources import ensure_first_game_path
 from vpk_signatures import update as signatures
 
@@ -22,7 +23,7 @@ def prepare(directory):
     print('Recipes/catalogue: ' + recipes(directory, bool(config['mixed_stattrak_tradeups']), config), flush=True)
     for name, action in [('Armory', armory), ('Scoreboard', scoreboard), ('Store', store),
                          ('Opening confirmation', confirmation), ('Item sales', sales),
-                         ('Match results', results), ('Terminal offers', offers)]:
+                         ('Match results', results), ('Terminal offers', offers), ('Key picker', key_select)]:
         print(name + ': ' + action(directory, config), flush=True)
     try: print('Bot names: ' + bot_names(directory, config, reshuffle=True), flush=True)
     except (OSError, ValueError, KeyError) as error: print('Bot names skipped (bots keep their normal names): ' + str(error), flush=True)

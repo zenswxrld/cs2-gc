@@ -411,3 +411,7 @@ Full build-25966348 schema loaded successfully, all supplementary rare pools val
 - 17h: fake bot ping confirmed live but changed too fast; now it moves by at most 2 ms every 3-8 s and stays
   within 5 ms of the bot's base. Random names did NOT apply in the user's test (default names shown) - check the
   "Bot names" line of cs2_gc_prepare.log. The scoreboard shows "[BOT]" before bot names; not changed yet.
+- 17h: `skip_key_selection = 1` (new `skip_key_select.py`, folder `cs2_gc_open`) patches the user's
+  item_context_entries: Open on a local case (id 1e12..2e12) with exactly one chosen action item goes straight to
+  popup_capability_decodable with that key as tool_id (same settings the stock picker passes). Not verified live.
+  Bot names list replaced with realistic gamer handles.

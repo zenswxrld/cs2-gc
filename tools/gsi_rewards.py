@@ -27,6 +27,7 @@ from native_endmatch import prepare as prepare_endmatch
 from native_item_sales import prepare as prepare_item_sales
 from native_offer_numbers import prepare as prepare_offer_numbers
 from native_bot_names import prepare as prepare_bot_names
+from skip_key_select import prepare as prepare_key_select
 from native_resources import ensure_first_game_path
 from rewards_runtime import InstanceLock, ParentProcess, serve_until_parent_exits
 import contextlib
@@ -285,7 +286,8 @@ def run_with_parent(args, parent):
             print('Native container confirmation: ' + prepare_container_confirm(args.proxy_dir, rewards.config), flush=True)
         except (OSError, ValueError, KeyError) as error:
             print('Native container confirmation setup skipped: ' + str(error), flush=True)
-        for name, prepare in [('Native item sales', prepare_item_sales), ('Native match results', prepare_endmatch)]:
+        for name, prepare in [('Native item sales', prepare_item_sales), ('Native match results', prepare_endmatch),
+                              ('Native key picker skip', prepare_key_select)]:
             try:
                 print(name + ': ' + prepare(args.proxy_dir, rewards.config), flush=True)
             except (OSError, ValueError, KeyError) as error:

@@ -128,3 +128,9 @@ Also in build 09: terminal offers are labelled limit minus remaining (the stock 
 counted down); offer numbers use a new `cs2_gc_offers` override.
 What to look for after the second launch: the console.log top list should show `cs2_gc_*\pak01.vpk (vpk)` lines before
 `csgo\pak01.vpk`, plus the `cs2_gc scoreboard hook reached` and `cs2_gc armory rotation hook` lines.
+
+### Build 10: VPK format fix
+Build 09's single-file VPK made CS2 stop at start-up with "FATAL ERROR ... cs2_gc_offers\pak01.vpk Failed to load file
+(unexpected)". That proved the engine does mount a pak01 VPK from our folders. Build 10 copies the installed game's own
+layout (data in pak01_000.vpk, archive MD5 section, 48-byte other-MD5 section). If CS2 still will not start, run
+`cs2_gc_remove_vpks.cmd`; to switch VPK overrides off, run `cs2_gc_disable_vpks.cmd` (writes cs2_gc_no_vpk.txt).

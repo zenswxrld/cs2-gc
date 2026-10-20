@@ -1,6 +1,7 @@
 #include "cs2_gc/armory_catalog.h"
 #include "cs2_gc/message_queue.h"
 #include "cs2_gc/progression.h"
+#include "cs2_gc/schema.h"
 #include <array>
 #include <atomic>
 #include <iostream>
@@ -166,6 +167,88 @@ void Armory()
     Check(rejected, "duplicate catalogue IDs rejected");
 }
 
+
+// Synthetic fixture shaped like items_game.txt; not real game data.
+constexpr const char *SchemaFixture = R"("items_game"
+{
+    "prefabs"
+    {
+        "weapon_case_base" { "item_name" "#Base_Crate" }
+        "weapon_case" { "prefab" "weapon_case_base" "associated_item" "900" }
+        "weapon_case_souvenirpkg" { "prefab" "weapon_case_base" }
+        "sticker_capsule" { "prefab" "weapon_case_base" }
+    }
+    "items"
+    {
+        "900" { "name" "a_key" }
+        "901" // comment
+        {
+            "name" "case_one" "item_name" "#Case_One" "prefab" "weapon_case"
+            "attributes" { "set supply crate series" { "attribute_class" "supply_crate_series" "value" "5" } }
+        }
+        "902"
+        {
+            "name" "keyless" "item_name" "#Case_Two" "prefab" "weapon_case"
+            "associated_items" { "903" "1" }
+            "attributes" { "set supply crate series" { "value" "6" } }
+        }
+        "910"
+        {
+            "name" "souvenir" "prefab" "weapon_case_souvenirpkg"
+            "attributes" { "set supply crate series" { "value" "7" } }
+        }
+        "906" { "name" "capsule" "prefab" "sticker_capsule" "attributes" { "set supply crate series" { "value" "9" } } }
+        "911" { "name" "no_series" "prefab" "weapon_case" }
+    }
+    "items" { "905" { "name" "late" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "8" } } } }
+    "revolving_loot_lists" { "5" "case_one_lootlist" "6" "case_two_lootlist" }
+    "client_loot_lists"
+    {
+        "case_one_lootlist" { "case_one_rare" "1" "case_one_mythical" "1" "set_unusual_missing" "1" }
+        "case_one_rare" { "[kit_a]weapon_ak47" "1" "[kit_b]weapon_awp" "1" }
+        "case_one_mythical" { "[kit_c]weapon_m4a1" "1" }
+        "case_two_lootlist" { "case_two_lootlist" "1" }
+    }
+})";
+
+void KeyValuesParsing()
+{
+    auto root = ParseKeyValues("\xEF\xBB\xBF" "\"a\" { \"k\" \"v\\\"q\" \"k\" \"w\" \"n\" { } } // tail");
+    Check(root && root->Find("a") && root->Find("a")->Value("k") == "v\"q", "escaped value, first duplicate wins");
+    Check(root->Find("a")->children.size() == 3 && root->Find("a")->Find("n")->block, "duplicates kept");
+    Check(!ParseKeyValues("\"a\" {"), "unterminated block");
+    Check(!ParseKeyValues("\"a\" }"), "stray close");
+    Check(!ParseKeyValues("\"a\" \"b"), "unterminated string");
+    Check(!ParseKeyValues("{ }"), "block without key");
+    Check(!ParseKeyValues("\"a\""), "key without value");
+    Check(!ParseKeyValues("bare"), "unquoted token");
+    std::string deep;
+    for (int i = 0; i < 200; ++i) deep += "\"k\" {";
+    Check(!ParseKeyValues(deep), "depth limit");
+}
+
+void SchemaCrates()
+{
+    Check(!Schema::Load("\"other\" { }"), "needs items_game root");
+    const auto schema = Schema::Load(SchemaFixture);
+    Check(schema.has_value(), "fixture loads");
+    Check(schema->Crates().size() == 4, "souvenir and seriesless items excluded, repeated sections merged");
+    const CrateInfo *one = schema->FindCrate(901);
+    Check(one && one->keyDefIndex == 900 && one->series == 5 && one->nameToken == "Case_One", "prefab key and token");
+    Check(one->lootListName == "case_one_lootlist", "series resolves loot list");
+    const CrateInfo *two = schema->FindCrate(902);
+    Check(two && two->keyDefIndex == 903, "associated_items key");
+    Check(one->kind == CrateKind::Case && schema->FindCrate(906)->kind == CrateKind::Capsule, "kind from prefab chain");
+    Check(schema->FindCrate(905)->kind == CrateKind::Case, "prefab-inherited key makes a case");
+    Check(schema->FindCrate(905) && !schema->FindCrate(910) && !schema->FindCrate(1), "lookup");
+
+    const auto tiers = schema->LootTiers("case_one_lootlist");
+    Check(tiers.size() == 2 && tiers[0].name == "case_one_rare" && tiers[0].items.size() == 2, "tiers flattened");
+    Check(tiers[1].items.front() == "[kit_c]weapon_m4a1", "entries unexpanded");
+    Check(schema->LootTiers("case_two_lootlist").empty(), "cycle cut off");
+    Check(schema->LootTiers("missing").empty(), "unknown list");
+}
+
 int main()
 {
     try
@@ -174,6 +257,8 @@ int main()
         Queues(); std::cout << "PASS bounded Steam-style message queue\n";
         Progression(); std::cout << "PASS XP and star reward rules\n";
         Armory(); std::cout << "PASS Armory categories, search and pagination\n";
+        KeyValuesParsing(); std::cout << "PASS KeyValues parser and malformed input\n";
+        SchemaCrates(); std::cout << "PASS schema crates, keys and loot tiers\n";
         return 0;
     }
     catch (const std::exception &error)

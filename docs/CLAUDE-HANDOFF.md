@@ -1,3 +1,15 @@
+# Current handoff: Codex build 17 (21 October 2026 local time)
+
+Follow-up on the same PR #9 branch. User says Armory works but requested visual cleanup: removed the worded category tabs, enlarged/centered arrows/page number/countdown, balanced rows across pages, and pinned the limited offer on the landing page (retained on later pages). Interleaved offer types to keep the page balanced. Agent tile art now sits on the right; agent inspection has up to 8 named cards with its own pager, a smaller title and reserved purchase-bar space, rather than all 63 overlapping. Preview paging does not affect the random recruitment pool.
+
+User additionally requested terminals in the Armory. Added a separate `terminal` rotation slot, default 1 visible at 2 stars, generated from installed volatile terminal definitions (Genesis and Dead Hand in the inspected schema). C++ and native UI use matching counts; purchases grant a closed real terminal and reuse existing unsealing. `terminals_enabled=0` hides the slot. New configurable keys: `armory_terminal_slots`, `armory_terminal_price`. No schema item/loot definitions are created.
+
+Latest user confirmation: bottom Sell for Stars is correctly positioned. Graffiti is broken; user explicitly said to hold that for later. Do not claim graffiti is fixed. Stock XP animation and console log transport remain open. Keep the working pre-launch resource preparation from build 16.
+
+New layout and terminal offers still need target-client verification. See TEST-BUILD.md. Existing notes below are archival.
+
+---
+
 # Current handoff: Codex build 16 (20 October 2026)
 
 Follow-up on PR #9, branch `codex/armory-agents-weekly-drops-and-match-screens`. Full checklist: [TEST-BUILD.md](TEST-BUILD.md).

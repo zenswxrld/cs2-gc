@@ -1,4 +1,4 @@
-# Codex test build 2026-10-20-16
+# Codex test build 2026-10-20-17
 
 ## Install
 
@@ -13,7 +13,17 @@ Do not use the old launcher or start through Steam first when installing this up
 
 Selling pays stars; newer weekly-collection weapon drops arrive; hiding Open to Rent and skipping the opening confirmation work. The rewards/rating tab appears and shows rating changes. Existing mixed trade-ups, held skins, certificates and rotation were also reported working earlier. These paths are retained. The missing end-match cards and poor layout are separate from the successful inventory rewards.
 
-## Changes to check
+## Build 17 changes
+
+- Removes the worded category tabs. Larger 56×48 paging arrows, a larger page number and a 23px countdown sit together in a centered header.
+- Balances the currently rotating goods across pages so shorter rows do not repeat unchanged. The featured limited item is pinned on the first page and stays visible while paging. Types are interleaved so container offers do not crowd stickers off the first page.
+- Agent tile portraits move to the right of the title/cost. Agent inspection uses up to eight named cards per page, a smaller heading and its own pager; a lower-height viewport uses fewer rows. Space is reserved for the native purchase/confirmation bar. Browsing previews does not choose the random purchase outcome.
+- Adds a dedicated rotating terminal offer, 2 stars by default, using installed volatile-container definitions. The inspected schema contains Genesis and Dead Hand. It grants a closed terminal through the existing native purchase/open path; it does not roll its offers at redemption. Settings: `armory_terminal_slots=1`, `armory_terminal_price=2`. Setting `terminals_enabled=0` also removes it from rotation. The catalogue now contains 122 real goods.
+- User confirmed the native bottom Sell for Stars placement. Graffiti is reported broken and intentionally deferred at the user's request.
+
+Use the updated launcher after fully closing CS2, as above. New UI placement and terminal redemption need live testing. Paging/agent bounds and terminal rotation, star spending and unsealing have automated checks; the stock XP animation remains unresolved.
+
+## Earlier build 16 changes retained
 
 - **Pre-launch preparation:** fixes the logged Windows `Access is denied` errors when replacing `pak01_000.vpk`. Updates the client catalogue, Armory, scoreboard and results before those files can be mounted. This also addresses stale tiles attempting purchases that the newer coordinator correctly rejected.
 - **Sales menu:** removes Community Market sell/listing actions for local inventory items, and puts Sell for Stars at the bottom with a separator. The working native sale request and confirmation are retained.
@@ -33,8 +43,8 @@ Armory group counts and OfflineCS sale values remain in the gameplay config. Pri
 
 ## Test checklist
 
-1. Confirm `cs2_gc_prepare.log` ends with preparation complete and `cs2_gc_log.txt` identifies build `codex-20261020-16`.
-2. Check multiple Armory offers, all category buttons, page arrows, actual limited-item artwork and countdown. Buy a case, sticker, charm, capsule and agent; confirm each action matches its tile and spends the displayed stars.
+1. Confirm `cs2_gc_prepare.log` ends with preparation complete and `cs2_gc_log.txt` identifies build `codex-20261020-17`.
+2. Check both Armory arrows change the rows, the limited offer appears on page one, the centered countdown, and the paged agent preview. Buy a case, sticker, charm, capsule, terminal and agent; confirm each action matches its tile and spends the displayed stars.
 3. Right-click a spare item: Sell for Stars should be last, Community Market sell absent. Cancel once, then sell and confirm the saved balance.
 4. Check bots have varied ratings; win/loss changes your rating without moving their already-assigned values.
 5. Finish a local competitive match. Check the centered results card, profile level, drop images/names, and time to read them. The stock XP animation remains unresolved; this is the local results tab.
@@ -45,3 +55,9 @@ Armory group counts and OfflineCS sale values remain in the gameplay config. Pri
 15 automated suites pass, including cached bot ratings, category paging/countdown, sale confirmation, acknowledged drop-card retention, music IDs/StatTrak, old-offer migration and save/reload. The preparation pipeline was exercised twice against inspected native scripts packed as version-2 resources: all updated overrides were built before launch, read back from their VPKs, syntax-checked, and remained byte-identical on the second pass. Windows x64 debug and release cross-builds pass. New target-client behavior still requires the checklist above.
 
 Console echo-to-log transport for the testing commands remains unresolved in the last live logs. No change here claims to fix it. Terminal monetary-cap semantics and stock XP animation are also outside this update.
+
+## Reset local inventory and progression
+
+Fully close CS2 and the rewards helper. Move these files from `game/bin/win64` into a backup folder: `cs2_gc_inventory.txt`, `cs2_gc_gsi_state.json`, `cs2_gc_rewards.txt`, `cs2_gc_matches.txt`, `cs2_gc_premier.txt`, `cs2_gc_console.txt` and `cs2_gc_console_boot.txt`. Missing files are fine. Restart using the launcher; local saves are recreated as the helper starts and the inventory saves. Resetting only the inventory can reapply old cumulative rewards.
+
+Keep your configs, schema and replay folder. A fresh inventory uses the starting `armory_credits` from `cs2_gc.cfg`; set it to 0 if you want zero starting stars. Set `premier_bonus_wins=0` in `cs2_gc_gameplay.cfg` to avoid granting test placement wins again. Default profile progression starts at level 1, 0 XP.

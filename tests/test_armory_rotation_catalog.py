@@ -13,6 +13,7 @@ import rotate_armory
 from inventory_item import collect, parse
 
 SCHEMA = '''"items_game" {
+ "prefabs" { "weapon_case_selfopening_collection" { "prefab" "weapon_case_base" } "volatile_pricing" {} }
  "items" {
   "1" { "name" "crate_a" "prefab" "weapon_case_base" "associated_item" "3"
     "attributes" { "set supply crate series" { "value" "1" } } }
@@ -23,6 +24,7 @@ SCHEMA = '''"items_game" {
   "5" { "name" "crate_sticker_pack_stockh2021_legends" }
   "6" { "name" "crate_sticker_pack_not_curated" }
   "7" { "name" "coupon - crate_sticker_pack_kat2014_01" }
+  "8" { "name" "crate_terminal_test" "prefab" "volatile_pricing weapon_case_selfopening_collection" }
  }
  "client_loot_lists" {
   "set_spy_tech" { "weapon_test" "1" }
@@ -51,12 +53,14 @@ class ArmoryRotation(unittest.TestCase):
         self.assertEqual(old['client_loot_lists'], new['client_loot_lists'])
         campaign = native_tradeups.parse(changed).one('items_game').one('seasonaloperations').one('11')
         self.assertEqual(campaign.text('metadata'), 'keep')
-        self.assertEqual(set(slots.values()), {'case', 'capsule', 'charm', 'sticker', 'collection', 'limited'})
+        self.assertEqual(set(slots.values()), {'case', 'capsule', 'charm', 'sticker', 'collection', 'limited', 'terminal'})
         self.assertEqual({k for k, v in slots.items() if v == 'capsule'},
                          {'crate_sticker_pack_kat2014_01', 'crate_sticker_pack_stockh2021_legends'})
         self.assertEqual({k for k, v in slots.items() if v == 'charm'},
                          {'lootlist:keychain_pack_a_lootlist', 'lootlist:keychain_pack_b_lootlist'})
         self.assertNotIn('lootlist:set_unrelated', slots)
+        self.assertEqual({k for k,v in slots.items() if v=='terminal'}, {'crate_terminal_test'})
+        self.assertNotIn('crate_terminal_test', catalog.catalogue(SCHEMA,dict(gameplay_config.DEFAULTS,terminals_enabled=0)))
         self.assertEqual(catalog.patch_catalogue(changed, gameplay_config.DEFAULTS)[1], slots)
         disabled = dict(gameplay_config.DEFAULTS, armory_howl_enabled=0)
         self.assertNotIn('lootlist:removed_items', catalog.catalogue(SCHEMA, disabled))
@@ -145,15 +149,61 @@ m_localRotationItems.forEach(e=>panel(e.item_name));
 _LocalRotationRefresh();
 assert.equal(nodes['cs2gc-page-number'].text,'1 / 2');
 assert.equal(m_localRotationActive.length,7);
-assert.equal(m_localRotationItems.filter(e=>nodes[e.item_name].visible).length,6);
+assert.equal(m_localRotationItems.filter(e=>nodes[e.item_name].visible).length,5);
+assert.equal(nodes.limited.visible,true);
+const oldTop=m_localRotationItems.filter(e=>e.item_name!=='limited'&&nodes[e.item_name].visible).map(e=>e.item_name);
 nodes['cs2gc-page-next'].activate();
 assert.equal(nodes['cs2gc-page-number'].text,'2 / 2');
 assert.equal(nodes.limited.visible,true);
-nodes['cs2gc-category-capsule'].activate();
-assert.equal(nodes.capsule.visible,true);assert.equal(nodes.charm.visible,false);
-assert.equal(nodes['cs2gc-page-number'].text,'1 / 1');
+oldTop.forEach(name=>assert.equal(nodes[name].visible,false));
+assert.equal(nodes['cs2gc-category-capsule'],undefined);
+assert.equal(nodes['cs2gc-paging-controls'].style.horizontalAlign,'center');
+assert.equal(nodes['cs2gc-page-next'].style.width,'56px');
+assert.equal(nodes['cs2gc-armory-clock'].style.fontSize,'23px');
+nodes['cs2gc-page-next'].activate();
+assert.equal(nodes['cs2gc-page-number'].text,'1 / 2');
+assert.equal(nodes.limited.visible,true);
 assert.equal(nodes['cs2gc-armory-clock'].text,'Armory refresh: 15:00');
-assert.equal(rows.style.marginTop,'44px');
+assert.equal(rows.style.marginTop,'60px');
+'''
+        result=subprocess.run(['node','-e',script],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+    @unittest.skipUnless(shutil.which('node'), 'Node required for agent preview fixture')
+    def test_agent_pages_fit_above_purchase_bar_and_cover_every_agent(self):
+        import json
+        script = '''const assert=require('assert'), nodes={};
+function panel(id,parent){
+ const data={}, children=[];
+ const p={id,style:{},visible:true,Data:()=>data,Children:()=>children,
+ FindChildInLayoutFile:id=>nodes[id]||null,SetPanelEvent:(event,fn)=>p.activate=fn};
+ if(id)nodes[id]=p; if(parent)parent.Children().push(p); return p;
+}
+const root=panel('root'); root.FindChildInLayoutFile=()=>null;
+const m_elContentPanel=root;
+const $={CreatePanel:(type,parent,id,props)=>panel(id,parent)};
+''' + rotate_armory.INSERT.replace('__SETTINGS__',json.dumps({})) + '''
+const container=panel('agents'); container.actuallayoutwidth=1200;container.actuallayoutheight=720;
+container.actualuiscale_x=container.actualuiscale_y=1;
+const cards=Array.from({length:63},(_,i)=>{const p=panel('agent'+i,container);p.Data().localAgentPreview=true;return p;});
+const seen=[];
+for(let page=0;page<8;page++){
+ container.Data().localAgentPage=page;
+ _LocalPlaceAgentTiles(container,{item_name:'agents'});
+ const visible=cards.filter(p=>p.visible);
+ assert.ok(visible.length<=8 && visible.length>0);
+ const pagerTop=parseFloat(nodes['cs2gc-agent-pages'].style.y);
+ visible.forEach(p=>{
+  assert.ok(parseFloat(p.style.y)+parseFloat(p.style.height)<=pagerTop-15);
+  seen.push(p.id);
+ });
+}
+assert.equal(seen.length,63);assert.equal(new Set(seen).size,63);
+nodes['cs2gc-agent-next'].activate();assert.equal(container.Data().localAgentPage,0);
+assert.equal(nodes['cs2gc-agent-page-number'].text,'1–8 / 63');
+// A smaller viewport uses fewer rows rather than spilling over the purchase bar.
+container.actuallayoutheight=560;_LocalPlaceAgentTiles(container,{item_name:'agents'});
+assert.equal(cards.filter(p=>p.visible).length,4);
 '''
         result=subprocess.run(['node','-e',script],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)

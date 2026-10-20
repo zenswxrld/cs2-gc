@@ -16,6 +16,8 @@ struct GameplayConfig
     std::uint32_t armory_limited_slots{1};
     std::uint32_t armory_agent_slots{1};
     std::uint32_t armory_agent_price{50};
+    std::uint32_t armory_terminal_slots{1};
+    std::uint32_t armory_terminal_price{2};
     std::uint32_t match_weekly_pool_only{1};
     std::uint32_t item_sales_enabled{1};
     std::uint32_t sell_consumer{1};

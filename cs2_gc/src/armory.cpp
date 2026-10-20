@@ -195,7 +195,8 @@ Armory::Rotation Armory::RotationAt(std::uint64_t unixSeconds, const GameplayCon
             const auto wanted = slot == "collection" ? config.armory_collection_slots :
                 slot == "charm" ? config.armory_charm_slots : slot == "sticker" ? config.armory_sticker_slots :
                 slot == "case" ? config.armory_case_slots : slot == "capsule" ? config.armory_capsule_slots :
-                slot == "limited" ? config.armory_limited_slots : slot == "agent" ? config.armory_agent_slots : 0u;
+                slot == "limited" ? config.armory_limited_slots : slot == "agent" ? config.armory_agent_slots :
+                slot == "terminal" && config.terminals_enabled ? config.armory_terminal_slots : 0u;
             const auto count = std::min<std::size_t>(wanted, entries.size());
             const auto start = ((cycle % entries.size()) * count) % entries.size();
             for (std::size_t i = 0; i < count; ++i) result.redeemIds.push_back(entries[(start + i) % entries.size()]->redeemId);

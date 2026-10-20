@@ -15,11 +15,11 @@ qualities and disable their duplicate StatTrak recipes; do not edit original ite
 paint-kit, collection or case definitions. Additional user-authorised exception:
 generate native Armory catalogue rows referencing existing official items and
 loot lists, for per-category rotation of Armory collections, charms, stickers,
-limited items, cases, curated capsules and official tradable agents. Do not create
+limited items, cases, terminals, curated capsules and official tradable agents. Do not create
 or alter item/loot-list definitions. Load the same generated catalogue in the client and local GC.
 Back up gameinfo.gi before adding the
-owned native search path and preserve other addons. The store must live in CS2's native Armory page, with category tabs
-and pagination for the catalogue. Do not bring back the legacy Riptide store.
+owned native search path and preserve other addons. The store must live in CS2's native Armory page with arrow pagination for the
+catalogue. The user requested removing the text category tabs on 20 October 2026. Do not bring back the legacy Riptide store.
 Do not claim the Armory UI works until mounted and verified in the target client.
 
 Build and test with:

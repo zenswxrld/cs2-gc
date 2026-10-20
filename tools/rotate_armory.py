@@ -1,7 +1,6 @@
 """Prepare the installed native Armory script for matching per-category rotation."""
 import argparse
 import json
-import re
 from pathlib import Path
 from gameplay_config import load
 
@@ -10,71 +9,148 @@ END = '''            _MakeNavButton(element);
         });'''
 INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_gc_gameplay.cfg.
     const m_localRotation = __SETTINGS__;
-    let m_localCategory = 'all';
     let m_localPage = 0;
-    let m_localViewKey = '';
     function _LocalCatalogueControls() {
         const root = $.GetContextPanel();
         let bar = m_elContentPanel.FindChildInLayoutFile('cs2gc-category-bar');
         if (bar) return;
         bar = $.CreatePanel('Panel', m_elContentPanel, 'cs2gc-category-bar');
-        bar.style.width = '100%'; bar.style.height = '40px';
-        bar.style.flowChildren = 'right'; bar.style.verticalAlign = 'top';
-        const categories = [['all','ALL'],['collection','COLLECTIONS'],['charm','CHARMS'],['sticker','STICKERS'],
-            ['case','CASES'],['capsule','CAPSULES'],['limited','LIMITED'],['agent','AGENTS']];
-        categories.forEach(pair => {
-            const button = $.CreatePanel('Button', bar, 'cs2gc-category-' + pair[0]);
-            button.style.padding = '8px 12px'; button.style.marginRight = '4px';
-            const label = $.CreatePanel('Label', button, '', {text:pair[1]});
-            label.style.fontSize = '17px'; label.style.fontFamily = 'Stratum2 Bold'; label.style.color = '#d9eeee';
+        bar.style.width = '100%'; bar.style.height = '56px';
+        bar.style.flowChildren = 'none'; bar.style.verticalAlign = 'top';
+        const controls = $.CreatePanel('Panel', bar, 'cs2gc-paging-controls');
+        controls.style.width = 'fit-children'; controls.style.height = '52px';
+        controls.style.horizontalAlign = 'center'; controls.style.verticalAlign = 'center';
+        controls.style.flowChildren = 'right';
+        ['previous','page','next','clock'].forEach(kind => {
+            if (kind === 'page' || kind === 'clock') {
+                const label = $.CreatePanel('Label', controls, kind === 'page' ? 'cs2gc-page-number' : 'cs2gc-armory-clock');
+                label.style.width = kind === 'page' ? '84px' : '268px';
+                label.style.fontSize = '23px'; label.style.fontFamily = 'Stratum2 Bold';
+                label.style.textAlign = 'center'; label.style.verticalAlign = 'center';
+                label.style.color = kind === 'clock' ? '#e8d8a0' : '#d8eeee';
+                if (kind === 'clock') label.style.marginLeft = '22px';
+                return;
+            }
+            const button = $.CreatePanel('Button', controls, 'cs2gc-page-' + kind);
+            button.style.width = '56px'; button.style.height = '48px';
+            button.style.backgroundColor = '#2b5c60dd'; button.style.border = '1px solid #608e8e88';
+            const label = $.CreatePanel('Label', button, '', {text:kind === 'previous' ? '<' : '>'});
+            label.style.fontSize = '34px'; label.style.color = '#ffffff';
+            label.style.horizontalAlign = 'center'; label.style.verticalAlign = 'center';
             button.SetPanelEvent('onactivate', () => {
-                m_localCategory = pair[0]; m_localPage = 0;
+                m_localPage += kind === 'previous' ? -1 : 1;
                 m_elContentPanel.SetHasClass('xpshop-grids-visible', false);
                 _LocalRotationRefresh();
             });
         });
-        [['previous','<',-1],['next','>',1]].forEach(action => {
-            const button = $.CreatePanel('Button', bar, 'cs2gc-page-' + action[0]);
-            button.style.padding = '8px 12px';
-            const label = $.CreatePanel('Label', button, '', {text:action[1]});
-            label.style.fontSize = '18px'; label.style.color = '#ffffff';
-            button.SetPanelEvent('onactivate', () => {m_localPage += action[2]; _LocalRotationRefresh();});
-        });
-        const page = $.CreatePanel('Label', bar, 'cs2gc-page-number');
-        page.style.fontSize = '17px'; page.style.padding = '8px'; page.style.color = '#b8d3cc';
-        const clock = $.CreatePanel('Label', bar, 'cs2gc-armory-clock');
-        clock.style.fontSize = '17px'; clock.style.padding = '8px'; clock.style.color = '#e8d8a0';
         const row = m_elContentPanel.FindChildInLayoutFile('id-xpshop-row-1');
-        if (row) {row.GetParent().style.marginTop = '44px'; row.GetParent().style.height = '94%';}
-        $.Msg('cs2_gc Armory build 16: category controls mounted');
+        if (row) {row.GetParent().style.marginTop = '60px'; row.GetParent().style.height = '92%';}
+        $.Msg('cs2_gc Armory build 17: centered arrow controls mounted');
     }
     function _LocalCataloguePage(entries, active) {
+        const offers = entries.filter(e => active.indexOf(e.item_name) !== -1);
+        // The limited feature remains on the landing page while other offers page.
+        const featured = offers.filter(e => m_localRotation.categories[e.item_name] === 'limited').slice(0, 1);
         const groups = {};
-        entries.filter(e => active.indexOf(e.item_name) !== -1 && (m_localCategory === 'all' ||
-            m_localRotation.categories[e.item_name] === m_localCategory)).forEach(e => {
-                const row = e.ui_order || '3'; (groups[row] || (groups[row] = [])).push(e);
-            });
-        const capacity = {'1':4,'2':3,'3':4};
-        const pages = Math.max(1, ...Object.keys(groups).map(row => Math.ceil(groups[row].length / (capacity[row] || 4))));
-        m_localPage = (m_localPage % pages + pages) % pages;
-        const view = [];
+        offers.filter(e => featured.indexOf(e) === -1).forEach(e => {
+            const row = e.ui_order || '3'; (groups[row] || (groups[row] = [])).push(e);
+        });
         Object.keys(groups).forEach(row => {
-            const count = capacity[row] || 4;
-            // Rows with fewer pages retain their offers while longer rows page.
-            const page = m_localPage % Math.ceil(groups[row].length / count);
-            groups[row].slice(page * count, (page + 1) * count).forEach(e => view.push(e.item_name));
+            const types = {};
+            groups[row].forEach(entry => {
+                const kind = m_localRotation.categories[entry.item_name] || 'other';
+                (types[kind] || (types[kind] = [])).push(entry);
+            });
+            const kinds = Object.keys(types).sort(), ordered = [];
+            const length = Math.max(...kinds.map(kind => types[kind].length));
+            for (let index = 0; index < length; ++index)
+                kinds.forEach(kind => {if (types[kind][index]) ordered.push(types[kind][index]);});
+            groups[row] = ordered;
+        });
+        const capacity = {'1':4,'2':3,'3':4};
+        const budget = row => Math.max(1, (capacity[row] || 4) - featured.filter(e => (e.ui_order || '3') === row).length);
+        const pages = Math.max(1, ...Object.keys(groups).map(row => Math.ceil(groups[row].length / budget(row))));
+        m_localPage = (m_localPage % pages + pages) % pages;
+        const view = featured.map(e => e.item_name);
+        Object.keys(groups).forEach(row => {
+            // Balance each row across the same pages instead of repeating short rows.
+            const count = Math.min(budget(row), Math.ceil(groups[row].length / pages));
+            groups[row].slice(m_localPage * count, (m_localPage + 1) * count).forEach(e => view.push(e.item_name));
         });
         const bar = m_elContentPanel.FindChildInLayoutFile('cs2gc-category-bar');
         if (bar) {
             bar.FindChildInLayoutFile('cs2gc-page-number').text = (m_localPage + 1) + ' / ' + pages;
             bar.FindChildInLayoutFile('cs2gc-page-previous').enabled = pages > 1;
             bar.FindChildInLayoutFile('cs2gc-page-next').enabled = pages > 1;
-            ['all','collection','charm','sticker','case','capsule','limited','agent'].forEach(category => {
-                const button = bar.FindChildInLayoutFile('cs2gc-category-' + category);
-                button.style.backgroundColor = m_localCategory === category ? '#347e7dbb' : '#173432bb';
-            });
+
         }
         return view;
+    }
+    function _LocalPlaceAgentTiles(container, entry) {
+        const width = Math.floor(container.actuallayoutwidth / container.actualuiscale_x);
+        const height = Math.floor(container.actuallayoutheight / container.actualuiscale_y) - 112; // reserve native purchase bar
+        if (width <= 0 || height <= 0) return;
+        const cards = container.Children().filter(panel => panel.Data().localAgentPreview);
+        const columns = Math.min(4, Math.max(1, Math.floor(width / 228)));
+        const areaHeight = Math.max(80, height - 174);
+        const rows = Math.min(2, Math.max(1, Math.floor((areaHeight + 16) / 224)));
+        const cardWidth = Math.min(212, Math.floor(width / columns) - 16);
+        const cardHeight = Math.min(208, areaHeight);
+        const capacity = columns * rows;
+        const pages = Math.max(1, Math.ceil(cards.length / capacity));
+        const data = container.Data();
+        data.localAgentPage = ((data.localAgentPage || 0) % pages + pages) % pages;
+        const first = data.localAgentPage * capacity;
+        const visibleCount = Math.min(capacity, cards.length - first);
+        const usedColumns = Math.min(columns, visibleCount);
+        const usedRows = Math.ceil(visibleCount / columns);
+        const left = (width - usedColumns * (cardWidth + 16) + 16) / 2;
+        const top = 110 + Math.max(0, (areaHeight - usedRows * (cardHeight + 16) + 16) / 2);
+        container.style.overflow = 'clip';
+        cards.forEach((panel, index) => {
+            const local = index - first;
+            panel.visible = local >= 0 && local < capacity;
+            if (!panel.visible) return;
+            panel.style.width = cardWidth + 'px'; panel.style.height = cardHeight + 'px';
+            panel.style.x = left + local % columns * (cardWidth + 16) + 'px';
+            panel.style.y = top + Math.floor(local / columns) * (cardHeight + 16) + 'px';
+        });
+        let pager = container.FindChildInLayoutFile('cs2gc-agent-pages');
+        if (!pager) {
+            pager = $.CreatePanel('Panel', container, 'cs2gc-agent-pages');
+            pager.style.width = '300px'; pager.style.height = '44px'; pager.style.flowChildren = 'right';
+            ['previous','label','next'].forEach(kind => {
+                if (kind === 'label') {
+                    const label = $.CreatePanel('Label', pager, 'cs2gc-agent-page-number');
+                    label.style.width = '204px'; label.style.fontSize = '20px';
+                    label.style.textAlign = 'center'; label.style.verticalAlign = 'center'; label.style.color = '#d5e7e7';
+                    return;
+                }
+                const button = $.CreatePanel('Button', pager, 'cs2gc-agent-' + kind);
+                button.style.width = '48px'; button.style.height = '44px'; button.style.backgroundColor = '#315c60dd';
+                const label = $.CreatePanel('Label', button, '', {text:kind === 'previous' ? '<' : '>'});
+                label.style.fontSize = '30px'; label.style.color = '#ffffff';
+                label.style.horizontalAlign = 'center'; label.style.verticalAlign = 'center';
+                button.SetPanelEvent('onactivate', () => {
+                    data.localAgentPage += kind === 'previous' ? -1 : 1;
+                    _LocalPlaceAgentTiles(container, entry);
+                });
+            });
+        }
+        pager.style.x = (width - 300) / 2 + 'px'; pager.style.y = height - 48 + 'px';
+        pager.FindChildInLayoutFile('cs2gc-agent-page-number').text = (first + 1) + '–' + (first + visibleCount) + ' / ' + cards.length;
+        pager.FindChildInLayoutFile('cs2gc-agent-previous').enabled = pages > 1;
+        pager.FindChildInLayoutFile('cs2gc-agent-next').enabled = pages > 1;
+        const grid = m_elContentPanel.FindChildInLayoutFile(entry.item_name + '-grid');
+        if (grid) {
+            grid.FindChildrenWithClassTraverse('xpshop__inspect-grid__title').forEach(title => {
+                title.style.fontSize = '32px'; title.style.letterSpacing = '2px';
+                title.style.marginTop = '64px'; title.style.height = '38px'; title.style.color = '#d6ecec';
+            });
+            grid.SetDialogVariable('use-text', 'Recruit a random agent');
+            grid.SetDialogVariable('desc-text', 'One random agent from the pool below.');
+            grid.SetDialogVariable('confirm-text', 'Recruit one random agent?');
+        }
     }
     let m_localRotationItems = [];
     let m_localRotationTick;
@@ -120,6 +196,17 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
             const nav = root.FindChildInLayoutFile(entry.item_name + '-nav');
             if (tile) {
                 tile.visible = show;
+                if (show && entry.local_agent) {
+                    const portraits = tile.FindChildInLayoutFile('id-xpshop-tile-carousel');
+                    if (portraits) {
+                        portraits.style.width = '55%'; portraits.style.horizontalAlign = 'right';
+                        portraits.style.marginRight = '12px'; portraits.hittest = false; portraits.hittestchildren = false;
+                        portraits.Children().forEach(image => {
+                            image.style.width = '100%'; image.style.height = '100%';
+                            image.style.horizontalAlign = 'right'; image.hittest = false;
+                        });
+                    }
+                }
                 if (show && m_localRotation.categories[entry.item_name] === 'limited') {
                     const oldArt = tile.FindChildTraverse('id-xpshop-limited-item-carousel');
                     if (oldArt) oldArt.visible = false;
@@ -168,6 +255,7 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
 PREPARE = '''        // Resolve each tile from its own native row, without inherited thumbnails or shared model artwork.
         aShopItemsData.forEach(entry => {
             const slot = m_localRotation.categories[entry.item_name];
+            entry.local_terminal = slot === 'terminal';
             if (slot === 'agent') {
                 entry.lootlist = m_localRotation.agents.map(name => InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
                     InventoryAPI.GetItemDefinitionIndexFromDefinitionName(name), 0));
@@ -195,13 +283,22 @@ def patch_previews(source):
     create = "    function CreateShopTile(elTilesContainer, itemId, ShopEntry) {"
     agent = '''
         if (ShopEntry.local_agent) {
-            const panel = $.CreatePanel('Panel', elTilesContainer, itemId, {class:'xpshop__inspect-grid__tile'});
-            panel.style.width = '160px'; panel.style.height = '160px';
-            $.CreatePanel('ItemImage', panel, '', {itemid:itemId, style:'width:100%;height:100%;'});
-            MakeShopTileInfoElements(panel, itemId, ShopEntry);
+            const panel = $.CreatePanel('Panel', elTilesContainer, itemId);
+            panel.Data().localAgentPreview = true;
+            panel.style.width = '212px'; panel.style.height = '222px'; panel.style.flowChildren = 'down';
+            panel.style.backgroundColor = '#18343be8'; panel.style.border = '1px solid #59818466';
+            const portrait = $.CreatePanel('ItemImage', panel, '', {itemid:itemId});
+            portrait.style.width = '100%'; portrait.style.height = '76%'; portrait.hittest = false;
+            const name = $.CreatePanel('Label', panel, '', {text:InventoryAPI.GetItemName(itemId)});
+            name.style.width = '100%'; name.style.height = '44px'; name.style.padding = '4px 8px';
+            name.style.fontSize = '16px'; name.style.textAlign = 'center'; name.style.color = '#e6efef';
             return panel;
         }'''
     source = source.replace(create, create + agent, 1)
+    source = source.replace("if (ShopEntry.entry_type !== 'crate') {", "if (ShopEntry.local_terminal || ShopEntry.entry_type !== 'crate') {", 1)
+    placement = '    function PlaceTiles(elTilesContainer, ShopEntry) {'
+    source = source.replace(placement, placement + "\n        if (ShopEntry.local_agent) { _LocalPlaceAgentTiles(elTilesContainer, ShopEntry); return; }", 1)
+
     source = source.replace('shuffledArray[iScrollingTile];', 'shuffledArray[iScrollingTile % shuffledArray.length];')
     # Rebind callbacks when stock UI reuses panels after a catalogue refresh.
     source = source.replace("        elTile.FindChildInLayoutFile('id-new-item-tag')", "        elTile.SetPanelEvent('onactivate', () => _UpdateInspectGrid(ShopEntry));\n        elTile.FindChildInLayoutFile('id-new-item-tag')", 1)
@@ -242,7 +339,7 @@ def patch(source, config, categories=None, agents=None):
                 'seconds': config['armory_rotation_seconds'], 'slots': config['armory_rotation_slots'],
                 'categories': categories or {}, 'agents': agents or [],
                 'counts': {slot: config.get('armory_' + slot + '_slots', 1) for slot in
-                           ('collection', 'case', 'capsule', 'charm', 'sticker', 'limited', 'agent')}}
+                           ('collection', 'case', 'capsule', 'charm', 'sticker', 'limited', 'agent', 'terminal')}}
     source = source.replace('    function _UpdateShopGoods(m_nTrack) {',
                             INSERT.replace('__SETTINGS__', json.dumps(settings)) + '    function _UpdateShopGoods(m_nTrack) {', 1)
     source = source.replace(ANCHOR, PREPARE + ANCHOR, 1) if categories else source

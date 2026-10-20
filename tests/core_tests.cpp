@@ -3785,10 +3785,43 @@ void MusicKitsAndCouponMigration()
     Check(musicAttribute,"native econ item carries the schema music id attribute");
 }
 
+void ArmoryTerminals()
+{
+    auto schema = Schema::Load(R"("items_game" {
+      "prefabs" { "weapon_case_base" {} "volatile_pricing" {}
+        "weapon_case_selfopening_collection" { "prefab" "weapon_case_base" } }
+      "items" {
+        "77" { "name" "crate_terminal_a" "prefab" "volatile_pricing weapon_case_selfopening_collection"
+          "attributes" { "set supply crate series" { "value" "1" } } }
+        "78" { "name" "crate_terminal_b" "prefab" "volatile_pricing weapon_case_selfopening_collection"
+          "attributes" { "set supply crate series" { "value" "2" } } } }
+      "seasonaloperations" { "11" { "redeemable_goods" "xpshop"
+        "operational_point_redeemable" { "item_name" "crate_terminal_a" "points" "2" "local_rotation_slot" "terminal" }
+        "operational_point_redeemable" { "item_name" "crate_terminal_b" "points" "2" "local_rotation_slot" "terminal" } } }
+    })");
+    Check(schema && schema->FindCrate(77)->kind == CrateKind::Terminal,"Armory fixture uses real terminal definitions");
+    GameplayConfig config; Armory shop(*schema,11,10);
+    const auto first=shop.RotationAt(0,config), next=shop.RotationAt(900,config);
+    Check(first.redeemIds.size()==1 && next.redeemIds.size()==1 && first.redeemIds!=next.redeemIds,
+          "dedicated terminal slot rotates independently");
+    Inventory saved; saved.SetGameplay(config); saved.SetArmoryCredits(10); LiveInventory live(saved);
+    RedeemRequest request; request.campaignId=11;request.expectedCost=2;request.redeemId=first.redeemIds[0];
+    const auto bought=shop.Redeem(request,live,[]{return 0ull;},{},0);
+    Check(bought.status==Armory::Status::Ok && bought.item.defIndex==77 && !bought.item.expiration &&
+          !bought.item.terminalRemaining && live.Items().ArmoryCredits()==8,
+          "two stars buy an unopened terminal rather than an offer or weapon");
+    OpenCrateRequest open; open.crateItemId=CustomItemIdBase+bought.item.id;
+    Check(live.AdvanceTerminal(*schema,open,[]{return 0ull;},100).has_value(),
+          "Armory terminal follows the existing native unseal path");
+    config.terminals_enabled=0;
+    Check(shop.RotationAt(0,config).redeemIds.empty(),"disabled terminals disappear from Armory rotation");
+}
+
 int main()
 {
     try
     {
+        ArmoryTerminals(); std::cout << "PASS terminal Armory offers\n";
         MusicKitsAndCouponMigration(); std::cout << "PASS music kits and coupon migration\n";
         WeeklyPoolAndItemSales(); std::cout << "PASS weekly pool and native item sales\n";
         NativeArmorySlotsAndConsoleStars(); std::cout << "PASS native Armory slots and console stars\n";

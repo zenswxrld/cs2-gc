@@ -32,12 +32,13 @@ def catalogue(source, config):
         raise ValueError('Expected the inspected native Armory campaign 11')
     goods = {}
     cases = {case[0] for case in find_case_items(sections)}
+    terminals = set(terminal_names(source))
 
     def add(name, slot, cost, template=None):
         if name in goods: return
         values = dict(template or {})
         values.update(item_name=name, points=str(cost), local_rotation_slot=slot)
-        values['ui_order'] = {'collection': '2', 'charm': '1', 'sticker': '3', 'case': '3', 'capsule': '3', 'limited': '2', 'agent': '1'}[slot]
+        values['ui_order'] = {'collection': '2', 'charm': '1', 'sticker': '3', 'case': '3', 'capsule': '3', 'limited': '2', 'agent': '1', 'terminal': '3'}[slot]
         values.pop('bidding_cycle', None)
         if slot == 'limited': values['limited_until'] = '2147483647'
         goods[name] = values
@@ -47,14 +48,16 @@ def catalogue(source, config):
         data = as_dict(value); name = data['item_name']
         if name == 'lootlist:removed_items' and not config['armory_howl_enabled']: continue
         if not all(isinstance(v, str) for v in data.values()): raise ValueError('Unknown nested Armory goods field')
-        if data.get('local_rotation_slot') in ('collection', 'charm', 'sticker', 'case', 'capsule', 'limited', 'agent'):
+        if data.get('local_rotation_slot') in ('collection', 'charm', 'sticker', 'case', 'capsule', 'limited', 'agent', 'terminal'):
             slot = data['local_rotation_slot']
         elif name.startswith('lootlist:keychain_pack_'): slot = 'charm'
         elif name.startswith('lootlist:sticker_pack_'): slot = 'sticker'
         elif name.startswith('lootlist:set_xpshop_wpn_') or data.get('limited_until'): slot = 'limited'
         elif name.startswith('lootlist:'): slot = 'collection'
+        elif name in terminals: slot = 'terminal'
         elif name in cases: slot = 'case'
         else: raise ValueError('Unclassified native Armory good: ' + name)
+        if slot == 'terminal' and not config['terminals_enabled']: continue
         add(name, slot, int(data['points']), data)
     templates = {v['local_rotation_slot']: v for v in goods.values()}
 
@@ -77,6 +80,8 @@ def catalogue(source, config):
         if name.startswith('keychain_pack_') and name.endswith('_lootlist'): loot(name, 'charm', 3)
         if name.startswith('sticker_pack_') and name.endswith('_lootlist'): loot(name, 'sticker', 1)
     for name in sorted(cases): add(name, 'case', 2, {'flags': '2'})
+    if config['terminals_enabled']:
+        for name in sorted(terminals): add(name, 'terminal', config['armory_terminal_price'])
     wanted = set(COMMUNITY_CAPSULES)
     wanted.update('crate_sticker_pack_' + event + '_' + group for event in TOURNAMENTS for group in TOURNAMENT_GROUPS)
     for name in sorted(wanted & items.keys()): add(name, 'capsule', 1)
@@ -130,3 +135,18 @@ def agent_names(source):
     return sorted(as_dict(node)['name'] for node in sections.get('items', {}).values() if isinstance(node, list)
                   and resolve(node, 'flexible_loadout_category') == 'customplayer'
                   and resolve(node, 'item_quality') == 'unique' and resolve(node, 'model_player'))
+
+
+def terminal_names(source):
+    sections = collect(parse(source))
+    prefabs = sections.get('prefabs', {})
+    def chain(node, depth=0):
+        names = set(as_dict(node).get('prefab', '').split())
+        if depth < 8:
+            for name in list(names):
+                if name in prefabs: names |= chain(prefabs[name], depth + 1)
+        return names
+    return sorted(as_dict(node)['name'] for node in sections.get('items', {}).values()
+                  if isinstance(node, list) and as_dict(node).get('name', '').startswith('crate_')
+                  and 'weapon_case_selfopening_collection' in chain(node)
+                  and any('volatile_pricing' in name for name in chain(node)))

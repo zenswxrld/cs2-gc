@@ -290,6 +290,11 @@ def run_with_parent(args, parent):
             print('Native write-path placeholder: ' + ensure_first_game_path(args.proxy_dir), flush=True)
         except (OSError, ValueError, KeyError) as error:
             print('Native write-path placeholder setup skipped: ' + str(error), flush=True)
+        try:
+            from vpk_pack import status as vpk_status
+            print('Native VPK overrides: ' + vpk_status(args.proxy_dir), flush=True)
+        except OSError as error:
+            print('Native VPK overrides: status unavailable: ' + str(error), flush=True)
         server.RequestHandlerClass = handler_for(rewards)
         if args.cfg_dir and rewards.config['premier_enabled']:
             difficulty_path = args.cfg_dir / 'cs2_gc_premier_bots.cfg'

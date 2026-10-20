@@ -45,6 +45,10 @@ class VpkPack(unittest.TestCase):
             self.assertFalse((mod / 'pak01_dir.vpk').exists() or (mod / 'pak01_000.vpk').exists())
             self.assertFalse(vpk_pack.pack(mod))
             self.assertTrue((mod / 'scripts/a.txt').exists())
+            self.assertTrue(vpk_pack.status(game / 'bin/win64').startswith('OFF'))
+            (game / 'bin/win64' / vpk_pack.KILL_SWITCH).unlink()
+            vpk_pack.pack(mod)
+            self.assertIn('cs2_gc_native', vpk_pack.status(game / 'bin/win64'))
 
 
 if __name__ == '__main__':

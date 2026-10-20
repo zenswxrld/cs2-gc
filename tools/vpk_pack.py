@@ -91,3 +91,13 @@ def pack(folder):
     _write(archive_path, archive)
     _write(directory_path, directory)
     return True
+
+
+def status(proxy_directory):
+    """One line for the rewards log: kill switch state and which override folders hold a VPK."""
+    proxy = Path(proxy_directory).resolve()
+    game = proxy.parent.parent
+    if (proxy / KILL_SWITCH).exists():
+        return 'OFF (' + KILL_SWITCH + ' exists beside the DLL; delete it to turn VPK overrides on)'
+    folders = sorted(path.name for path in game.glob('cs2_gc_*') if (path / 'pak01_dir.vpk').is_file())
+    return ('on; VPKs present in ' + ', '.join(folders)) if folders else 'on; no override VPKs written yet'

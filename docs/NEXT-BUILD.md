@@ -17,6 +17,7 @@ run in the live client yet; the checklist is how we find out.
 - **Console-control diagnostics** (`tools/console_controls.py`): the helper now logs which `console.log` it watches, warns
   if that file never appears, and warns if it sees a command line with a different launch code. This does not fix the
   commands; it tells us why they fail.
+- **Terminal Store sheet decode** (`tools/price_sheet.py`): see F.
 - Regenerated the proxy export list from your original `steam_api64.dll` (1,046 exports, with the two bot-server
   exports intercepted). **The DLL and the helper files must be updated together**: the proxy rejects a gameplay config
   containing a key it does not know.
@@ -66,8 +67,13 @@ is the plain default. To see what the server actually holds:
 This one output decides what we fix next.
 
 ### F. Terminal Buy
-Still failing with `Native terminal Store setup skipped: Corrupt input data`. Send `cs2_gc_replay/2501.bin` (price data,
-no account data) plus both logs. Our decoder opened all three older recordings we have, so we need the current file.
+The cause of `Native terminal Store setup skipped: Corrupt input data` is fixed (the real `2501.bin` was received and
+decodes; the stream states its size **and** ends with an end-of-data marker, which older liblzma builds, such as some
+bundled with Windows Python, reject; the decoder now tries the other header forms and a raw decode).
+1. `cs2_gc_rewards.log` should now say `Native terminal Store: ready: 2 missing terminal Store definitions added`.
+2. Open a terminal's offer on the native laptop and press Buy. Send `cs2_gc_log.txt`: a `StorePurchaseInit` (2510) with
+   `supplemental_data` means the Store accepted the request; if there is no 2510 at all the Store sheet is still not being
+   used (tell us what the Store page showed).
 
 ### G. Quick regression (from build 20)
 Ten-skin trade-up; five-Covert gold contract; sticker and charm on the C4; sticker scrape/removal; Sticker Slab; storage

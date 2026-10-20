@@ -78,14 +78,36 @@ def write_field(number, wire, value):
 
 
 # ---- LZMA container: "LZMA", unpacked size, packed size, 5 property bytes, raw stream ----
+UNKNOWN_SIZE = 0xFFFFFFFFFFFFFFFF
+
+
 def decompress(container):
     if container[:4] != LZMA_MAGIC or len(container) < 17:
         raise ValueError("not an LZMA container")
     unpacked, packed = struct.unpack_from("<II", container, 4)
     if 17 + packed > len(container) or unpacked > 64 * 1024 * 1024:
         raise ValueError("container sizes are implausible")
-    alone = container[12:17] + struct.pack("<Q", unpacked) + container[17:17 + packed]
-    out = lzma.decompress(alone, format=lzma.FORMAT_ALONE)
+    properties, stream = container[12:17], container[17:17 + packed]
+    # The game's streams state their size AND end with an end-of-data marker. Newer liblzma accepts that
+    # combination; older builds (some bundled with Windows Python) reject it as "Corrupt input data". Try
+    # the unknown-size header first (the marker ends the stream), then the known-size one, then a raw decode
+    # that stops at the expected length. Whatever decodes must have exactly the stated length.
+    failure = None
+    for size in (UNKNOWN_SIZE, unpacked):
+        try:
+            out = lzma.decompress(properties + struct.pack("<Q", size) + stream, format=lzma.FORMAT_ALONE)
+        except (lzma.LZMAError, EOFError) as error:
+            failure = error
+            continue
+        if len(out) == unpacked:
+            return out
+    lc, rest = properties[0] % 9, properties[0] // 9
+    filters = [{"id": lzma.FILTER_LZMA1, "dict_size": struct.unpack_from("<I", properties, 1)[0],
+                "lc": lc, "lp": rest % 5, "pb": rest // 5}]
+    try:
+        out = lzma.LZMADecompressor(format=lzma.FORMAT_RAW, filters=filters).decompress(stream, max_length=unpacked)
+    except (lzma.LZMAError, EOFError) as error:
+        raise lzma.LZMAError(f"{failure or error}") from error
     if len(out) != unpacked:
         raise ValueError("unpacked size does not match the header")
     return out

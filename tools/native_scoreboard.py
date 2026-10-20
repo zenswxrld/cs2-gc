@@ -77,14 +77,21 @@ PING_INJECT = (
 PING_HELPER = '''
     const m_localBotPings = {};
     function _LocalBotPing(oPlayer) {
-        // A per-bot base of 15-75 ms that drifts by a few ms, like a real connection.
+        // A per-bot base of 15-75 ms that moves by at most 2 ms every few seconds and stays within 5 ms of it.
         const identity = String(oPlayer.m_xuid) + ':' + oPlayer.GetGameStat('slot');
-        if (m_localBotPings[identity] === undefined) {
+        const now = Date.now();
+        let ping = m_localBotPings[identity];
+        if (ping === undefined) {
             let hash = 2166136261;
             for (let i = 0; i < identity.length; ++i) hash = Math.imul(hash ^ identity.charCodeAt(i), 16777619) >>> 0;
-            m_localBotPings[identity] = 15 + ((hash ^ m_localBotSeed) >>> 0) % 61;
+            const base = 15 + ((hash ^ m_localBotSeed) >>> 0) % 61;
+            ping = m_localBotPings[identity] = {base: base, value: base, next: now + 3000 + Math.random() * 5000};
         }
-        return Math.max(5, m_localBotPings[identity] + Math.floor(Math.random() * 7) - 3);
+        else if (now >= ping.next) {
+            ping.value = Math.max(ping.base - 5, Math.min(ping.base + 5, ping.value + Math.floor(Math.random() * 5) - 2));
+            ping.next = now + 3000 + Math.random() * 5000;
+        }
+        return ping.value;
     }
 '''
 

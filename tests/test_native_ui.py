@@ -103,8 +103,15 @@ globalThis.elLabel = label;
 for (let i = 0; i < 20; ++i) draw(bot(true), 'ping');
 assert.equal(classes.bot, false);
 assert.equal(classes['label:sb-row__cell--ping__label--bot'], false);
-assert(shown.every(ping => ping >= 12 && ping <= 78));
-assert(Math.max(...shown) - Math.min(...shown) <= 6);
+assert(shown.every(ping => ping >= 15 && ping <= 75));
+assert.equal(new Set(shown).size, 1);  // rapid refreshes keep the same value
+const realNow = Date.now; let clock = realNow();
+Date.now = () => clock;
+shown = [];
+for (let i = 0; i < 200; ++i) { clock += 9000; draw(bot(true), 'ping'); }
+Date.now = realNow;
+assert(Math.max(...shown) - Math.min(...shown) <= 10);
+for (let i = 1; i < shown.length; ++i) assert(Math.abs(shown[i] - shown[i - 1]) <= 2);
 '''
         result = subprocess.run(['node', '-e', script.replace('const m_localBotSeed = Math.floor(Math.random() * 4294967296) >>> 0;', 'var m_localBotSeed = 7;')],
                                 capture_output=True, text=True)

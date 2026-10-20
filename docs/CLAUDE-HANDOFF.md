@@ -408,3 +408,6 @@ Full build-25966348 schema loaded successfully, all supplementary rare pools val
 - "Buggy until restart": the user's logs show the launcher prepared everything ("installed", nothing changed by the
   helper) and the GC sessions before/after a restart are identical. Cause still unknown; need concrete symptoms.
   Killfeed/chat "BOT" prefixes are not changed (no script for them inspected).
+- 17h: fake bot ping confirmed live but changed too fast; now it moves by at most 2 ms every 3-8 s and stays
+  within 5 ms of the bot's base. Random names did NOT apply in the user's test (default names shown) - check the
+  "Bot names" line of cs2_gc_prepare.log. The scoreboard shows "[BOT]" before bot names; not changed yet.

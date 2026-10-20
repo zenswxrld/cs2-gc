@@ -22,6 +22,24 @@ bool MessageQueue::Push(Message message)
     return true;
 }
 
+bool MessageQueue::PushStruct(Message message)
+{
+    if (message.bytes.size() < 4 || message.bytes.size() > MaxMessageBytes || (message.type & ProtobufMask) ||
+        message.type == 0)
+        return false;
+    const std::uint32_t embedded = std::uint32_t{message.bytes[0]} | (std::uint32_t{message.bytes[1]} << 8) |
+                                   (std::uint32_t{message.bytes[2]} << 16) | (std::uint32_t{message.bytes[3]} << 24);
+    if (embedded != message.type)
+        return false;
+    const std::lock_guard lock{m_mutex};
+    if (m_messages.size() >= m_messageLimit || message.bytes.size() > m_byteLimit - m_bytes)
+        return false;
+    const auto size = message.bytes.size();
+    m_messages.push_back(std::move(message));
+    m_bytes += size;
+    return true;
+}
+
 bool MessageQueue::IsMessageAvailable(std::uint32_t *size) const
 {
     if (!size)

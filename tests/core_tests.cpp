@@ -2781,11 +2781,214 @@ void ArmoryPassCapAndPersistence()
           "a zero-XP or sixth pass in the file is rejected");
 }
 
+constexpr const char *TradeUpFixture = R"("items_game"
+{
+    "rarities" { "common" { "value" "1" } "uncommon" { "value" "2" } "rare" { "value" "3" } "mythical" { "value" "4" }
+                 "legendary" { "value" "5" } "ancient" { "value" "6" } }
+    "prefabs" { "rifle" { "item_rarity" "common" } }
+    "items"
+    {
+        "7" { "name" "weapon_rifle" "prefab" "rifle" }
+        "1209" { "name" "sticker" }
+        "1355" { "name" "keychain" }
+        "49" { "name" "weapon_c4" "prefab" "rifle" }
+        "300" { "name" "stk" }
+    }
+    "sticker_kits" { "300" { "name" "stk_a" } }
+    "keychain_definitions" { "17" { "name" "kc_a" } }
+    "paint_kits"
+    {
+        "10" { "name" "k_a" "wear_remap_min" "0.0" "wear_remap_max" "0.5" }
+        "11" { "name" "k_b" "wear_remap_min" "0.0" "wear_remap_max" "0.5" }
+        "12" { "name" "k_c" "wear_remap_min" "0.1" "wear_remap_max" "0.8" }
+        "13" { "name" "k_d" "wear_remap_min" "0.0" "wear_remap_max" "1.0" }
+    }
+    "paint_kits_rarity" { "k_a" "rare" "k_b" "rare" "k_c" "mythical" "k_d" "mythical" }
+    "item_sets"
+    {
+        "set_one" { "items" { "[k_a]weapon_rifle" "1" "[k_c]weapon_rifle" "1" } }
+        "set_two" { "items" { "[k_b]weapon_rifle" "1" "[k_d]weapon_rifle" "1" } }
+    }
+})";
+
+void TradeUps()
+{
+    namespace m = gc_msg;
+    const auto schema = Schema::Load(TradeUpFixture);
+    Check(schema.has_value() && schema->CollectionCount() == 2, "two collections load from item_sets");
+    Check(schema->CollectionsOf(7, 10) == std::vector<std::string>{"set_one"} && schema->CollectionsOf(7, 99).empty() &&
+              schema->CollectionSkins("set_two").size() == 2,
+          "a skin knows its collections");
+    std::mt19937_64 engine(11);
+    const RandomSource random = [&] { return engine(); };
+
+    const auto skin = [](std::uint32_t kit, float wear, bool statTrak = false) {
+        InventoryItem item;
+        item.defIndex = 7;
+        item.paintKitIndex = kit;
+        item.wear = wear;
+        item.statTrak = statTrak;
+        return item;
+    };
+    const auto fill = [&](Inventory &inventory, std::uint32_t kit, int count, float wear, bool statTrak = false) {
+        std::vector<std::uint64_t> ids;
+        for (int i = 0; i < count; ++i)
+            ids.push_back(inventory.Add(skin(kit, wear, statTrak)));
+        return ids;
+    };
+
+    // Ten rare skins of one collection become the collection's one mythical skin, with the wear mapped.
+    Inventory inventory;
+    auto ids = fill(inventory, 10, 10, 0.4f);
+    const auto traded = TradeUp(inventory, *schema, ids, random);
+    Check(traded.error == TradeUpError::None && traded.item.paintKitIndex == 12 && traded.item.rarity == 4 &&
+              traded.consumed.size() == 10 && inventory.Items().size() == 1 && inventory.Items()[0].id == traded.item.id,
+          "ten skins become one of the next rarity");
+    Check(std::abs(traded.item.wear - (0.1f + 0.4f * 0.7f)) < 1e-5f && traded.item.seed >= 1 && traded.item.seed <= 1000,
+          "the average wear is mapped into the new finish's range");
+
+    // StatTrak only when all ten are.
+    Inventory st;
+    auto stIds = fill(st, 10, 10, 0.1f, true);
+    Check(TradeUp(st, *schema, stIds, random).item.statTrak, "ten StatTrak skins give a StatTrak skin");
+    Inventory mixedSt;
+    auto mixedStIds = fill(mixedSt, 10, 9, 0.1f, true);
+    mixedStIds.push_back(mixedSt.Add(skin(10, 0.1f, false)));
+    Check(TradeUp(mixedSt, *schema, mixedStIds, random).error == TradeUpError::MixedStatTrak && mixedSt.Items().size() == 10,
+          "mixing StatTrak and normal is refused and changes nothing");
+
+    // A mix of two collections lands in either, weighted by how many each supplied.
+    int fromOne = 0, fromTwo = 0;
+    for (int round = 0; round < 400; ++round)
+    {
+        Inventory mixed;
+        auto mixIds = fill(mixed, 10, 7, 0.2f);   // set_one, rare
+        auto twoIds = fill(mixed, 11, 3, 0.2f);   // set_two, rare
+        mixIds.insert(mixIds.end(), twoIds.begin(), twoIds.end());
+        const auto r = TradeUp(mixed, *schema, mixIds, random);
+        Check(r.error == TradeUpError::None, "a mixed-collection contract works");
+        (r.item.paintKitIndex == 12 ? fromOne : fromTwo) += 1;
+    }
+    Check(fromOne > 240 && fromOne < 320 && fromOne + fromTwo == 400, "outcomes follow the 7 to 3 split");
+    // (set_one's mythical skin is kit 12, set_two's is kit 13.)
+
+    // Refusals leave everything as it was.
+    Inventory bad;
+    auto nine = fill(bad, 10, 9, 0.1f);
+    Check(TradeUp(bad, *schema, nine, random).error == TradeUpError::WrongCount, "nine items are refused");
+    auto repeated = nine;
+    repeated.push_back(nine[0]);
+    Check(TradeUp(bad, *schema, repeated, random).error == TradeUpError::UnknownItem, "a repeated item is refused");
+    auto tenth = nine;
+    tenth.push_back(bad.Add(skin(12, 0.1f))); // mythical among rare
+    Check(TradeUp(bad, *schema, tenth, random).error == TradeUpError::MixedRarity, "mixed rarities are refused");
+    Inventory top;
+    auto topIds = fill(top, 12, 10, 0.1f); // mythical, and its collection has nothing legendary above it
+    Check(TradeUp(top, *schema, topIds, random).error == TradeUpError::NoOutcome && top.Items().size() == 10,
+          "a collection with nothing above is refused");
+    Inventory plain;
+    auto plainIds = fill(plain, 0, 10, 0.0f);
+    Check(TradeUp(plain, *schema, plainIds, random).error == TradeUpError::NotASkin, "items without a finish are refused");
+    Check(bad.Items().size() == 10, "failed contracts removed nothing");
+
+    // Over the endpoint: ten destroys, a create, then the old-style struct response.
+    auto live = std::make_shared<LiveInventory>(Inventory{});
+    std::vector<std::uint64_t> gameIds;
+    for (int i = 0; i < 10; ++i)
+        gameIds.push_back(CustomItemIdBase + live->AddItem(skin(10, 0.4f)).id);
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    int saves = 0;
+    const auto shared = std::shared_ptr<const Schema>(&*schema, [](const Schema *) {});
+    gc.EnableContainers(live, shared, random, [&saves] { ++saves; });
+    PbWriter craft;
+    craft.Varint(1, 1);
+    for (const auto id : gameIds)
+        craft.Varint(2, id);
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCCraft, {}, craft.bytes(), frame);
+    gc.SendMessage(m::EGCItemMsg::k_EMsgGCCraft | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    std::vector<std::uint32_t> kinds;
+    std::vector<std::uint8_t> structReply;
+    std::uint32_t size = 0;
+    while (gc.IsMessageAvailable(&size))
+    {
+        std::uint32_t got = 0, type = 0;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&type, buffer.data(), size, &got);
+        kinds.push_back(type);
+        if (type == m::EGCItemMsg::k_EMsgGCCraftResponse)
+            structReply = buffer;
+    }
+    Check(kinds.size() == 12 && kinds[0] == (m::ESOMsg::k_ESOMsg_Destroy | ProtobufMask) &&
+              kinds[10] == (m::ESOMsg::k_ESOMsg_Create | ProtobufMask) && kinds[11] == m::EGCItemMsg::k_EMsgGCCraftResponse,
+          "ten destroys, one create, then the struct response (no protobuf bit)");
+    Check(structReply.size() == 34 + 2 + 4 + 2 + 8 && structReply[0] == (m::EGCItemMsg::k_EMsgGCCraftResponse & 0xFF) &&
+              structReply[1] == (m::EGCItemMsg::k_EMsgGCCraftResponse >> 8) && structReply[16] == 1 && structReply[17] == 0 &&
+              structReply[34] == 1 && structReply[36] == 0 && structReply[40] == 1,
+          "the response carries recipe 1, result OK and one item");
+    Check(live->Items().Items().size() == 1 && saves == 1, "the contract is saved");
+
+    // A refused contract still gets a (failed) struct response and changes nothing.
+    PbWriter shortCraft;
+    shortCraft.Varint(1, 1);
+    shortCraft.Varint(2, CustomItemIdBase + 1);
+    WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCCraft, {}, shortCraft.bytes(), frame);
+    gc.SendMessage(m::EGCItemMsg::k_EMsgGCCraft | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    std::uint32_t failedType = 0, failedSize = 0;
+    std::vector<std::uint8_t> failed;
+    if (gc.IsMessageAvailable(&failedSize))
+    {
+        std::uint32_t got = 0;
+        failed.resize(failedSize);
+        gc.RetrieveMessage(&failedType, failed.data(), failedSize, &got);
+    }
+    Check(failedType == m::EGCItemMsg::k_EMsgGCCraftResponse && failed.size() == 34 + 2 + 4 + 2 && failed[36] == 4,
+          "a refused contract answers Invalid");
+
+    // A built-in weapon (the C4) takes a charm: the request names the base definition, and the weapon becomes
+    // an inventory item.
+    Inventory fresh;
+    InventoryItem charm;
+    charm.defIndex = DefinitionKeychain;
+    charm.keychain = 17;
+    fresh.Add(charm);
+    InventoryItem sticker;
+    sticker.defIndex = DefinitionSticker;
+    sticker.stickerKit = 300;
+    fresh.Add(sticker);
+    LiveInventory baseLive(fresh);
+    ApplyStickerRequest onBomb;
+    onBomb.stickerItemId = CustomItemIdBase + 1;
+    onBomb.baseItemDefIndex = 49;
+    onBomb.offsetX = 1.5f;
+    const auto bombCharm = baseLive.ApplySticker(onBomb);
+    Check(bombCharm && bombCharm->created && bombCharm->item.defIndex == 49 && bombCharm->item.charm &&
+              bombCharm->item.charm->kit == 17 && baseLive.Items().Items().size() == 2 &&
+              baseLive.Items().Items()[1].defIndex == 49,
+          "a charm on a built-in weapon creates the weapon item");
+    ApplyStickerRequest stickerBomb;
+    stickerBomb.stickerItemId = CustomItemIdBase + 2;
+    stickerBomb.baseItemDefIndex = 49;
+    stickerBomb.slot = 2;
+    const auto bombSticker = baseLive.ApplySticker(stickerBomb);
+    Check(bombSticker && bombSticker->created && bombSticker->item.stickers.size() == 1 &&
+              bombSticker->item.stickers[0].slot == 2 && baseLive.Items().Items().size() == 2,
+          "a sticker on a built-in weapon does too");
+    ApplyStickerRequest nothing;
+    nothing.stickerItemId = CustomItemIdBase + 99;
+    nothing.baseItemDefIndex = 49;
+    Check(!baseLive.ApplySticker(nothing) && baseLive.Items().Items().size() == 2,
+          "an unknown sticker creates nothing");
+}
+
 int main()
 {
     try
     {
         ArmoryPassCapAndPersistence(); std::cout << "PASS armory pass cap and persistence\n";
+        TradeUps(); std::cout << "PASS trade-ups and built-in weapons\n";
         SlabsScrapesAndCoupons(); std::cout << "PASS slabs, scrapes and coupons\n";
         StorageUnits(); std::cout << "PASS storage units\n";
         CharmsAndCoupons(); std::cout << "PASS charms\n";

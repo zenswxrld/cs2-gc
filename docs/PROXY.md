@@ -181,6 +181,20 @@ in this session's view of the inventory: nothing is stored on Valve's side.
   kept crashing on the slab screen each session afterwards, since the file reloads it. The proxy now strips
   stickers and charms from slab items when it loads the inventory (log line: "removed stickers or charms from N
   Sticker Slab item(s)") and refuses to apply anything to a slab except by sealing.
+- **Trade-up contracts.** `Craft` (1002) is a protobuf (`CMsgCraftItemsRequest`: recipe in field 1, the ten item ids
+  in field 2). Ten skins of one rarity (and all StatTrak or all not) become one skin of the next rarity: each
+  collection that supplied inputs is picked in proportion to how many it supplied, then one of its next-rarity
+  skins evenly; the wear is the inputs' average placed in the new finish's range. Collections are the schema's
+  `item_sets`, 97 in the target build, so the CS2-only Armory collections count like the older ones. Checked
+  offline against the real file: every skin in every collection has a computable rarity, and every collection
+  and rarity below its top tier produces an outcome. Not handled: Covert to knife or glove contracts (65
+  collection and rarity pairs), and the 3 character sets hold agents, not skins. The result arrives as a
+  new item (pickup type 2, crafted) after ten destroys, then the response in the old struct form that the
+  client's `CGCCraftResponse` class implies: recipe (int16), result (uint32, 0 OK, 4 invalid), count
+  (uint16), item id. That frame is copied from the CS:GO fork and not confirmed in the CS2 client.
+- **Stickers and charms on built-in weapons** (the C4, default rifles): the request names `baseitem_defidx` (field 4)
+  instead of an item id. The weapon becomes an inventory item, with the sticker or charm on it, announced as a
+  new item.
 - **Armory passes** (corrected): the page draws a pass only when its XP is non-zero (`xp_tracks[i]` is tested for
   truth), so a new pass starts at 1 XP. At most 5 passes can be active. They are saved in `cs2_gc_inventory.txt`
   (`xp_tracks`), and the recorded account's own two passes are dropped, so the Armory starts with none. A

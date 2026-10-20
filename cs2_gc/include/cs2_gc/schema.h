@@ -61,6 +61,13 @@ struct ArmoryRedeemable
 
 std::uint32_t Crc32(std::string_view text);
 
+// A weapon skin: the weapon's item definition and the finish (paint kit) index.
+struct SkinRef
+{
+    std::uint32_t weaponDefIndex{};
+    std::uint32_t paintKitIndex{};
+};
+
 // Read-only view over the target client's items_game.txt. Built from the real
 // file at runtime; nothing here is a hand-written item list.
 class Schema
@@ -88,6 +95,17 @@ public:
     // The Armory's goods across all campaigns, in schema order.
     const std::vector<ArmoryRedeemable> &ArmoryRedeemables() const { return m_armoryRedeemables; }
     const ArmoryRedeemable *FindRedeemable(std::uint32_t campaignId, std::uint32_t redeemId) const;
+
+    // Collections (the schema's `item_sets`: cases' contents and the newer Armory collections alike) a skin
+    // belongs to, sorted by name. Only weapon skins are indexed.
+    std::vector<std::string> CollectionsOf(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
+    // The skins of one collection, in schema order; empty for an unknown collection.
+    const std::vector<SkinRef> &CollectionSkins(const std::string &collection) const;
+    std::size_t CollectionCount() const { return m_collectionSkins.size(); }
+
+    // A skin as a loot entry (finish name and wear range) so a trade-up can mint it. Nothing if the
+    // weapon or finish is unknown.
+    std::optional<LootItem> SkinAsLootItem(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
 
     // The rarity value of an item definition by its own `item_rarity` (0 when it has none).
     std::uint32_t ItemRarity(std::uint32_t defIndex) const;
@@ -134,5 +152,9 @@ private:
     std::unordered_map<std::string, std::uint32_t> m_keychains;     // name -> index
     std::vector<ArmoryRedeemable> m_armoryRedeemables;
     std::unordered_map<std::string, const KvNode *> m_prefabs;
+    std::vector<const KvNode *> m_itemSets;
+    std::unordered_map<std::string, std::vector<SkinRef>> m_collectionSkins;
+    std::unordered_map<std::uint64_t, std::vector<std::string>> m_skinCollections; // weapon << 32 | kit
+    std::unordered_map<std::uint32_t, std::string> m_weaponNames;                  // definition -> class name
 };
 }

@@ -1,4 +1,5 @@
 #include "cs2_gc/schema.h"
+#include <algorithm>
 #include <charconv>
 #include <unordered_set>
 
@@ -167,6 +168,8 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
                 itemNodes.push_back(&entry);
             else if (section.key == "client_loot_lists" && entry.block)
                 schema.m_lootLists[entry.key] = &entry;
+            else if (section.key == "item_sets" && entry.block)
+                schema.m_itemSets.push_back(&entry);
             else if (section.key == "revolving_loot_lists" && !entry.block)
                 revolving[entry.key] = &entry;
             else if (section.key == "paint_kits" && entry.block)
@@ -258,7 +261,55 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
         schema.m_crateIndex[defIndex] = schema.m_crates.size();
         schema.m_crates.push_back(std::move(crate));
     }
+
+    // Index the collections once everything they refer to is known. Only "[finish]weapon" entries that resolve
+    // to a skin count; stickers, charms, music kits and the like are not trade-up material.
+    for (const auto &[name, definition] : schema.m_itemsByName)
+        schema.m_weaponNames.emplace(definition, name);
+    for (const KvNode *set : schema.m_itemSets)
+    {
+        const KvNode *items = set->Find("items");
+        if (!items || !items->block)
+            continue;
+        std::vector<SkinRef> &skins = schema.m_collectionSkins[set->key];
+        for (const KvNode &entry : items->children)
+        {
+            const auto skin = schema.ResolveLootItem(entry.key);
+            if (!skin || skin->kind != LootKind::Skin)
+                continue;
+            skins.push_back({skin->weaponDefIndex, skin->paintKitIndex});
+            schema.m_skinCollections[(std::uint64_t{skin->weaponDefIndex} << 32) | skin->paintKitIndex].push_back(set->key);
+        }
+    }
+    for (auto &[key, names] : schema.m_skinCollections)
+    {
+        std::sort(names.begin(), names.end());
+        names.erase(std::unique(names.begin(), names.end()), names.end());
+    }
     return schema;
+}
+
+std::vector<std::string> Schema::CollectionsOf(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
+{
+    const auto found = m_skinCollections.find((std::uint64_t{weaponDefIndex} << 32) | paintKitIndex);
+    return found == m_skinCollections.end() ? std::vector<std::string>{} : found->second;
+}
+
+const std::vector<SkinRef> &Schema::CollectionSkins(const std::string &collection) const
+{
+    static const std::vector<SkinRef> none;
+    const auto found = m_collectionSkins.find(collection);
+    return found == m_collectionSkins.end() ? none : found->second;
+}
+
+std::optional<LootItem> Schema::SkinAsLootItem(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
+{
+    const auto weapon = m_weaponNames.find(weaponDefIndex);
+    const auto kit = m_paintKitNames.find(paintKitIndex);
+    if (weapon == m_weaponNames.end() || kit == m_paintKitNames.end())
+        return std::nullopt;
+    auto item = ResolveLootItem("[" + kit->second + "]" + weapon->second);
+    return item && item->kind == LootKind::Skin ? item : std::nullopt;
 }
 
 const CrateInfo *Schema::FindCrate(std::uint32_t defIndex) const

@@ -428,6 +428,60 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                             EncodeCustomizationNotification(NotificationCasketContents, request->casketItemId));
                });
 
+    // Trade-up contracts. The request is a protobuf (recipe, ten item ids); the response is still the old
+    // struct: recipe index (int16), result (uint32), item count (uint16), then the new item's id.
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCCraft,
+               [inventory, schema, random, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
+                   constexpr std::uint32_t ResponseOk = 0;
+                   constexpr std::uint32_t ResponseInvalid = 4;
+                   const auto request = DecodeCraftRequest(frame.body);
+                   if (!request)
+                   {
+                       ++gc.m_ignored;
+                       return;
+                   }
+                   const auto respond = [&gc, &request](std::uint32_t result, std::uint64_t itemId) {
+                       std::vector<std::uint8_t> body;
+                       const auto put = [&body](std::uint64_t value, int bytes) {
+                           for (int i = 0; i < bytes; ++i)
+                               body.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
+                       };
+                       put(request->recipe, 2);
+                       put(result, 4);
+                       put(itemId ? 1 : 0, 2);
+                       if (itemId)
+                           put(itemId, 8);
+                       gc.ReplyStruct(gc_msg::EGCItemMsg::k_EMsgGCCraftResponse, body);
+                   };
+                   const TradeUpResult traded = inventory->TradeUp(*schema, request->itemIds, random);
+                   if (traded.error != TradeUpError::None)
+                   {
+                       ++gc.m_ignored;
+                       respond(ResponseInvalid, 0);
+                       return;
+                   }
+                   const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                   for (const InventoryItem &input : traded.consumed)
+                   {
+                       SoSingleObject destroyed;
+                       destroyed.typeId = static_cast<std::int32_t>(ItemTypeId);
+                       destroyed.data = BuildEconItem(input, accountId, CustomItemIdBase + input.id, ItemPositionBase);
+                       destroyed.version = ++gc.m_soVersion;
+                       destroyed.owner = gc.m_config.owner;
+                       gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(destroyed));
+                   }
+                   SoSingleObject created;
+                   created.typeId = static_cast<std::int32_t>(ItemTypeId);
+                   created.data = BuildEconItem(traded.item, accountId, CustomItemIdBase + traded.item.id,
+                                                InventoryUnacknowledgedBit | PickupCrafted);
+                   created.version = ++gc.m_soVersion;
+                   created.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
+                   respond(ResponseOk, CustomItemIdBase + traded.item.id);
+                   if (afterChange)
+                       afterChange();
+               });
+
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCNameItem,
                [inventory, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
                    const auto request = DecodeNameItemRequest(frame.body);
@@ -588,6 +642,12 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
                                afterChange();
                            return;
                        }
+                   // A built-in weapon the schema does not define cannot become an item.
+                   if (request && request->baseItemDefIndex && schema && !schema->HasItem(request->baseItemDefIndex))
+                   {
+                       ++gc.m_ignored;
+                       return;
+                   }
                    // A slab is never a weapon: if sealing did not take, change nothing.
                    if (request && schema)
                        if (const auto target = inventory->DefinitionOf(request->targetItemId);
@@ -617,7 +677,9 @@ void LocalGameCoordinator::EnableLiveInventory(std::shared_ptr<LiveInventory> in
                                                 applied->position);
                    updated.version = ++gc.m_soVersion;
                    updated.owner = gc.m_config.owner;
-                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+                   // A built-in weapon becomes an inventory item here, so the game is told of a new item.
+                   gc.Reply(applied->created ? gc_msg::ESOMsg::k_ESOMsg_Create : gc_msg::ESOMsg::k_ESOMsg_Update,
+                            EncodeSoSingleObject(updated));
 
                    gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,
                             EncodeCustomizationNotification(applied->charm ? NotificationApplyKeychain
@@ -686,6 +748,23 @@ bool LocalGameCoordinator::Reply(std::uint32_t type, std::span<const std::uint8_
     if (WriteProtobufFrame(type, header, body, message.bytes) != FrameError::None)
         return false;
     return m_toGame.Push(std::move(message));
+}
+
+bool LocalGameCoordinator::ReplyStruct(std::uint32_t type, std::span<const std::uint8_t> body)
+{
+    Message message{type, {}};
+    const auto put = [&message](std::uint64_t value, int bytes) {
+        for (int i = 0; i < bytes; ++i)
+            message.bytes.push_back(static_cast<std::uint8_t>(value >> (8 * i)));
+    };
+    put(type, 4);
+    put(0, 4);
+    put(0, 8);
+    put(1, 2); // header version
+    put(~std::uint64_t{0}, 8); // target job: none
+    put(~std::uint64_t{0}, 8); // source job: none
+    message.bytes.insert(message.bytes.end(), body.begin(), body.end());
+    return m_toGame.PushStruct(std::move(message));
 }
 
 bool LocalGameCoordinator::Reply(std::uint32_t type, std::span<const std::uint8_t> body)

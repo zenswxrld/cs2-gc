@@ -344,6 +344,38 @@ std::optional<CasketRequest> DecodeCasketRequest(std::span<const std::uint8_t> b
     return request;
 }
 
+std::optional<CraftRequest> DecodeCraftRequest(std::span<const std::uint8_t> body)
+{
+    CraftRequest request;
+    PbReader reader(body);
+    PbField f;
+    while (reader.Next(f))
+    {
+        if (f.number == 1 && !U32(f, request.recipe))
+            return std::nullopt;
+        if (f.number != 2)
+            continue;
+        if (f.wire == 0)
+            request.itemIds.push_back(f.value);
+        else if (f.wire == 2) // packed
+        {
+            PbReader inner(f.bytes);
+            PbField g;
+            while (inner.Next(g))
+                request.itemIds.push_back(g.value);
+            if (inner.Failed())
+                return std::nullopt;
+        }
+        else
+            return std::nullopt;
+        if (request.itemIds.size() > 64)
+            return std::nullopt;
+    }
+    if (reader.Failed())
+        return std::nullopt;
+    return request;
+}
+
 std::optional<NameItemRequest> DecodeNameItemRequest(std::span<const std::uint8_t> body)
 {
     NameItemRequest request;
@@ -391,6 +423,7 @@ std::optional<ApplyStickerRequest> DecodeApplyStickerRequest(std::span<const std
             (f.number == 1 ? request.stickerItemId : request.targetItemId) = f.value;
             break;
         case 3: if (!U32(f, request.slot)) return std::nullopt; break;
+        case 4: if (!U32(f, request.baseItemDefIndex)) return std::nullopt; break;
         case 5: if (!asFloat(f, request.wear)) return std::nullopt; break;
         case 6: if (!asFloat(f, request.rotation)) return std::nullopt; break;
         case 7: if (!asFloat(f, request.scale)) return std::nullopt; break;

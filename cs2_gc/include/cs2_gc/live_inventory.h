@@ -2,6 +2,7 @@
 
 #include "cs2_gc/case_opening.h"
 #include "cs2_gc/gc_handshake.h"
+#include "cs2_gc/trade_up.h"
 #include "cs2_gc/inventory.h"
 #include <cstdint>
 #include <filesystem>
@@ -50,6 +51,7 @@ public:
         std::uint32_t position{};          // its backpack position, as a Welcome would give it
         InventoryItem consumed;            // the sticker (or charm) item, now removed
         bool charm{};                      // a charm was attached, not a sticker
+        bool created{};                    // the item is new: a built-in weapon that became an inventory item
     };
 
     // Applies a sticker item to a weapon slot, or a charm item to a weapon. All checks come first: both
@@ -104,6 +106,10 @@ public:
     // Takes the charm off one of our weapons and returns it to the inventory as an item of its own. Nothing
     // if the item is not ours or carries no charm.
     std::optional<Detached> DetachCharm(std::uint64_t weaponItemId);
+
+    // A trade-up contract over ten of our items (ids as the game sees them). Nothing changes on failure.
+    TradeUpResult TradeUp(const Schema &schema, const std::vector<std::uint64_t> &gameItemIds,
+                          const RandomSource &random);
 
     struct Scraped
     {

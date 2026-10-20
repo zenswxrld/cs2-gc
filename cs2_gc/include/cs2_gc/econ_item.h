@@ -44,6 +44,7 @@ inline constexpr std::uint32_t DefinitionKeychain = 1355;
 // names (found_in_crate is 5, ..., ad 21, rental 22, xpshopredeem 23, purchasedvolatile 24);
 // 23 is derived from that order and still has to be confirmed in the game.
 inline constexpr std::uint32_t InventoryUnacknowledgedBit = 1u << 30;
+inline constexpr std::uint32_t PickupCrafted = 2; // a trade-up contract's result
 inline constexpr std::uint32_t PickupPurchased = 4;
 inline constexpr std::uint32_t PickupFoundInCrate = 5;
 inline constexpr std::uint32_t PickupXpShopRedeem = 23;

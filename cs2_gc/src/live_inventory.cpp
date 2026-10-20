@@ -56,6 +56,23 @@ std::size_t LiveInventory::RepairSlabs(const Schema &schema)
     return repaired;
 }
 
+TradeUpResult LiveInventory::TradeUp(const Schema &schema, const std::vector<std::uint64_t> &gameItemIds,
+                                     const RandomSource &random)
+{
+    std::vector<std::uint64_t> ours;
+    for (const std::uint64_t id : gameItemIds)
+    {
+        if (id <= CustomItemIdBase)
+        {
+            TradeUpResult result;
+            result.error = TradeUpError::UnknownItem;
+            return result;
+        }
+        ours.push_back(id - CustomItemIdBase);
+    }
+    return cs2_gc::TradeUp(m_inventory, schema, ours, random);
+}
+
 std::optional<LiveInventory::Detached> LiveInventory::DetachCharm(std::uint64_t weaponItemId)
 {
     if (weaponItemId <= CustomItemIdBase)
@@ -250,11 +267,16 @@ std::optional<LiveInventory::Renamed> LiveInventory::Rename(std::uint64_t itemId
 
 std::optional<LiveInventory::StickerApplied> LiveInventory::ApplySticker(const ApplyStickerRequest &request)
 {
-    if (request.stickerItemId <= CustomItemIdBase || request.targetItemId <= CustomItemIdBase ||
+    const bool baseItem = request.targetItemId == 0 && request.baseItemDefIndex != 0;
+    if (request.stickerItemId <= CustomItemIdBase || (!baseItem && request.targetItemId <= CustomItemIdBase) ||
         request.stickerItemId == request.targetItemId)
         return std::nullopt;
     const InventoryItem *sticker = m_inventory.Find(request.stickerItemId - CustomItemIdBase);
-    InventoryItem *target = m_inventory.Find(request.targetItemId - CustomItemIdBase);
+    // A built-in weapon the player does not own as an item yet (the C4, a default rifle): the game names its
+    // definition instead of an id. It becomes a real item, with the sticker or charm on it, once all checks pass.
+    InventoryItem fresh;
+    fresh.defIndex = request.baseItemDefIndex;
+    InventoryItem *target = baseItem ? &fresh : m_inventory.Find(request.targetItemId - CustomItemIdBase);
     if (!sticker || !target || target->defIndex == DefinitionSticker || target->defIndex == DefinitionKeychain ||
         target->stickerKit || target->keychain)
         return std::nullopt;
@@ -290,18 +312,16 @@ std::optional<LiveInventory::StickerApplied> LiveInventory::ApplySticker(const A
     result.charm = charm;
     result.consumed = *sticker;
     m_inventory.Remove(sticker->id);
-    result.item = *m_inventory.Find(request.targetItemId - CustomItemIdBase);
-    std::uint32_t index = 0;
-    for (const InventoryItem &item : m_inventory.Items())
+    if (baseItem)
     {
-        if (item.id == result.item.id)
-            break;
-        ++index;
+        result.created = true;
+        result.item = AddItem(fresh);
     }
-    result.position = ItemPositionBase + index;
+    else
+        result.item = *m_inventory.Find(request.targetItemId - CustomItemIdBase);
+    result.position = PositionOf(result.item.id);
     return result;
 }
-
 std::vector<std::vector<std::uint8_t>> LiveInventory::EncodedSlots(std::uint32_t accountId) const
 {
     std::vector<std::vector<std::uint8_t>> out;

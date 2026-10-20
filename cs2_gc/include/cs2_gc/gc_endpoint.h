@@ -46,6 +46,9 @@ public:
 
     // Queue a protobuf reply for the game. `type` is the plain message ID (no flag).
     bool Reply(std::uint32_t type, std::span<const std::uint8_t> body);
+    // A reply in the old struct form (no protobuf): the type without the protobuf bit, the extended header
+    // with invalid job ids, then `body`. The trade-up response still uses it.
+    bool ReplyStruct(std::uint32_t type, std::span<const std::uint8_t> body);
     // With a header, for replies the game matches to its request (see ReplyHeaderFor).
     bool Reply(std::uint32_t type, std::span<const std::uint8_t> body, std::span<const std::uint8_t> header);
     void SetHandler(std::uint32_t type, Handler handler); // plain ID; replaces any earlier one

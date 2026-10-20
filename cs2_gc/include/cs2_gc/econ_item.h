@@ -48,9 +48,9 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
 // Welcome and of the cache is carried over unchanged and in order. A cache with no item type
 // gets one.
 // SO object type seen in the capture of build 25947352 whose shape is CSOAccountXpShop: field 1
-// generation time, 2 redeemable balance (the Armory Credits Balance, 0 in the capture) and 3 the
-// Armory Pass track ids (two, matching the two passes in the UI). Identified by shape and by the
-// balance the UI showed; treat it as unconfirmed until a changed balance shows up in the game.
+// generation time, 2 redeemable balance (the Armory Credits Balance) and 3 `xp_tracks`, one entry
+// per activated Armory Pass holding that pass's XP (the page shows XP / XP-per-star stars; the
+// capture has two passes of 1361 XP). Confirmed in the game for the balance (credits 30 -> 26).
 inline constexpr std::uint64_t XpShopTypeId = 6;
 
 // The raw objects of one SO type in the first cache of a Welcome. Empty if there are none or the
@@ -60,6 +60,15 @@ std::vector<std::vector<std::uint8_t>> ExtractObjects(std::span<const std::uint8
 // One XpShop object with its redeemable balance (field 2) set, every other field kept; the balance
 // is added when the object has none. Nothing if the object is malformed.
 std::optional<std::vector<std::uint8_t>> WithXpShopBalance(std::span<const std::uint8_t> object, std::uint32_t balance);
+
+// The pass object with one more entry in `xp_tracks` (field 3): a pass the player has activated, with
+// the XP it starts with. Each entry is one pass; the Armory page shows its XP in stars. Nothing if the
+// object is malformed.
+std::optional<std::vector<std::uint8_t>> WithXpShopTrack(std::span<const std::uint8_t> object, std::uint32_t xp);
+
+// The item definition of the Armory Pass ticket (`XpShopTicket1`, tool type xp_shop_ticket): bought in
+// the Store, then used from the Armory page, which sends a use-item request.
+inline constexpr std::uint32_t DefinitionArmoryPass = 1354;
 
 // Returns the Welcome with the redeemable balance of every XpShop object set to `balance`. All
 // other fields, objects and types are carried over unchanged. Nothing when the Welcome is

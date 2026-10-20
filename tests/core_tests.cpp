@@ -1971,10 +1971,118 @@ void StorePurchases()
     Check(fresh && result(*fresh) == 1, "a new purchase can start after a cancel");
 }
 
+void ArmoryPassActivation()
+{
+    namespace m = gc_msg;
+    const auto schema = Schema::Load(ArmoryFixture);
+    PbWriter pass;
+    pass.Varint(1, 5);
+    pass.Varint(2, 10);
+    pass.Varint(3, 77);
+    PbWriter passType;
+    passType.Varint(1, XpShopTypeId);
+    passType.Bytes(2, pass.bytes());
+    PbWriter owner;
+    owner.Varint(1, 1);
+    owner.Varint(2, 555);
+    PbWriter cache;
+    cache.Message(2, passType);
+    cache.Fixed64(3, 100);
+    cache.Message(4, owner);
+    PbWriter welcome;
+    welcome.Varint(1, 0);
+    welcome.Message(3, cache);
+    auto store = std::make_shared<ReplayStore>();
+    store->Set(m::EGCBaseClientMsg::k_EMsgGCClientWelcome, welcome.bytes());
+
+    Inventory inventory;
+    InventoryItem ticket;
+    ticket.defIndex = DefinitionArmoryPass;
+    inventory.Add(ticket);
+    InventoryItem other;
+    other.defIndex = 7;
+    inventory.Add(other);
+
+    GcEndpointConfig config;
+    config.owner = {1, 555};
+    LocalGameCoordinator gc(config);
+    gc.EnableReplay(store);
+    auto live = std::make_shared<LiveInventory>(inventory);
+    auto armory = std::make_shared<Armory>(*schema, 11, 30);
+    std::mt19937_64 engine(7);
+    int saves = 0;
+    gc.EnableArmory(armory, live, [&] { return engine(); }, [&] { ++saves; });
+
+    const auto use = [&](std::uint64_t itemId) {
+        PbWriter body;
+        body.Varint(1, itemId);
+        std::vector<std::uint8_t> frame;
+        WriteProtobufFrame(m::EGCItemMsg::k_EMsgGCUseItemRequest, {}, body.bytes(), frame);
+        gc.SendMessage(m::EGCItemMsg::k_EMsgGCUseItemRequest | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    };
+    struct Out { std::uint32_t type{}; std::vector<std::uint8_t> body; bool any{}; };
+    const auto next = [&]() {
+        Out out;
+        std::uint32_t size = 0, got = 0;
+        if (!gc.IsMessageAvailable(&size))
+            return out;
+        std::vector<std::uint8_t> buffer(size);
+        gc.RetrieveMessage(&out.type, buffer.data(), size, &got);
+        FrameView frame;
+        ReadProtobufFrame(out.type, buffer, frame);
+        out.body.assign(frame.body.begin(), frame.body.end());
+        out.type &= ~ProtobufMask;
+        out.any = true;
+        return out;
+    };
+    const auto tracks = [](std::span<const std::uint8_t> object) {
+        std::vector<std::uint64_t> values;
+        PbReader reader(object);
+        PbField f;
+        while (reader.Next(f))
+            if (f.number == 3)
+                values.push_back(f.value);
+        return values;
+    };
+
+    use(CustomItemIdBase + 2); // not a pass
+    use(0xF000000000000000ull | DefinitionArmoryPass); // a built-in default is not one of ours
+    use(424242);
+    Check(!next().any && live->Items().Items().size() == 2 && saves == 0, "anything but one of our passes is ignored");
+
+    use(CustomItemIdBase + 1);
+    const Out updated = next();
+    const Out destroyed = next();
+    const auto pass1 = DecodeSoSingleObject(updated.body);
+    Check(updated.type == m::ESOMsg::k_ESOMsg_Update && pass1 && pass1->typeId == static_cast<std::int32_t>(XpShopTypeId) &&
+              tracks(pass1->data) == std::vector<std::uint64_t>({77, 0}), "activating adds an empty pass, keeps the recorded one");
+    Check(destroyed.type == m::ESOMsg::k_ESOMsg_Destroy && live->Items().Items().size() == 1 && saves == 1,
+          "the ticket is consumed and the inventory saved");
+    use(CustomItemIdBase + 1);
+    Check(!next().any, "a ticket activates once");
+
+    ClientHello hello;
+    std::vector<std::uint8_t> frame;
+    WriteProtobufFrame(m::EGCBaseClientMsg::k_EMsgGCClientHello, {}, EncodeClientHello(hello), frame);
+    gc.SendMessage(m::EGCBaseClientMsg::k_EMsgGCClientHello | ProtobufMask, frame.data(), static_cast<std::uint32_t>(frame.size()));
+    const Out w = next();
+    const auto objects = ExtractObjects(w.body, XpShopTypeId);
+    Check(objects.size() == 1 && tracks(objects[0]) == std::vector<std::uint64_t>({77, 0}),
+          "a reconnect's welcome keeps the activated pass");
+    PbReader reader(objects.empty() ? std::span<const std::uint8_t>{} : std::span<const std::uint8_t>(objects[0]));
+    PbField f;
+    std::uint64_t balance = 0;
+    while (reader.Next(f))
+        if (f.number == 2)
+            balance = f.value;
+    Check(balance == 30, "and shows the configured credits, not the recorded ones");
+}
+
 int main()
 {
     try
     {
+        ArmoryPassActivation(); std::cout << "PASS armory pass activation\n";
         StorePurchases(); std::cout << "PASS store purchases\n";
         StickerApplication(); std::cout << "PASS sticker application\n";
         Frames(); std::cout << "PASS protocol framing and malformed input\n";

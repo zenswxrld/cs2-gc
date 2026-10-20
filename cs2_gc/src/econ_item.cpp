@@ -291,6 +291,19 @@ std::optional<std::vector<std::uint8_t>> WithXpShopBalance(std::span<const std::
     return out.bytes();
 }
 
+std::optional<std::vector<std::uint8_t>> WithXpShopTrack(std::span<const std::uint8_t> object, std::uint32_t xp)
+{
+    PbWriter out;
+    PbReader reader(object);
+    PbField f;
+    while (reader.Next(f))
+        Reemit(out, f);
+    if (reader.Failed())
+        return std::nullopt;
+    out.Varint(3, xp);
+    return out.bytes();
+}
+
 std::vector<std::vector<std::uint8_t>> ExtractObjects(std::span<const std::uint8_t> welcome, std::uint64_t typeId)
 {
     std::vector<std::vector<std::uint8_t>> found;

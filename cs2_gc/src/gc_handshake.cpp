@@ -288,6 +288,11 @@ std::optional<StorePurchaseRequest> DecodeStorePurchaseRequest(std::span<const s
     return request;
 }
 
+std::optional<std::uint64_t> DecodeUseItemRequest(std::span<const std::uint8_t> body)
+{
+    return DecodeTxnId(body); // field 1, a varint: the same shape
+}
+
 std::optional<std::uint64_t> DecodeTxnId(std::span<const std::uint8_t> body)
 {
     std::optional<std::uint64_t> txn;

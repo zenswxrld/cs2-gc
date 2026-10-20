@@ -124,6 +124,7 @@ std::optional<SoMultipleObjects> DecodeSoMultipleObjects(std::span<const std::ui
 std::optional<ApplyStickerRequest> DecodeApplyStickerRequest(std::span<const std::uint8_t> body);
 std::optional<StorePurchaseRequest> DecodeStorePurchaseRequest(std::span<const std::uint8_t> body);
 std::optional<std::uint64_t> DecodeTxnId(std::span<const std::uint8_t> body); // Finalize / Cancel: field 1
+std::optional<std::uint64_t> DecodeUseItemRequest(std::span<const std::uint8_t> body); // CMsgUseItem.item_id
 std::optional<RedeemRequest> DecodeRedeemRequest(std::span<const std::uint8_t> body);
 std::vector<std::uint8_t> EncodeSoSingleObject(const SoSingleObject &object);
 std::optional<AdjustEquipSlots> DecodeAdjustEquipSlots(std::span<const std::uint8_t> body);

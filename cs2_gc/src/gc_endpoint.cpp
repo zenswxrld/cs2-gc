@@ -65,18 +65,21 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
     if (!armory || !inventory)
         return;
 
-    // The recorded Armory pass object, kept so a balance change only rewrites its balance field.
-    std::vector<std::uint8_t> passObject;
+    // The recorded Armory pass object is the starting point; it is kept as live state so a balance
+    // change or an activated pass rewrites only its own field and the rest is carried along.
     if (m_replay)
         if (const auto *welcome = m_replay->Find(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome))
         {
             auto objects = ExtractObjects(*welcome, XpShopTypeId);
             if (!objects.empty())
-                passObject = std::move(objects.front());
+            {
+                std::lock_guard lock(m_txnMutex);
+                m_xpShop = WithXpShopBalance(objects.front(), armory->Balance()).value_or(std::move(objects.front()));
+            }
         }
 
     SetHandler(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemMissionReward,
-               [armory, inventory, random, afterGrant, passObject](const FrameView &frame, LocalGameCoordinator &gc) {
+               [armory, inventory, random, afterGrant](const FrameView &frame, LocalGameCoordinator &gc) {
                    const auto request = DecodeRedeemRequest(frame.body);
                    if (!request)
                    {
@@ -99,7 +102,17 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                    created.owner = gc.m_config.owner;
                    gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
 
-                   if (const auto pass = WithXpShopBalance(passObject, armory->Balance()))
+                   std::optional<std::vector<std::uint8_t>> pass;
+                   {
+                       std::lock_guard lock(gc.m_txnMutex);
+                       if (!gc.m_xpShop.empty())
+                           if (auto updatedPass = WithXpShopBalance(gc.m_xpShop, armory->Balance()))
+                           {
+                               gc.m_xpShop = *updatedPass;
+                               pass = std::move(updatedPass);
+                           }
+                   }
+                   if (pass)
                    {
                        SoSingleObject updated;
                        updated.typeId = static_cast<std::int32_t>(XpShopTypeId);
@@ -108,6 +121,45 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                        updated.owner = gc.m_config.owner;
                        gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
                    }
+                   if (afterGrant)
+                       afterGrant();
+               });
+
+    // Activating a bought Armory Pass: the Armory page calls UseTool on the ticket, which sends a
+    // use-item request. The ticket is consumed and the account gets one more (empty) pass.
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCUseItemRequest,
+               [inventory, afterGrant](const FrameView &frame, LocalGameCoordinator &gc) {
+                   const auto itemId = DecodeUseItemRequest(frame.body);
+                   const auto definition = itemId ? inventory->DefinitionOf(*itemId) : std::nullopt;
+                   std::optional<std::vector<std::uint8_t>> pass;
+                   {
+                       std::lock_guard lock(gc.m_txnMutex);
+                       if (definition == DefinitionArmoryPass && !gc.m_xpShop.empty() && (*itemId >> 60) != 0xF)
+                           pass = WithXpShopTrack(gc.m_xpShop, 0);
+                       if (pass)
+                           gc.m_xpShop = *pass;
+                   }
+                   if (!pass)
+                   {
+                       ++gc.m_ignored; // not a pass of ours, or no recorded pass object to extend
+                       return;
+                   }
+                   const auto accountId = static_cast<std::uint32_t>(gc.m_config.owner.id & 0xFFFFFFFFull);
+                   const InventoryItem *ticket = inventory->Items().Find(*itemId - CustomItemIdBase);
+                   SoSingleObject destroyed;
+                   destroyed.typeId = static_cast<std::int32_t>(ItemTypeId);
+                   destroyed.data = BuildEconItem(*ticket, accountId, *itemId, ItemPositionBase);
+                   inventory->RemoveItem(*itemId);
+
+                   SoSingleObject updated;
+                   updated.typeId = static_cast<std::int32_t>(XpShopTypeId);
+                   updated.data = *pass;
+                   updated.version = ++gc.m_soVersion;
+                   updated.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+                   destroyed.version = ++gc.m_soVersion;
+                   destroyed.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(destroyed));
                    if (afterGrant)
                        afterGrant();
                });
@@ -423,8 +475,17 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
             }
             if (m_armory || m_armoryCredits)
             {
+                std::vector<std::uint8_t> livePass;
+                {
+                    std::lock_guard lock(m_txnMutex);
+                    livePass = m_xpShop;
+                }
                 const std::uint32_t credits = m_armory ? m_armory->Balance() : *m_armoryCredits;
-                if (auto result = SetArmoryBalance(patched, credits))
+                const std::vector<std::vector<std::uint8_t>> passes{livePass};
+                // The live pass object (credits and activated passes) replaces the recorded one.
+                auto result = livePass.empty() ? SetArmoryBalance(patched, credits)
+                                               : AppendObjectsToWelcome(patched, XpShopTypeId, passes, true);
+                if (result)
                     patched = std::move(*result);
                 else
                     ++m_patchFailures;

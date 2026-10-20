@@ -14,6 +14,11 @@ InventoryItem LiveInventory::AddItem(InventoryItem item)
     return item;
 }
 
+bool LiveInventory::RemoveItem(std::uint64_t itemId)
+{
+    return itemId > CustomItemIdBase && m_inventory.Remove(itemId - CustomItemIdBase);
+}
+
 std::optional<std::uint32_t> LiveInventory::DefinitionOf(std::uint64_t itemId) const
 {
     if ((itemId >> 60) == 0xF)

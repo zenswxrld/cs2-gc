@@ -25,6 +25,9 @@ public:
     // Writes the items to a file in the inventory's own text format; false if that failed.
     bool Save(const std::filesystem::path &path) const { return m_inventory.Save(path); }
 
+    // Removes one of our items; false if the id is not one.
+    bool RemoveItem(std::uint64_t itemId);
+
     // The item definition for an item id the game may equip: one of ours, or a built-in default
     // item (ids of the form 0xF000000000000000 | definition). Nothing for any other id.
     std::optional<std::uint32_t> DefinitionOf(std::uint64_t itemId) const;

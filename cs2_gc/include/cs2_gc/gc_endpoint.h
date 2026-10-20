@@ -122,6 +122,7 @@ private:
         std::vector<StorePurchaseRequest::Line> lines;
     };
     std::mutex m_txnMutex;
+    std::vector<std::uint8_t> m_xpShop; // the current Armory pass object (credits and activated passes)
     std::optional<Transaction> m_txn;
     std::optional<std::uint64_t> m_pendingAuthorization;
     std::uint64_t m_lastTxnId{7000000000ull};

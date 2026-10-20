@@ -147,6 +147,11 @@ in this session's view of the inventory: nothing is stored on Valve's side.
   113 + 4 * slot for id, wear, scale and rotation; 278 + 2 * slot for the offsets, per `items_game.txt`), answers
   with an SO update of the weapon and an SO destroy of the sticker item, and saves `cs2_gc_inventory.txt`
   (`sticker_<slot>` lines on the weapon). Scraping and removing stickers are not handled.
+- **Armory Pass.** The pass is item 1354 (`XpShopTicket1`), bought in the Store like any item. The Armory page then
+  shows an Activate button on an empty track; it sends a use-item request (1025). The proxy consumes the ticket
+  and adds an empty pass (`xp_tracks` entry of 0) to the pass object, so a new track appears. Passes activated and
+  credits spent live in memory only: they are not saved, a restart returns to the recorded passes and
+  `armory_credits`. Passes earn no XP offline. Unconfirmed in the game.
 - **Armory credits.** The Credits Balance and the two Armory Pass tracks live in one recorded object
   (type 6, shaped like `CSOAccountXpShop`). `armory_credits = N` in `cs2_gc.cfg` sets the balance in the
   Welcome, which tests whether that guess is right: the Armory page should then show N credits.

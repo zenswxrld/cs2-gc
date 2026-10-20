@@ -140,3 +140,10 @@ Build 10 still stopped with `cs2_gc_offers\pak01.vpk Failed to load file (unexpe
 shows CS2 also looking for `cs2_gc_offers\pak01_flt.vpk`, and `cs2_gc_offers` was our first Game path, which is the
 engine's DEFAULT_WRITE_PATH. Build 11 keeps an empty `cs2_gc_first` folder as the first Game path so no VPK folder is the
 write path. Hypothesis only; if it still fails, use cs2_gc_disable_vpks.cmd and send the error text and a dump.
+
+### Build 13: VPK overrides OFF by default
+Build 12 (placeholder write path) still stopped at start-up with the same error, so the write-path theory is wrong: CS2
+refuses our unsigned pak01 VPKs in Game search paths. VPKs are now only written if `cs2_gc_use_vpk.txt` exists, and
+existing ones are removed otherwise. Native UI/schema overrides (scoreboard rank, native mixed trade-up picker, offer
+numbers, Armory rotation script) therefore remain unloaded. Mixed StatTrak trade-ups work through `mixed_tradeup.cmd`
+while CS2 runs (the DLL processes the request); native-picker support needs a different loading method.

@@ -12,7 +12,10 @@ import native_resources
 class VpkPack(unittest.TestCase):
     def test_pack_round_trips_through_the_vpk_reader_and_skips_bookkeeping_files(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            game = Path(folder)
+            (game / 'bin/win64').mkdir(parents=True)
+            (game / 'bin/win64' / vpk_pack.OPT_IN).write_text('x')
+            root = game / 'cs2_gc_native'
             (root / 'scripts/items').mkdir(parents=True)
             (root / 'panorama/scripts').mkdir(parents=True)
             (root / 'scripts/items/items_game.txt').write_bytes(b'schema' * 4000)
@@ -35,6 +38,7 @@ class VpkPack(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             game = Path(folder)
             (game / 'bin/win64').mkdir(parents=True)
+            (game / 'bin/win64' / vpk_pack.OPT_IN).write_text('x')
             mod = game / 'cs2_gc_native'
             (mod / 'scripts').mkdir(parents=True)
             (mod / 'scripts/a.txt').write_bytes(b'data')
@@ -49,6 +53,18 @@ class VpkPack(unittest.TestCase):
             (game / 'bin/win64' / vpk_pack.KILL_SWITCH).unlink()
             vpk_pack.pack(mod)
             self.assertIn('cs2_gc_native', vpk_pack.status(game / 'bin/win64'))
+
+    def test_default_is_off_and_removes_existing_vpks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            game = Path(folder)
+            (game / 'bin/win64').mkdir(parents=True)
+            mod = game / 'cs2_gc_offers'
+            mod.mkdir()
+            (mod / 'a.txt').write_bytes(b'x')
+            (mod / 'pak01_dir.vpk').write_bytes(b'old'); (mod / 'pak01_000.vpk').write_bytes(b'old')
+            self.assertTrue(vpk_pack.pack(mod))
+            self.assertFalse((mod / 'pak01_dir.vpk').exists() or (mod / 'pak01_000.vpk').exists())
+            self.assertIn('default', vpk_pack.status(game / 'bin/win64'))
 
 
 if __name__ == '__main__':

@@ -140,6 +140,25 @@ in this session's view of the inventory: nothing is stored on Valve's side.
 - The Armory's tile catalogue is not in `items_game.txt`, and the Store page's catalogue is a compressed
   price sheet inside message 2501. Decoding those is the next step.
 
+### The Store's catalogue (message 2501)
+
+The Store page is built from a price sheet inside message 2501: Valve binary KeyValues, compressed in an
+"LZMA" container, in field 8 of `CMsgStoreGetUserDataResponse`. It has `store/entries` (one per item sold:
+`item_link` is the item's schema name, plus `category_tags` and a price per currency in minor units, AUD
+being currency 21), `store/store_banner_layout` (the Home page tiles) and `store/currencies`. It lists keys
+for most cases but no cases.
+
+`tools/price_sheet.py` reads and edits it. It refuses to touch a sheet it cannot reproduce byte for byte.
+
+```
+py -3 tools/price_sheet.py dump cs2_gc_replay/2501.bin
+py -3 tools/price_sheet.py add-cases cs2_gc_replay/2501.bin items_game.txt --out new_2501.bin
+```
+
+`add-cases` adds an entry for every standard case (and any key that has none), copying the prices of an
+existing entry (`--price-from`, default "Weapon Case Key"). Back up your recorded `2501.bin`, then put
+`new_2501.bin` in `cs2_gc_replay` under the name `2501.bin`; local mode replays it. Buying is still refused.
+
 ## Config (`cs2_gc.cfg`, optional)
 
 The file lives next to `steam_api64.dll`. Windows hides known file extensions, so make sure it is

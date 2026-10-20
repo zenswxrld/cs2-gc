@@ -162,3 +162,17 @@ while CS2 runs (the DLL processes the request); native-picker support needs a di
   VPK overrides now load: our folders listed in vpk.signatures with the directory checksum are accepted, and the
   recipe-only override in cs2_gc_native is active. Still to check in the same build: contract result, scoreboard row,
   terminal offer numbers, Armory rotation script.
+
+### Build 14 live notes for the next person (screenshots from the user, 20 Oct)
+- Terminal offer numbers still count down ("3rd Offer - Declined" then "2nd Offer"). The laptop shows
+  `Offer limit: Unlimited`; `tools/native_offer_numbers.py` computes `limit - remaining` only when
+  `JSON.parse(InventoryAPI.GetVolatileLimits()).limit > 0`, so with Unlimited it falls back to the remaining counter.
+  The GC side then uses `terminal_default_offers` (cs2_gc_gameplay.cfg) as the limit. Fix idea: make the JS fall back to
+  the same number (e.g. bake terminal_default_offers into the patch) or have the GC start the counter at 1 and count up
+  for unlimited terminals. Not verified which the laptop expects.
+- Armory/Store: the page now loads the patched xpshop script (one tile per rotation category, "Refreshes with Armory" on
+  the limited tile, 5 pass bars, Credits Balance 10). User reports a different layout / fewer options than before.
+  Visible problem: the limited tile is titled "XM1014 | Solitude" but shows an AK-47 model, i.e. the tile name and the
+  displayed item do not match. Check `tools/armory_rotation_catalog.py` (generated catalogue rows) and
+  `tools/rotate_armory.py` (which tiles are hidden per category) against the stock Armory catalogue.
+- Native trade-up picker mixes StatTrak and normal (confirmed). Contract result not yet reported.

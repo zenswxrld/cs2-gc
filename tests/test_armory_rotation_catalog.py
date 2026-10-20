@@ -159,7 +159,7 @@ assert.deepEqual(nodes['id-xpshop-row-2'].order,[['limited','c0']]);
 assert.equal(nodes['cs2gc-armory-clock'],undefined);  // one countdown only
 const clock=nodes['id-local-rotation-countdown'];
 assert.equal(clock.text,'Armory refresh: 15:00');
-assert.equal(clock.style.color,'#ffffff'); assert.equal(clock.style.fontFamily,'Stratum2');
+assert.equal(clock.style.color,'#ffffff'); assert.equal(clock.style.fontFamily,undefined);  // stock CS2 font
 assert.equal(clock.GetParent().id,'cs2gc-category-bar'); assert.equal(clock.style.horizontalAlign,'right');
 root.SetHasClass('xpshop-grids-visible',true); _LocalRotationRefresh();
 assert.equal(nodes['cs2gc-category-bar'].visible,true);      // the timer stays visible in a tab
@@ -169,6 +169,12 @@ let opened=null; globalThis._UpdateInspectGrid = e => { opened = e.item_name; };
 panel('capsule-nav'); panel('charm-nav').checked = true;
 _LocalOpenEntry({item_name:'capsule'});
 assert.equal(opened,'capsule'); assert.equal(nodes['capsule-nav'].checked,true);
+// A grid refresh that throws (capsule grid without a model panel) still switches to the capsule grid.
+const container=panel('id-xpshop-inspect-container'); panel('capsule-grid');
+let visible=null; globalThis._UpdateVisibleInspectGrid=(parent,id)=>{ visible=id; };
+globalThis._UpdateInspectGrid = () => { throw new TypeError('elModel is null'); };
+_LocalOpenEntry({item_name:'capsule'});
+assert.equal(visible,'capsule-grid');
 '''
         result=subprocess.run(['node','-e',script],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)

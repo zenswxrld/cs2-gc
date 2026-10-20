@@ -14,7 +14,14 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
         // otherwise the next inventory update jumps back to an older tab.
         const nav = $.GetContextPanel().FindChildInLayoutFile(entry.item_name + '-nav');
         if (nav && nav.IsValid()) nav.checked = true;
-        _UpdateInspectGrid(entry);
+        _LocalShowGrid(entry);
+    }
+    function _LocalShowGrid(entry) {
+        // Never leave the previous tab's grid on screen when this entry's grid fails to build or refresh.
+        try { _UpdateInspectGrid(entry); } catch (error) { $.Msg('cs2_gc armory: ' + entry.item_name + ': ' + error); }
+        const container = m_elContentPanel.FindChildInLayoutFile('id-xpshop-inspect-container');
+        if (container && container.FindChildInLayoutFile(entry.item_name + '-grid'))
+            _UpdateVisibleInspectGrid(container, entry.item_name + '-grid');
     }
     function _LocalCatalogueControls() {
         const root = $.GetContextPanel();
@@ -123,10 +130,6 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
         pager.FindChildInLayoutFile('cs2gc-agent-next').enabled = pages > 1;
         const grid = m_elContentPanel.FindChildInLayoutFile(entry.item_name + '-grid');
         if (grid) {
-            grid.FindChildrenWithClassTraverse('xpshop__inspect-grid__title').forEach(title => {
-                title.style.fontSize = '32px'; title.style.letterSpacing = '2px';
-                title.style.marginTop = '64px'; title.style.height = '38px'; title.style.color = '#d6ecec';
-            });
             grid.SetDialogVariable('use-text', 'Recruit a random agent');
             grid.SetDialogVariable('desc-text', 'One random agent from the pool below.');
             grid.SetDialogVariable('confirm-text', 'Recruit one random agent?');
@@ -209,17 +212,17 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
             let label = bar.FindChildInLayoutFile('id-local-rotation-countdown');
             if (!label) {
                 label = $.CreatePanel('Label', bar, 'id-local-rotation-countdown');
-                label.style.fontFamily = 'Stratum2'; label.style.fontSize = '18px'; label.style.color = '#ffffff';
+                label.style.fontSize = '18px'; label.style.color = '#ffffff';
                 label.style.horizontalAlign = 'right'; label.style.verticalAlign = 'center';
             }
             label.text = text;
-            // Line the right edge up with "Get Another Armory Pass" instead of the far edge of the page.
-            const passes = root.FindChildInLayoutFile('id-xpshop-more-passes-btn');
-            if (passes && passes.IsValid() && bar.GetPositionWithinWindow && passes.GetPositionWithinWindow) {
+            // Line the right edge up with the Credits Balance block (always shown; the pass button hides at 5 passes).
+            const anchor = root.FindChildInLayoutFile('id-xpshop-balance');
+            if (anchor && anchor.IsValid() && bar.GetPositionWithinWindow && anchor.GetPositionWithinWindow) {
                 const barRight = bar.GetPositionWithinWindow().x + bar.actuallayoutwidth;
-                const passRight = passes.GetPositionWithinWindow().x + passes.actuallayoutwidth;
-                const gap = (barRight - passRight) / (bar.actualuiscale_x || 1);
-                if (gap > 0 && passes.actuallayoutwidth > 0) label.style.marginRight = Math.round(gap) + 'px';
+                const anchorRight = anchor.GetPositionWithinWindow().x + anchor.actuallayoutwidth;
+                const gap = (barRight - anchorRight) / (bar.actualuiscale_x || 1);
+                if (anchor.actuallayoutwidth > 0 && gap > 0) label.style.marginRight = Math.round(gap) + 'px';
             }
         }
         if (m_localRotationCycle !== -1 && m_localRotationCycle !== cycle) {
@@ -285,7 +288,7 @@ def patch_previews(source):
     # Rebind callbacks when stock UI reuses panels after a catalogue refresh.
     source = source.replace("        elTile.FindChildInLayoutFile('id-new-item-tag')", "        elTile.SetPanelEvent('onactivate', () => _LocalOpenEntry(ShopEntry));\n        elTile.FindChildInLayoutFile('id-new-item-tag')", 1)
     nav_end = "    function _CancelTimeoutForRewardItem() {"
-    nav_binding = "        elBtn.SetPanelEvent('onactivate', () => _UpdateInspectGrid(ShopEntry));\n"
+    nav_binding = "        elBtn.SetPanelEvent('onactivate', () => _LocalShowGrid(ShopEntry));\n"
     previous = "        }\n    }\n" + nav_end
     source = source.replace(previous, "        }\n" + nav_binding + "    }\n" + nav_end, 1)
     # Fallback icons are actual native item images, not guessed item-set SVG names.
@@ -304,9 +307,14 @@ def patch_previews(source):
             const currentTile = m_elContentPanel.FindChildInLayoutFile(element.item_name);
             if (currentTile) currentTile.SetPanelEvent('onactivate', () => _LocalOpenEntry(element));
             const currentNav = $.GetContextPanel().FindChildInLayoutFile(element.item_name + '-nav');
-            if (currentNav) currentNav.SetPanelEvent('onactivate', () => _UpdateInspectGrid(element));
+            if (currentNav) currentNav.SetPanelEvent('onactivate', () => _LocalShowGrid(element));
 '''
     source = source.replace('            _MakeNavButton(element);', '            _MakeNavButton(element);' + route, 1)
+    # Capsule (crate) grids can lack an ItemPreviewPanel; the stock refresh then threw before switching grids,
+    # leaving the previous tab (often Random Agent) on screen.
+    source = source.replace('if (elModel.PanZoomEnabled()) {', 'if (elModel && elModel.PanZoomEnabled()) {')
+    source = source.replace("$.Schedule(.25, () => elModel.TransitionToCamera('cam_case_open', 1));",
+                            "$.Schedule(.25, () => { if (elModel && elModel.IsValid()) elModel.TransitionToCamera('cam_case_open', 1); });", 1)
     # Category controls remain visible while inspecting; switching categories returns to tiles.
     return source
 

@@ -372,3 +372,15 @@ Full build-25966348 schema loaded successfully, all supplementary rare pools val
   Python and the example cfg). Users with their own cfg must set `armory_charm_slots = 3` themselves.
 - The countdown's right margin is computed each second from the "Get Another Armory Pass" button
   (`GetPositionWithinWindow` + `actuallayoutwidth`), so it lines up with the button.
+
+### Build 17e (Claude)
+
+- Capsule tile opened Random Agent: on the second open of a crate grid the stock refresh calls
+  `elModel.PanZoomEnabled()` on a null `ItemPreviewPanel` and throws before `_UpdateVisibleInspectGrid`, so the
+  previously shown grid (Random Agent) stayed visible. `patch_previews` now null-guards both `PanZoomEnabled()`
+  calls and the scheduled `TransitionToCamera`, and tiles/tabs open through `_LocalShowGrid`, which catches any
+  remaining error (logged as `cs2_gc armory: <item>: <error>` in the console) and still shows the entry's grid.
+  Not yet confirmed in the client.
+- Countdown right edge now lines up with `id-xpshop-balance` (the pass button is hidden at 5 passes).
+- Removed the custom Random Agent grid title styling (it sat over the tab icons) and the explicit `Stratum2` on the
+  countdown, so both use the stock CS2 font/styles.

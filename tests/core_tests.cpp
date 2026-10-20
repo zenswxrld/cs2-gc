@@ -3390,6 +3390,7 @@ void Terminals()
     Check(replies.size() == 3 && !live->Items().Find(1) && live->Items().Items().size() == 1 &&
               live->Items().Find(finalOffer->id)->storedIn == 0 && !live->Items().Find(finalOffer->id)->purchasePrice,
           "accepting buys the displayed offer, consumes the terminal and does not reroll or grant another terminal");
+    Check(live->Items().Find(finalOffer->id)->ownerCertificate, "an accepted terminal offer carries the Original Owner Certificate");
     request(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseFinalize, finalize);
     drain();
     Check(live->Items().Items().size() == 1 && saves == 4, "repeated finalize cannot duplicate a terminal reward");

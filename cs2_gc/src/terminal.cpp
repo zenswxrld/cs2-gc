@@ -134,6 +134,7 @@ std::optional<LiveInventory::TerminalChange> LiveInventory::AcceptTerminal(const
     auto *item = m_inventory.Find(offer->id);
     item->storedIn = 0;
     item->purchasePrice.reset();
+    item->ownerCertificate = true;
     change.offer = *item;
     return change;
 }

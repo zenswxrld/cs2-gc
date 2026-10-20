@@ -186,6 +186,8 @@ std::string Inventory::ToText() const
             out << "\t\t\t\"expiration\"\t\"" << item.expiration << "\"\n";
         if (item.purchasePrice)
             out << "\t\t\t\"purchase_price\"\t\"" << *item.purchasePrice << "\"\n";
+        if (item.ownerCertificate)
+            out << "\t\t\t\"owner_certificate\"\t\"1\"\n";
         if (item.slabSticker)
             out << "\t\t\t\"slab_sticker\"\t\"" << item.slabSticker << "\"\n";
         if (item.storedIn)
@@ -389,6 +391,12 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
                     return std::nullopt;
                 *target = value;
             }
+        if (const auto *certificate = entry.Find("owner_certificate"))
+        {
+            if (certificate->block || (certificate->value != "0" && certificate->value != "1"))
+                return std::nullopt;
+            item.ownerCertificate = certificate->value == "1";
+        }
         if (const auto *unusual = entry.Find("unusual"))
         {
             if (unusual->block || unusual->value != "1")

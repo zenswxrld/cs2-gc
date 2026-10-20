@@ -126,6 +126,8 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
         AddIntegerAttribute(out, 183, item.expiration);
     if (item.purchasePrice)
         AddIntegerAttribute(out, 316, *item.purchasePrice);
+    if (item.ownerCertificate)
+        AddIntegerAttribute(out, 317, accountId);
     if (item.statTrak)
     {
         AddIntegerAttribute(out, AttributeKillEater, 0);

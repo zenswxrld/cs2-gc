@@ -42,6 +42,7 @@ public:
     // Queue a protobuf reply for the game. `type` is the plain message ID (no flag).
     bool Reply(std::uint32_t type, std::span<const std::uint8_t> body);
     void SetHandler(std::uint32_t type, Handler handler); // plain ID; replaces any earlier one
+    void SetOwner(const SoOwner &owner);                  // used by later welcomes
 
     std::size_t IgnoredMessages() const { return m_ignored; }
 

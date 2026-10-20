@@ -5,6 +5,9 @@
 //  - SteamInternal_CreateInterface returns the real ISteamClient, with its
 //    GetISteamGenericInterface vtable entry redirected so the same name resolves to the
 //    local GC when the game asks through the client object.
+//  - SteamAPI_RegisterCallback / UnregisterCallback / RunCallbacks take over the two GC
+//    callbacks, so the game is told (GCMessageAvailable_t) when the local GC has a message
+//    for it. Without that callback the game does not pick replies up.
 // Every interface name the game requests is logged, plus the GC messages it sends.
 //
 // It only activates when the game was launched with -insecure; otherwise every call goes to
@@ -22,10 +25,13 @@
 #undef SendMessage // windows.h renames it; our methods keep their SDK names
 
 #include <chrono>
+#include <vector>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <cstring>
+#include <utility>
 #include <mutex>
 #include <set>
 #include <optional>
@@ -145,10 +151,24 @@ void LogFrame(Logger &log, const char *direction, std::uint32_t type, std::span<
 class ProxyCoordinator final : public SteamGameCoordinatorInterface
 {
 public:
-    ProxyCoordinator(const GcEndpointConfig &config, Logger &log) : m_gc(config), m_log(log) {}
+    // steamIdProvider is asked until it returns a nonzero SteamID64, which then becomes the
+    // cache owner. Leave it empty when the config already supplies one.
+    ProxyCoordinator(const GcEndpointConfig &config, Logger &log, std::function<std::uint64_t()> steamIdProvider)
+        : m_gc(config), m_log(log), m_ownerType(config.owner.type), m_provider(std::move(steamIdProvider))
+    {
+    }
 
     GCResult SendMessage(std::uint32_t type, const void *data, std::uint32_t size) override
     {
+        if (m_provider)
+        {
+            if (const std::uint64_t id = m_provider())
+            {
+                m_gc.SetOwner({m_ownerType, id});
+                m_provider = nullptr;
+                m_log.Write("cache owner taken from the local Steam session (value not logged)");
+            }
+        }
         if (data && size <= MaxMessageBytes)
             LogFrame(m_log, ">> GAME->GC", type, {static_cast<const std::uint8_t *>(data), size});
         const GCResult result = m_gc.SendMessage(type, data, size);
@@ -171,6 +191,8 @@ public:
 private:
     LocalGameCoordinator m_gc;
     Logger &m_log;
+    std::uint32_t m_ownerType;
+    std::function<std::uint64_t()> m_provider;
 };
 
 struct State
@@ -183,6 +205,11 @@ struct State
     using CreateFn = void *(__cdecl *)(const char *);
     FindFn realFind{};
     CreateFn realCreate{};
+    void (__cdecl *realRegister)(void *, int){};
+    void (__cdecl *realUnregister)(void *){};
+    void (__cdecl *realRunCallbacks)(){};
+    int (__cdecl *realGetUser)(){};
+    std::uint64_t (__cdecl *realGetSteamId)(void *){};
     std::optional<std::uint32_t> genericSlotOffset; // from the real DLL's own flat-API thunk
 };
 
@@ -264,13 +291,19 @@ State &Init()
         {
             s.realFind = reinterpret_cast<State::FindFn>(GetProcAddress(real, "SteamInternal_FindOrCreateUserInterface"));
             s.realCreate = reinterpret_cast<State::CreateFn>(GetProcAddress(real, "SteamInternal_CreateInterface"));
+            s.realRegister = reinterpret_cast<decltype(s.realRegister)>(GetProcAddress(real, "SteamAPI_RegisterCallback"));
+            s.realUnregister = reinterpret_cast<decltype(s.realUnregister)>(GetProcAddress(real, "SteamAPI_UnregisterCallback"));
+            s.realRunCallbacks = reinterpret_cast<decltype(s.realRunCallbacks)>(GetProcAddress(real, "SteamAPI_RunCallbacks"));
+            s.realGetUser = reinterpret_cast<decltype(s.realGetUser)>(GetProcAddress(real, "SteamAPI_GetHSteamUser"));
+            s.realGetSteamId = reinterpret_cast<decltype(s.realGetSteamId)>(GetProcAddress(real, "SteamAPI_ISteamUser_GetSteamID"));
             // The flat-API wrapper is `mov rax,[rcx]; jmp [rax+N]`; N is the vtable offset we need.
             if (const auto *thunk = reinterpret_cast<const std::uint8_t *>(
                     GetProcAddress(real, "SteamAPI_ISteamClient_GetISteamGenericInterface")))
                 s.genericSlotOffset = DecodeVtableThunkOffset({thunk, 16});
         }
 
-        s.active = s.realFind && s.realCreate && CommandLineHasArgument(Narrow(GetCommandLineW()), "-insecure");
+        s.active = s.realFind && s.realCreate && s.realRegister && s.realUnregister && s.realRunCallbacks &&
+                   CommandLineHasArgument(Narrow(GetCommandLineW()), "-insecure");
         if (!s.active)
             return s;
 
@@ -295,7 +328,18 @@ State &Init()
         endpoint.welcomeVersion = proxy.welcomeVersion;
         endpoint.owner = {proxy.ownerType, proxy.steamId};
         endpoint.cacheVersion = proxy.cacheVersion;
-        s.coordinator = new ProxyCoordinator(endpoint, *s.log);
+        std::function<std::uint64_t()> provider;
+        if (proxy.steamId == 0 && s.realGetUser && s.realGetSteamId)
+        {
+            // Looked up when called: this lambda runs while the state is still being built,
+            // and the local is moved into its final home afterwards.
+            provider = []() -> std::uint64_t {
+                State &self = Init();
+                void *user = self.realFind(self.realGetUser(), "SteamUser023");
+                return user ? self.realGetSteamId(user) : 0;
+            };
+        }
+        s.coordinator = new ProxyCoordinator(endpoint, *s.log, std::move(provider));
         s.log->Write("cs2_gc diagnostic proxy active (-insecure). Targets Steam build " +
                      std::string(TargetSteamBuildId) + "; the GC is local and nothing is sent to Valve.");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
@@ -307,6 +351,135 @@ State &Init()
     }();
     return state;
 }
+
+// ---------------------------------------------------------------------------------------
+// GC callbacks. The game registers CCallbackBase objects with Steam. For the two GC callback
+// IDs the proxy keeps them itself and invokes them from SteamAPI_RunCallbacks, on the game's
+// own thread, the way Steam would.
+//
+// The game is built with MSVC, which lays overloaded virtual functions out in reverse
+// declaration order. CCallbackBase declares Run(void*), Run(void*, bool, uint64) and
+// GetCallbackSizeBytes(), so the vtable is [Run(void*, bool, uint64), Run(void*), Size].
+// This file is compiled with a different ABI, so the slots are called explicitly instead of
+// through a C++ virtual call.
+constexpr int GcMessageAvailableId = 1701; // k_iSteamGameCoordinatorCallbacks + 1
+constexpr int GcMessageFailedId = 1702;    // + 2
+constexpr std::size_t RunSlot = 1;
+constexpr std::size_t SizeSlot = 2;
+constexpr std::uint8_t CallbackFlagRegistered = 0x01;
+constexpr std::uint8_t CallbackFlagGameServer = 0x02;
+
+struct CallbackObject
+{
+    void **vtable;
+    std::uint8_t flags;
+};
+
+struct RegisteredCallback
+{
+    int id;
+    CallbackObject *object;
+};
+
+std::mutex g_callbackMutex;
+std::vector<RegisteredCallback> g_callbacks;
+
+bool IsGcCallback(int id)
+{
+    return id == GcMessageAvailableId || id == GcMessageFailedId;
+}
+
+void DeliverGcMessageAvailable(State &state, std::uint32_t size)
+{
+    std::vector<CallbackObject *> targets;
+    {
+        std::lock_guard lock(g_callbackMutex);
+        for (const RegisteredCallback &entry : g_callbacks)
+            if (entry.id == GcMessageAvailableId)
+                targets.push_back(entry.object);
+    }
+
+    static int delivered = 0;
+    for (CallbackObject *object : targets)
+    {
+        // Sanity-check the vtable assumption before calling into the game's object:
+        // GCMessageAvailable_t is a single uint32.
+        const auto sizeFn = reinterpret_cast<int(__cdecl *)(void *)>(object->vtable[SizeSlot]);
+        if (sizeFn(object) != static_cast<int>(sizeof(std::uint32_t)))
+        {
+            static bool warned = false;
+            if (!std::exchange(warned, true))
+                state.log->Write("callback object does not look like GCMessageAvailable_t; not delivering");
+            continue;
+        }
+        if (delivered < 10)
+        {
+            ++delivered;
+            state.log->Write("delivering GCMessageAvailable_t (message size " + std::to_string(size) + ")");
+        }
+        reinterpret_cast<void(__cdecl *)(void *, void *)>(object->vtable[RunSlot])(object, &size);
+    }
+}
+}
+
+extern "C" __declspec(dllexport) void __cdecl SteamAPI_RegisterCallback(void *callback, int id)
+{
+    State &state = Init();
+    if (state.active && callback && IsGcCallback(id))
+    {
+        auto *object = static_cast<CallbackObject *>(callback);
+        if (!(object->flags & CallbackFlagGameServer))
+        {
+            {
+                std::lock_guard lock(g_callbackMutex);
+                g_callbacks.push_back({id, object});
+            }
+            object->flags |= CallbackFlagRegistered;
+            state.log->Write("took over callback registration for id " + std::to_string(id));
+            return;
+        }
+    }
+    if (state.realRegister)
+        state.realRegister(callback, id);
+}
+
+extern "C" __declspec(dllexport) void __cdecl SteamAPI_UnregisterCallback(void *callback)
+{
+    State &state = Init();
+    if (state.active && callback)
+    {
+        bool ours = false;
+        {
+            std::lock_guard lock(g_callbackMutex);
+            for (auto it = g_callbacks.begin(); it != g_callbacks.end();)
+            {
+                if (it->object == callback)
+                {
+                    ours = true;
+                    it = g_callbacks.erase(it);
+                }
+                else
+                    ++it;
+            }
+        }
+        if (ours)
+        {
+            static_cast<CallbackObject *>(callback)->flags &= static_cast<std::uint8_t>(~CallbackFlagRegistered);
+            return;
+        }
+    }
+    if (state.realUnregister)
+        state.realUnregister(callback);
+}
+
+extern "C" __declspec(dllexport) void __cdecl SteamAPI_RunCallbacks()
+{
+    State &state = Init();
+    if (state.realRunCallbacks)
+        state.realRunCallbacks();
+    std::uint32_t size = 0;
+    if (state.active && state.coordinator && state.coordinator->IsMessageAvailable(&size))
+        DeliverGcMessageAvailable(state, size);
 }
 
 extern "C" __declspec(dllexport) void *__cdecl SteamInternal_CreateInterface(const char *version)

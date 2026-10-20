@@ -11,7 +11,13 @@ import struct
 import sys
 
 # Implemented by cs2_gc/proxy/steam_api_proxy.cpp, so they must not be forwarded.
-OVERRIDDEN = ("SteamInternal_FindOrCreateUserInterface", "SteamInternal_CreateInterface")
+OVERRIDDEN = (
+    "SteamInternal_FindOrCreateUserInterface",
+    "SteamInternal_CreateInterface",
+    "SteamAPI_RegisterCallback",
+    "SteamAPI_UnregisterCallback",
+    "SteamAPI_RunCallbacks",
+)
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_@?$]*$")
 
 

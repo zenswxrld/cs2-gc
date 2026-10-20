@@ -16,6 +16,12 @@ void LocalGameCoordinator::SetHandler(std::uint32_t type, Handler handler)
     m_handlers[type] = std::move(handler);
 }
 
+void LocalGameCoordinator::SetOwner(const SoOwner &owner)
+{
+    std::lock_guard lock(m_mutex);
+    m_config.owner = owner;
+}
+
 bool LocalGameCoordinator::Reply(std::uint32_t type, std::span<const std::uint8_t> body)
 {
     Message message{type | ProtobufMask, {}};

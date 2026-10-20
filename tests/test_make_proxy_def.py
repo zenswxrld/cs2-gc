@@ -61,13 +61,13 @@ class ProxyDefTests(unittest.TestCase):
         self.assertEqual(tool.export_names(fake_dll(names)), names)
 
     def test_forwarders_and_override(self):
-        names = ["SteamAPI_Init", "SteamInternal_FindOrCreateUserInterface", "SteamInternal_CreateInterface"]
+        names = ["SteamAPI_Init", *tool.OVERRIDDEN]
         text = tool.render(names, "steam_api64_real")
         self.assertIn("    SteamAPI_Init = steam_api64_real.SteamAPI_Init\n", text)
         self.assertIn("    SteamInternal_FindOrCreateUserInterface\n", text)
-        self.assertIn("    SteamInternal_CreateInterface\n", text)
-        self.assertNotIn("FindOrCreateUserInterface =", text)
-        self.assertNotIn("SteamInternal_CreateInterface =", text)
+        for name in tool.OVERRIDDEN:
+            self.assertIn(f"    {name}\n", text)
+            self.assertNotIn(f"{name} =", text)
 
     def test_missing_override_and_bad_target_rejected(self):
         with self.assertRaisesRegex(ValueError, "does not export"):
@@ -75,10 +75,10 @@ class ProxyDefTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not export"):
             tool.render(["SteamInternal_FindOrCreateUserInterface"], "steam_api64_real")  # only one override
         with self.assertRaises(ValueError):
-            tool.render(["SteamInternal_FindOrCreateUserInterface", "SteamInternal_CreateInterface"], "evil;name")
+            tool.render(list(tool.OVERRIDDEN), "evil;name")
 
     def test_rejects_bad_modules(self):
-        good = ["a_one", "SteamInternal_FindOrCreateUserInterface"]
+        good = ["a_one", *tool.OVERRIDDEN]
         with self.assertRaises(ValueError):
             tool.export_names(fake_dll(good, machine=0x14C))
         with self.assertRaises(ValueError):
@@ -93,7 +93,7 @@ class ProxyDefTests(unittest.TestCase):
             tool.export_names(fake_dll(["bad name;"]))
 
     def test_truncated_files_never_crash(self):
-        data = fake_dll(["SteamAPI_Init", "SteamInternal_FindOrCreateUserInterface", "SteamInternal_CreateInterface"])
+        data = fake_dll(["SteamAPI_Init", *tool.OVERRIDDEN])
         for cut in range(0, len(data), 13):
             with contextlib.suppress(ValueError):
                 tool.export_names(data[:cut])
@@ -101,7 +101,7 @@ class ProxyDefTests(unittest.TestCase):
     def test_cli_never_overwrites(self):
         with tempfile.TemporaryDirectory() as temp:
             dll = Path(temp) / "steam_api64.dll"
-            dll.write_bytes(fake_dll(["SteamAPI_Init", "SteamInternal_FindOrCreateUserInterface", "SteamInternal_CreateInterface"]))
+            dll.write_bytes(fake_dll(["SteamAPI_Init", *tool.OVERRIDDEN]))
             out = Path(temp) / "out.def"
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(tool.main([str(dll), "--out", str(out)]), 0)

@@ -608,6 +608,16 @@ void Endpoint()
     gc.RetrieveMessage(&type, buffer.data(), static_cast<std::uint32_t>(buffer.size()), &got);
     Check(type == (9998 | ProtobufMask) && got == 10, "custom reply framing");
     Check(!gc.Reply(0, {}), "invalid reply type rejected");
+
+    // A later hello uses the owner set after construction.
+    gc.SetOwner({1, 4321});
+    Check(send(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello, EncodeClientHello(hello)) == GCResult::OK &&
+              gc.IsMessageAvailable(&size), "second hello answered");
+    std::vector<std::uint8_t> second(size);
+    gc.RetrieveMessage(&type, second.data(), size, &got);
+    FrameView secondFrame;
+    Check(ReadProtobufFrame(type, second, secondFrame) == FrameError::None &&
+              DecodeClientWelcome(secondFrame.body)->outOfDateCaches[0].owner.id == 4321, "owner updated");
 }
 
 void ProtobufDump()

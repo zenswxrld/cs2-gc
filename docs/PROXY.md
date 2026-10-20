@@ -18,6 +18,14 @@ The game can ask for that interface two ways, so both are covered:
   object. The entry's offset is decoded at runtime from the real library's own flat-API
   wrapper, and if it cannot be decoded the hook is simply not installed.
 
+The game only picks GC replies up after Steam's `GCMessageAvailable_t` callback, so the proxy also
+takes over registration of the two GC callbacks (ids 1701 and 1702) and fires them itself from
+`SteamAPI_RunCallbacks`. The callback objects are called through explicit vtable slots because
+the game's MSVC layout of overloaded virtuals differs from the one this file is compiled with;
+the callback's size is checked first and delivery is skipped if it looks wrong. The cache owner
+is read from the local Steam session (`steam_id` in the config overrides it); the value is never
+logged.
+
 The first test run showed the game never used the first route, which is why the second exists.
 Every distinct interface name the game requests is logged ("interface requested via ..."), so
 the log shows how the game really gets its interfaces even if the GC hook does not take.

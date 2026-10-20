@@ -21,6 +21,11 @@ from test_native_tradeups import GAMEINFO
 from test_price_sheet import SHEET, tool as fixture_sheet
 
 SOURCE = '''// FindChildTraverse('jsRatingEmblem')
+function _GetPlayerRowForGameMode() {
+        let mode = MockAdapter.GetGameModeInternalName(false);
+        let skirmish = MockAdapter.GetGameModeInternalName(true);
+        return 'snippet_scoreboard-classic__row--comp';
+}
 function draw(oPlayer, stat) {
  switch (stat) {
  case 'skillgroup': {
@@ -73,6 +78,12 @@ def vpk(directory, payload, split=False, preload=0, extension='vjs_c', folder='p
 
 
 class NativeUI(unittest.TestCase):
+    def test_offline_competitive_uses_the_premier_row_layout(self):
+        patched = scoreboard.patch(SOURCE, gameplay_config.DEFAULTS)
+        row = patched[patched.index('function _GetPlayerRowForGameMode'):patched.index('function draw')]
+        self.assertIn("row--premier", row)
+        self.assertIn("mode === 'competitive'", row)
+
     def test_installed_vts_c_version2_resource_is_found_patched_and_keeps_its_layout(self):
         # The real game names these scripts .vts_c and writes resource version 2; the lookup and parser used to
         # insist on .vjs_c and version 4, so no native patch ever mounted.

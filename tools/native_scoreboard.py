@@ -48,6 +48,13 @@ INJECT = '''
 '''
 
 
+ROW_ANCHOR = re.compile(r"(function _GetPlayerRowForGameMode\(\)\s*\{\s*let mode = MockAdapter\.GetGameModeInternalName\(false\);\s*let skirmish = MockAdapter\.GetGameModeInternalName\(true\);)")
+ROW_INJECT = '''
+        // cs2_gc: offline Competitive uses the row layout that holds the native rating emblem (the Premier row).
+        if ((mode === 'competitive' || mode === 'premier') && !GameStateAPI.IsDemoOrHltv())
+            return 'snippet_scoreboard-classic__row--premier';'''
+
+
 def patch(source, config):
     if 'cs2_gc native Premier badges' in source: raise ValueError('Scoreboard is already patched')
     # Require the actual inspected API shape; fail without affecting native files if it changes.
@@ -56,6 +63,8 @@ def patch(source, config):
     if not all(anchor in source for anchor in required): raise ValueError('Installed scoreboard API layout has changed')
     anchor = re.compile(r"(case\s+'skillgroup'\s*:\s*\{)")
     if len(anchor.findall(source)) != 1: raise ValueError('Ambiguous scoreboard skillgroup branch')
+    if len(ROW_ANCHOR.findall(source)) != 1: raise ValueError('Ambiguous scoreboard row selector')
+    source = ROW_ANCHOR.sub(lambda match: match.group(0) + ROW_INJECT, source, count=1)
     insert = INJECT.replace('__BOTS__', 'true' if config['premier_bot_badges'] else 'false')
     insert = insert.replace('__PLACEMENTS__', str(config['premier_placement_wins']))
     return anchor.sub(lambda match: match.group(0) + insert, source, count=1)

@@ -79,6 +79,8 @@ def catalogue(source, config):
             add('lootlist:' + name, slot, price, template)
 
     for name in ARMORY_COLLECTIONS: loot(name, 'collection', 4)
+    # The current weekly drop pool collections rotate through the collection tiles too.
+    for name in sorted(n for n in sections.get('item_sets', {}) if n.startswith('set_timed_drops_')): loot(name, 'collection', 4)
     for name in lists:
         if name.startswith('keychain_pack_') and name.endswith('_lootlist'): loot(name, 'charm', 3)
         if name.startswith('sticker_pack_') and name.endswith('_lootlist'): loot(name, 'sticker', 1)

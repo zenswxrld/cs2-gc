@@ -504,3 +504,4 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   get the stock `weapon_cases/default_rare_item_png.vtex_c` (user's choice) - added only to the cs2_gc_finishes VPK
   (vpk_pack.pack(extra=...), identical contents stored once), never written loose. Real pictures stay for shipped
   pairs. Base-name fallback for extra finish titles (17v showed "Skeleton Knife | Ember").
+- 17z: user wants the Black Market Case to hold ONLY custom finishes (new knife finishes + recolours); all official knife finishes removed from it (they stay in regular cases).

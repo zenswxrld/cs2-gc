@@ -130,7 +130,8 @@ class NativeFinishes(unittest.TestCase):
             self.assertEqual(case['image_inventory'], finishes.CASE_IMAGE)
             contents = dict(sections['client_loot_lists'][finishes.CASE_NAME + '_ancient'])
             self.assertTrue(all('weapon_knife' in k or 'weapon_bayonet' in k for k in contents))  # knives only
-            self.assertIn('[aa_fade]weapon_knife_karambit', contents)
+            # Only custom finishes: no official knife finish, not even on another knife (they stay in regular cases).
+            self.assertFalse([k for k in contents if not (k.startswith('[rk_') or k.startswith('[am_aqua_flecks]'))])
             self.assertIn('[am_aqua_flecks]weapon_bayonet', contents)
             self.assertTrue(any(k.startswith('[rk_aa_fade_') for k in contents))
             kits = {as_dict(v)['name']: as_dict(v) for v in sections['paint_kits'].values()}

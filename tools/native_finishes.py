@@ -277,11 +277,9 @@ def plan(source_text, gold_pools_text, titles, finish_source, known_ids=None):
                 and not any(word in name for word in WEAPON_WORDS) and name not in extras and titles.get(name)):
             extras.append(name)
     files, entries, case, tokens = {}, [], [], {}
-    # Official finishes on the knives they shipped with, and the colour finishes on every knife.
-    case += sorted(('[%s]%s' % (kit, knife)) if kit else knife for knife, kit in official)
-    colour_kits = [kit for kit in knife_kits if kits[kit][1].get('style') in ('1', '2', '3', '5', '6', '8')
-                   and not KNIFE_VARIANT.search(kit)]
-    for kit in colour_kits + extras:
+    # Only finishes no regular case has: the new knife finishes and the recolours below (user's choice, 21 Oct).
+    # Official knife finishes stay in the regular cases.
+    for kit in extras:
         case += ['[%s]%s' % (kit, knife) for knife in knife_names]
     # Paint kit ids are stored on owned knives, so an existing recolour keeps its id: known ids come first, and new
     # recolours take the next free number after them.

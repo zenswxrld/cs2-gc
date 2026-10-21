@@ -64,8 +64,8 @@ DEAD_HAND_PRINT_HUES = {'glove_sport_beadwork_diamonds_purple': 265, 'glove_spor
                         'glove_specialist_sunburst_red': 30}
 # No recolours (user's call): the main printed panel cannot change, so every colour looks wrong or the same —
 # Big Swell (wave, blue leather), Blaze (flames), Brocade Crane and Brocade Flowers (brocade panel),
-# Seigaiha (wave panel), Wave Chaser (white silk with blue print).
-DEAD_HAND_SKIP = {'glove_specialist_wave_blue', 'glove_sport_flames_orange', 'glove_driver_brocade_crane_red',
+# Seigaiha (wave panel), Wave Chaser (white silk with blue print), Chocolate Chesterfield (user: doesn't work).
+DEAD_HAND_SKIP = {'glove_specialist_quilted_black', 'glove_specialist_wave_blue', 'glove_sport_flames_orange', 'glove_driver_brocade_crane_red',
                   'glove_driver_brocade_flower_red', 'glove_driver_scallop_metallic_blue',
                   'glove_driver_silk_dragon_white'}
 HARMONY_DEGREES = 60

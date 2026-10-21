@@ -21,8 +21,9 @@ def patch(source, care_packages=False, hide_promo=True):
         anchor = """        if (!$('#MainMenuNavBarHome').checked)
             return;
         const objStore = InventoryAPI.GetCacheTypeElementJSOByIndex("PersonalStore", 0);"""
-        replacement = """        // cs2_gc: present saved choices when returning to Home or Inventory, outside a match.
-        if (!$('#MainMenuNavBarHome').checked && !$('#MainMenuNavBarInventory').checked)
+        replacement = """        // cs2_gc: present saved choices only on Inventory, outside a match.
+        if (GameStateAPI.GetMapBSPName()) return;
+        if (!$('#MainMenuNavBarInventory').checked)
             return;
         const objStore = InventoryAPI.GetCacheTypeElementJSOByIndex("PersonalStore", 0);"""
         if source.count(anchor) != 1: raise ValueError('Installed care-package notification anchor changed')

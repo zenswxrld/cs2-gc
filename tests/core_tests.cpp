@@ -3918,16 +3918,19 @@ void SouvenirPackagesAndHandwraps()
     Check(shop.RotationAt(0,config).redeemIds != shop.RotationAt(900,config).redeemIds,
           "souvenir packages rotate independently");
     auto offer = shop.Redeem({11,Crc32("crate_test2025_promo_de_test"),15,5},live,[]{return 0ull;});
-    Check(offer.status == Armory::Status::Ok && offer.item.defIndex == 60 &&
-          offer.item.tournamentEvent == 25 && shop.Balance() == 10, "Armory grants a closed souvenir package for its cost");
-    const auto packageId = offer.item.id;
+    Check(offer.status == Armory::Status::Ok && offer.item.defIndex == 7 && offer.item.souvenir &&
+          offer.item.tournamentEvent == 25 && shop.Balance() == 10 && live.Items().Items().size() == 1,
+          "Armory grants exactly one souvenir weapon directly for its cost, without a package");
+    Check(offer.item.stickers.size() == 4 && offer.item.stickers.back().kit == 5 &&
+          live.Items().CasePity() == 44, "direct souvenir purchase keeps decals and does not affect case pity");
+    const auto packageId = live.AddItem({0,60}).id;
     const auto result = live.Open(*schema,CustomItemIdBase+packageId,0,[]{return 0ull;});
     Check(result && result->item.souvenir && !result->item.statTrak && !result->item.unusual &&
           result->item.paintKitIndex == 10 && result->item.wear >= .1f && result->item.wear <= .2f &&
           result->item.stickers.size() == 4 && result->item.stickers.back().kit == 5 &&
           result->item.tournamentTeam0 == 10 && result->item.tournamentTeam1 == 20 &&
           live.Items().CasePity() == 44 && !live.Items().Find(packageId),
-          "keyless souvenir open consumes once, preserves pity, and adds event/two-team/map gold stickers");
+          "previously owned souvenir packages still open keylessly with correct decals");
     const auto wire = DecodeItem(BuildEconItem(result->item,42,CustomItemIdBase+result->item.id,1));
     Check(wire.ok && wire.quality == QualityTournament && wire.floatBits.at(137)==25 && wire.floatBits.at(139)==10 &&
           wire.floatBits.at(140)==20 && !wire.floatBits.contains(AttributeKillEater),
@@ -4026,16 +4029,23 @@ void NativeCarePackages()
     auto endpointInventory=std::make_shared<LiveInventory>(saved);LocalGameCoordinator endpoint({});int saves=0;
     endpoint.EnableContainers(endpointInventory,shared,[]{return 500ull;},[&]{++saves;});
     Check(endpoint.ApplyMatchRewards(1,[&]{++saves;}),"native choice package queues through the coordinator");
-    bool personal=false,oldDrop=false;std::uint32_t size=0;
+    bool personal=false,oldDrop=false,unsafePreview=false;std::vector<std::uint64_t> choiceTokens;std::uint32_t size=0;
     while(endpoint.IsMessageAvailable(&size)) {
         std::vector<std::uint8_t> bytes(size);std::uint32_t type=0,got=0;endpoint.RetrieveMessage(&type,bytes.data(),size,&got);
         oldDrop|=(type&~ProtobufMask)==gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification;
         FrameView frame;ReadProtobufFrame(type,bytes,frame);
         if((type&~ProtobufMask)==gc_msg::ESOMsg::k_ESOMsg_Create) {
-            const auto object=DecodeSoSingleObject(frame.body);if(object && object->typeId==4)personal=true;
+            const auto object=DecodeSoSingleObject(frame.body);
+            if(object && object->typeId==1)unsafePreview=true;
+            if(object && object->typeId==4) {
+                personal=true;PbReader store(object->data);PbField field;
+                while(store.Next(field))if(field.number==3 && field.wire==0)choiceTokens.push_back(field.value);
+            }
         }
     }
-    Check(personal && !oldDrop && saves==1,"native PersonalStore published without old end-match drops");
+    Check(personal && !oldDrop && !unsafePreview && saves==1 && choiceTokens.size()==4 &&
+          std::set<std::uint64_t>(choiceTokens.begin(),choiceTokens.end()).size()==4,
+          "match end publishes only choice descriptors, no preview econ items or end-match drops");
     {
         const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
         Check(disk.has_value(),"queued package reloads for reconnect");
@@ -4056,12 +4066,12 @@ void NativeCarePackages()
                 if(object.typeId==1)previewCount+=static_cast<unsigned>(object.objects.size());
             }
         }
-        Check(storeFound && previewCount==4 && resumed->Items().Items().empty(),
-              "reconnect publishes four unowned previews and the native PersonalStore without granting them");
+        Check(storeFound && previewCount==0 && resumed->Items().Items().empty(),
+              "reconnect restores choice descriptors without recreating the crashing unowned econ previews");
     }
     const auto &offer=endpointInventory->Items().CarePackages().front();
     PbWriter request;request.Varint(1,offer.generation);request.Varint(2,3);
-    for(unsigned i=0;i<3;++i)request.Varint(3,CustomItemIdBase+offer.offers[i].id);
+    for(unsigned i=0;i<3;++i)request.Varint(3,choiceTokens[i]);
     std::vector<std::uint8_t> body;WriteProtobufFrame(9219,{},request.bytes(),body);
     endpoint.SendMessage(9219|ProtobufMask,body.data(),body.size());
     endpoint.SendMessage(9219|ProtobufMask,body.data(),body.size());

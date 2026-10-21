@@ -52,6 +52,10 @@ std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view
                                           const RandomSource &random, const CaseOdds &odds = {},
                                           std::uint32_t excludedRarity = 0);
 
+// Roll a souvenir weapon and same-event decals without mutating inventory or case pity.
+std::optional<InventoryItem> RollSouvenir(const Schema &schema, const CrateInfo &crate,
+                                          const RandomSource &random, const CaseOdds &odds = {});
+
 // Three independent 50% case / 50% blue-or-better weapon drops; atomic on missing pools.
 std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, const RandomSource &random,
                                                                const GameplayConfig &config = {});

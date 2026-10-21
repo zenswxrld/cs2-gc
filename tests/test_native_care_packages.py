@@ -22,9 +22,15 @@ class NativeCarePackages(unittest.TestCase):
     function OnRedeem() {sent++;}
     function _UpdateTime() { weekly++; }
     function OnInventoryUpdated() { updated++; }
+    function _CreateItemPanel(itemId, index, bFirstTime, claimedItemId = '') {
+        elGhostItem.Data().itemid = itemId;
+    }
+    function _OnGhostItemActivate(itemId) {
+        if (!InventoryAPI.IsFauxItemID(itemId)) { return true; }
+    }
 '''
         script='''const assert=require('assert');let count=2,sent=0,pulses=0,weekly=0,updated=0,cancelled=0;
-let store={generation_time:10,redeemable_balance:3,items:['1000000000001','1000000000002','1000000000003','1000000000004']};
+let store={generation_time:10,redeemable_balance:3,items:['3000000000001','3004294967297','3008589934593','3012884901889']};
 const title={},vars={},panel={FindChildrenWithClassTraverse:()=>[title],SetDialogVariable:(key,value)=>vars[key]=value,RemoveClass:()=>{}};
 const $={GetContextPanel:()=>panel,Schedule:()=>1,CancelScheduled:()=>cancelled++};
 const _GetSelectedItems=()=>Array(count).fill({}),_PulseItems=()=>pulses++;
@@ -37,6 +43,15 @@ store={generation_time:11,redeemable_balance:3,items:store.items};OnInventoryUpd
 store={generation_time:0,redeemable_balance:0,items:[]};m_redeemableBalance=0;_UpdateTime();assert.equal(vars['frame-badge-text'],'REWARDS CLAIMED');
 store={generation_time:9,redeemable_balance:2,items:['123']};count=2;OnRedeem();assert.equal(sent,2);
 '''
+        self.run_js(script)
+
+    def test_catalogue_preview_decode_preserves_unique_choice_tokens(self):
+        script="""const assert=require('assert');let itemId='3008590589965',seen;
+const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:(def,paint)=>{seen=[def,paint];return 'faux';}};
+const _LocalCarePackage=()=>true;
+"""+care.PREVIEW+"""
+assert.deepEqual(seen,[13,10]);assert.equal(itemId,'faux');assert.equal(choiceToken,'3008590589965');
+"""
         self.run_js(script)
 
     def test_native_free_case_popup_uses_keyless_path_without_changing_terminals_or_real_items(self):

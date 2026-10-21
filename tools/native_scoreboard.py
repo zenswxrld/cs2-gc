@@ -98,22 +98,24 @@ PING_HELPER = '''
 
 NAME_ANCHOR = "                    oPlayer.m_elPlayer.SetDialogVariableInt('player_slot', oPlayer.GetGameStat('slot'));"
 NAME_INJECT = r"""
-                    // cs2_gc: the stock {g:player_name:player_slot} formatter adds [BOT] independently of bot_prefix.
+                    // cs2_gc: keep the native name cell, font and layout; only replace its formatter text.
                     const stockName = elPanel.FindChildTraverse('name');
-                    let plainName = elPanel.FindChildTraverse('cs2gc-bot-name');
                     const localBot = oPlayer.GetGameStat('is_fake_player') &&
                         !GameStateAPI.IsDemoOrHltv() && !GameStateAPI.IsQueuedMatchmakingMode_Team();
                     const rawName = localBot ? MockAdapter.GetPlayerName(oPlayer.m_xuid) : '';
-                    if (stockName && rawName) {
-                        if (!plainName) plainName = $.CreatePanel('Label', elPanel, 'cs2gc-bot-name',
-                            {html:false, class:'sb-team-tint stratum-medium'});
-                        plainName.text = String(rawName).replace(/^\s*(?:\[BOT\]|BOT)\s+/i, '');
-                        plainName.visible = true; stockName.visible = false;
-                    } else {
-                        if (stockName) stockName.visible = true;
-                        if (plainName) plainName.visible = false;
+                    const cleanName = rawName ? String(rawName).replace(/^\s*(?:\[BOT\]|BOT)\s+/i, '').trim() : '';
+                    if (stockName) {
+                        stockName.visible = true;
+                        if (localBot && cleanName) {
+                            stockName.text = $.HTMLEscape(cleanName);
+                            stockName.Data().cs2gcPlainName = true;
+                        } else if (stockName.Data().cs2gcPlainName) {
+                            stockName.text = '{g:player_name:player_slot}';
+                            stockName.Data().cs2gcPlainName = false;
+                        }
                     }
 """
+
 
 def patch(source, config):
     if 'cs2_gc native Premier badges' in source: raise ValueError('Scoreboard is already patched')

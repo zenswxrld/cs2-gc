@@ -19,8 +19,9 @@ COMMUNITY_CAPSULES = ('crate_sticker_pack_cs20_capsule', 'crate_sticker_pack_csg
                       'crate_sticker_pack_halo_capsule', 'crate_sticker_pack_hlalyx_capsule',
                       'crate_sticker_pack_skillgroup_capsule', 'crate_sticker_pack_enfu_capsule',
                       'crate_sticker_pack_community01')
-LIMITED_LISTS = ('set_xpshop_wpn_01', 'set_xpshop_wpn_02', 'set_xpshop_wpn_03',
-                 'set_xpshop_wpn_04')
+LIMITED_PRICES = {'set_xpshop_wpn_01': 25, 'set_xpshop_wpn_02': 25,
+                  'set_xpshop_wpn_03': 25, 'set_xpshop_wpn_04': 125}
+LIMITED_LISTS = tuple(LIMITED_PRICES)
 
 
 def catalogue(source, config):
@@ -60,7 +61,8 @@ def catalogue(source, config):
         elif name in cases: slot = 'case'
         else: raise ValueError('Unclassified native Armory good: ' + name)
         if slot == 'terminal' and not config['terminals_enabled']: continue
-        add(name, slot, int(data['points']), data)
+        cost = LIMITED_PRICES.get(name.removeprefix('lootlist:'), int(data['points'])) if slot == 'limited' else int(data['points'])
+        add(name, slot, cost, data)
     templates = {v['local_rotation_slot']: v for v in goods.values()}
     if config.get('knife_finishes', 1) and 'crate_cs2gc_black_market' in items:
         # The knife-only Black Market Case rotates through the big limited-edition tile.
@@ -97,7 +99,7 @@ def catalogue(source, config):
     wanted = set(COMMUNITY_CAPSULES)
     wanted.update('crate_sticker_pack_' + event + '_' + group for event in TOURNAMENTS for group in TOURNAMENT_GROUPS)
     for name in sorted(wanted & items.keys()): add(name, 'capsule', 1)
-    for name in LIMITED_LISTS: loot(name, 'limited', 25)
+    for name in LIMITED_LISTS: loot(name, 'limited', LIMITED_PRICES[name])
     agent_lists = sorted(name for name in lists if name.startswith('lootlist_character_operator_dossier_'))
     if config.get('armory_agent_slots', 1) and agent_lists:
         add('lootlist:' + agent_lists[0], 'agent', config.get('armory_agent_price', 50), {'callout': 'Random Agent'})

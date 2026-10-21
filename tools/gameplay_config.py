@@ -13,7 +13,7 @@ DEFAULTS = {
     'armory_agent_price': 50,
     'reward_rare_case_per_10000': 100,
     'care_packages_enabled': 1,
-    'bot_hide_tag': 1, 'hide_mainmenu_promo': 1,
+    'bot_hide_tag': 1, 'hide_mainmenu_promo': 1, 'offline_mission_launch': 1,
     'armory_souvenir_slots': 1, 'armory_souvenir_price': 5,
     'armory_terminal_slots': 1, 'armory_terminal_price': 10, 'armory_case_price': 5,
     'match_weekly_pool_only': 1,

@@ -25,16 +25,39 @@ MainMenu.show();assert.equal(promo.visible,false);assert.equal(promo.style.visib
 
     def test_bot_name_without_engine_prefix_and_human_restoration(self):
         script="""const assert=require('assert');let fake=true,name='[BOT] player<&>';
-const stock={visible:true};let clean;
+const data={}; const stock={visible:true,Data:()=>data,text:'{g:player_name:player_slot}'};let clean;
 const elPanel={FindChildTraverse:id=>id==='name'?stock:clean};
 const oPlayer={m_xuid:'bot',m_elPlayer:{SetDialogVariableInt:()=>{}},GetGameStat:key=>fake};
 const GameStateAPI={IsDemoOrHltv:()=>false,IsQueuedMatchmakingMode_Team:()=>false};
 const MockAdapter={GetPlayerName:()=>name};
-const $={CreatePanel:(kind,parent,id,props)=>{assert.equal(props.html,false);clean={};return clean;}};
+const $={HTMLEscape:value=>value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')};
 function draw(){
 """+native_scoreboard.NAME_ANCHOR+native_scoreboard.NAME_INJECT+"""}
-draw();assert.equal(stock.visible,false);assert.equal(clean.text,'player<&>');
-fake=false;draw();assert.equal(stock.visible,true);assert.equal(clean.visible,false);
+draw();assert.equal(stock.visible,true);assert.equal(stock.text,'player&lt;&amp;&gt;');
+name='';draw();assert.equal(stock.text,'{g:player_name:player_slot}');
+name='BOT Other';draw();assert.equal(stock.text,'Other');
+fake=false;draw();assert.equal(stock.visible,true);assert.equal(stock.text,'{g:player_name:player_slot}');
+"""
+        self.run_js(script)
+
+    def test_rewards_only_open_in_inventory_after_map_unloads(self):
+        source="""    function _OnShowMainMenu() {}
+function check(){
+        if (GameStateAPI.IsLocalPlayerPlayingMatch()) return;
+        if (!$('#MainMenuNavBarHome').checked)
+            return;
+        const objStore = InventoryAPI.GetCacheTypeElementJSOByIndex("PersonalStore", 0);
+        opened++;
+}
+"""
+        script="""const assert=require('assert');let opened=0,inventory=false,map='de_mirage',playing=false;
+const $=id=>({checked:id==='#MainMenuNavBarHome'?!inventory:inventory});
+const GameStateAPI={IsLocalPlayerPlayingMatch:()=>playing,GetMapBSPName:()=>map};
+const InventoryAPI={GetCacheTypeElementJSOByIndex:()=>({})};
+"""+native_mainmenu.patch(source,care_packages=True,hide_promo=False)+"""
+check();assert.equal(opened,0);inventory=true;check();assert.equal(opened,0);
+map='';playing=true;check();assert.equal(opened,0);playing=false;inventory=false;check();assert.equal(opened,0);
+inventory=true;check();assert.equal(opened,1);
 """
         self.run_js(script)
 

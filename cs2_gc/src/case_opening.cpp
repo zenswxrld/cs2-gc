@@ -132,6 +132,55 @@ std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view
     return MakeLootItem(drop, chosen->rarity, random, schema.IsGlove(drop.weaponDefIndex) ? 0 : odds.statTrakPerMille);
 }
 
+std::optional<InventoryItem> RollSouvenir(const Schema &schema, const CrateInfo &crate,
+                                          const RandomSource &random, const CaseOdds &odds)
+{
+    if (crate.kind != CrateKind::Souvenir) return std::nullopt;
+    auto openingOdds = odds;
+    openingOdds.statTrakPerMille = 0;
+    openingOdds.fifthTier = 13; openingOdds.sixthTier = 3;
+    auto rolled = RollLootList(schema, crate.lootListName, random, openingOdds);
+    if (!rolled) return std::nullopt;
+    InventoryItem item = *rolled;
+    if (!item.paintKitIndex || schema.IsKnife(item.defIndex) || schema.IsGlove(item.defIndex))
+        return std::nullopt;
+    item.souvenir = true; item.statTrak = false; item.unusual = false;
+    item.tournamentEvent = crate.tournamentEvent;
+    // Local packages have no recorded match. Select same-event teams/decals without inventing a match stage.
+    auto stickers = schema.SouvenirStickers(crate.tournamentEvent);
+    std::vector<SouvenirSticker> logos, teams, signatures;
+    for (const auto &sticker : stickers)
+        if (sticker.player) signatures.push_back(sticker);
+        else if (sticker.team) teams.push_back(sticker);
+        else logos.push_back(sticker);
+    auto apply = [&](std::uint32_t kit) {
+        if (kit && item.stickers.size() < 4)
+        { AppliedSticker sticker; sticker.slot = static_cast<std::uint32_t>(item.stickers.size()); sticker.kit = kit; item.stickers.push_back(sticker); }
+    };
+    if (!logos.empty()) apply(logos[Below(random, logos.size())].kit);
+    for (unsigned i = 0; i < 2 && !teams.empty(); ++i)
+    {
+        const auto selected = teams[Below(random, teams.size())];
+        apply(selected.kit);
+        (i ? item.tournamentTeam1 : item.tournamentTeam0) = selected.team;
+        std::erase_if(teams, [&](const auto &sticker) { return sticker.team == selected.team; });
+    }
+    const auto map = schema.SouvenirMapSticker(crate.defIndex);
+    if (map) apply(map);
+    else
+    {
+        std::erase_if(signatures, [&](const auto &sticker) {
+            return sticker.team != item.tournamentTeam0 && sticker.team != item.tournamentTeam1;
+        });
+        if (!signatures.empty())
+        {
+            const auto &signature = signatures[Below(random, signatures.size())];
+            apply(signature.kit); item.tournamentPlayer = signature.player;
+        }
+    }
+    return item;
+}
+
 OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t crateId,
                     std::uint64_t keyId, const RandomSource &random, const CaseOdds &odds)
 {
@@ -185,7 +234,8 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
             openingOdds.fifthTier = 13; openingOdds.sixthTier = 3;
         }
         else if (crateItem->statTrak || schema.ProducesStatTrak(crate->defIndex)) openingOdds.statTrakPerMille = 1000;
-        rolled = RollLootList(schema, crate->lootListName, random, openingOdds);
+        rolled = crate->kind == CrateKind::Souvenir ? RollSouvenir(schema, *crate, random, openingOdds) :
+            RollLootList(schema, crate->lootListName, random, openingOdds);
         // A knife or glove in a case's own loot list (the Black Market and Gauntlet Cases) is a ★ item like any
         // case gold.
         if (rolled && (schema.IsKnife(rolled->defIndex) || schema.IsGlove(rolled->defIndex))) rolled->unusual = true;
@@ -196,45 +246,6 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
         return result;
     }
     InventoryItem item = *rolled;
-    if (crate->kind == CrateKind::Souvenir)
-    {
-        if (!item.paintKitIndex || schema.IsKnife(item.defIndex) || schema.IsGlove(item.defIndex))
-        { result.error = OpenError::EmptyLootList; return result; }
-        item.souvenir = true; item.statTrak = false; item.unusual = false;
-        item.tournamentEvent = crate->tournamentEvent;
-        // Local packages have no recorded match. Select same-event teams/decals without inventing a match stage.
-        auto stickers = schema.SouvenirStickers(crate->tournamentEvent);
-        std::vector<SouvenirSticker> logos, teams, signatures;
-        for (const auto &sticker : stickers)
-            if (sticker.player) signatures.push_back(sticker);
-            else if (sticker.team) teams.push_back(sticker);
-            else logos.push_back(sticker);
-        auto apply = [&](std::uint32_t kit) {
-            if (kit && item.stickers.size() < 4)
-            { AppliedSticker sticker; sticker.slot = static_cast<std::uint32_t>(item.stickers.size()); sticker.kit = kit; item.stickers.push_back(sticker); }
-        };
-        if (!logos.empty()) apply(logos[Below(random, logos.size())].kit);
-        for (unsigned i = 0; i < 2 && !teams.empty(); ++i)
-        {
-            const auto selected = teams[Below(random, teams.size())];
-            apply(selected.kit);
-            (i ? item.tournamentTeam1 : item.tournamentTeam0) = selected.team;
-            std::erase_if(teams, [&](const auto &sticker) { return sticker.team == selected.team; });
-        }
-        const auto map = schema.SouvenirMapSticker(crate->defIndex);
-        if (map) apply(map);
-        else
-        {
-            std::erase_if(signatures, [&](const auto &sticker) {
-                return sticker.team != item.tournamentTeam0 && sticker.team != item.tournamentTeam1;
-            });
-            if (!signatures.empty())
-            {
-                const auto &signature = signatures[Below(random, signatures.size())];
-                apply(signature.kit); item.tournamentPlayer = signature.player;
-            }
-        }
-    }
     if (!golds.empty())
         inventory.SetCasePity(item.unusual ? 0 : std::min(inventory.CasePity() + 1, 99u));
 

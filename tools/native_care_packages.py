@@ -6,9 +6,19 @@ from native_resources import install_override
 
 HELPER = '''    function _LocalCarePackage() {
         const store = GetPersonalStore();
-        return store && Object.values(store.items || {}).every(id => Number(id) > 1000000000000 && Number(id) < 2000000000000);
+        return store && Object.values(store.items || {}).every(id => Number(id) >= 3000000000000 && Number(id) < 3017179869184);
     }
 '''
+PREVIEW = """        // cs2_gc: display native catalogue previews, never synthetic unowned econ objects.
+        const localChoice = _LocalCarePackage();
+        const choiceToken = itemId;
+        if (localChoice && itemId !== '-') {
+            const encoded = Number(itemId) - 3000000000000;
+            const definition = encoded % 65536;
+            const paint = Math.floor(encoded / 65536) % 65536;
+            itemId = InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(definition, paint);
+        }
+"""
 CLAIM = '''        // cs2_gc: a package grants exactly three picks, never one/two or all four.
         if (_LocalCarePackage() && _GetSelectedItems().length !== 3) { _PulseItems(); return; }
 '''
@@ -41,6 +51,14 @@ def patch(source):
     for anchor,code in [('    function OnRedeem() {',CLAIM),('    function _UpdateTime() {',TIME),
                         ('    function OnInventoryUpdated() {',UPDATE)]:
         source=source.replace(anchor,anchor+'\n'+code,1)
+    preview = "    function _CreateItemPanel(itemId, index, bFirstTime, claimedItemId = '') {"
+    data = '        elGhostItem.Data().itemid = itemId;'
+    activate = '        if (!InventoryAPI.IsFauxItemID(itemId)) {'
+    if any(source.count(anchor) != 1 for anchor in (preview,data,activate)):
+        raise ValueError('Installed care-package tile contract changed; no patch written')
+    source=source.replace(preview,preview+'\n'+PREVIEW,1)
+    source=source.replace(data,'        elGhostItem.Data().itemid = localChoice ? choiceToken : itemId;',1)
+    source=source.replace(activate,'        if (_LocalCarePackage() || !InventoryAPI.IsFauxItemID(itemId)) {',1)
     source=source.replace('Object.values(objStore.items)', 'Object.values(objStore.items || {})')
     return source
 

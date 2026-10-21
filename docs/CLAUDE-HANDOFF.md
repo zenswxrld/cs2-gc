@@ -1,3 +1,29 @@
+# Build 21: remove crashing reward-preview econ objects
+
+Includes build 20. User reports end-of-match crash in build 19. Supplied log ends after first account-zero preview create (def 4186) at ~817106 ms; minidump records access violation reading 0x30 in client.dll +0x83f065. Strong timing evidence, not a symbolized causal stack. Never commit the supplied logs/dump.
+
+Removed all unowned preview creates from match/level notifications and both welcome paths, plus preview destroys on claim. PersonalStore now carries four local choice descriptors (base 3e12, slot in bits32+, paint in bits16-31, definition in low16), not econ item IDs. Popup resolves the display item through native GetFauxItemIDFromDefAndPaintIndex, retains each descriptor as its submission token and enables selection for local catalogue previews. Backend validates current generation, balance3, exactly3 unique descriptors/slots and exact def/paint matches before mapping back to persisted reserved IDs. Only chosen rewards create real owned econ objects. Existing queues are preserved unchanged on disk.
+
+Main-menu popup is Inventory only and requires no loaded map; Home and the match-ending transition cannot open it. XP/Premier end-match patches untouched. Custom Drops tab remains disabled. Metadata cache updates can still occur at match end; no preview items or reward UI are created there.
+
+26 automated suites pass, both Windows cross-builds compile, patched native scripts pass JS syntax checks. Native transport/rendering and crash resolution need live validation. Preserve saved inventory and queues; extract the full ZIP and use the updated launcher before testing.
+
+---
+
+# Build 20: mission launching, direct souvenir purchases, limited prices and scoreboard names
+
+Based on main after PR #11. Build tag `codex-20261021-20`.
+
+- User confirmed hand-wrap sales and souvenir package opening in build 19. Requested direct souvenir weapon grants instead; `RollSouvenir` is shared by Armory and old package opening, preserving tournament attributes/decals and atomic credit deduction. Armory inspect shows weapon contents and filters highlight charms.
+- Limited prices: lists 01/02/03 = 25 stars, 04 (Aphrodite) = 125; preparation corrects stale generated catalogue rows. Howl/custom cases retain existing configurable prices.
+- Blank scoreboard bot names in build 19 were a UI label regression: stop creating a sibling label. Write escaped names into the existing native name label and restore its formatter if name data is missing or the row becomes human/demo/online. Killfeed untouched; user reports names already work there.
+- `native_mission_launch.py` replaces only PlayMission in the inspected mission_tile script. Uses actual GameTypesAPI config to derive type and mapgroup maps, creates `server: listen` practice settings, enables a valid bot difficulty and disables practice assists/infinite warmup. Preserves mission deathmatch/competitive flags. Unsupported data fails locally rather than falling through to official matchmaking. Installed through both prelaunch and rewards-helper preparation; `offline_mission_launch=1` defaults on.
+- Evidence: inspected client mission_tile and pinned SteamTracking/GameTracking-CS2 mainmenu_play.js at 5ab573fa8afb5b8db98869d79ed79399fca6e747 (listen-server settings and bot difficulty APIs). No invented engine offsets or console commands.
+- Launching does NOT implement mission progress/completion rewards or auto-equip a mission weapon. Those remain pending; ordinary match XP/stars still use the existing bridge.
+- Validation: 26 automated suites; JavaScript syntax against inspected sources; all 148 direct souvenir grants/save; Windows cross-builds. Mission UI launch/Armory preview/scoreboard names still need live-client testing.
+
+---
+
 # Current handoff: Codex build 19 (21 October 2026)
 
 Based on `92bc6da` (Claude's custom glove/Gauntlet implementation); changes live on `codex/souvenir-armory-and-glove-quality`. Current installation/checklist: TEST-BUILD.md. User confirmed custom glove colours, realistic bot names and stock XP/Premier end-match screens. User superseded the custom drops tab with native care packages: four offers, choose three after a match/back in menus; one additional package per profile level.

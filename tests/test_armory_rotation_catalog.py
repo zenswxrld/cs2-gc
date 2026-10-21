@@ -65,6 +65,16 @@ class ArmoryRotation(unittest.TestCase):
         disabled = dict(gameplay_config.DEFAULTS, armory_howl_enabled=0)
         self.assertNotIn('lootlist:removed_items', catalog.catalogue(SCHEMA, disabled))
 
+    def test_limited_prices_repair_old_generated_prices_and_stay_stable(self):
+        source=SCHEMA.replace('"set_xpshop_wpn_01" { "weapon_test" "1" }',
+            '"set_xpshop_wpn_01" { "weapon_test" "1" } "set_xpshop_wpn_04" { "weapon_test" "1" }')
+        goods=catalog.catalogue(source,gameplay_config.DEFAULTS)
+        self.assertEqual(goods['lootlist:set_xpshop_wpn_01']['points'],'25')
+        self.assertEqual(goods['lootlist:set_xpshop_wpn_04']['points'],'125')
+        patched,_=catalog.patch_catalogue(source,gameplay_config.DEFAULTS)
+        stale=patched.replace('"points" "125"','"points" "25"')
+        self.assertEqual(catalog.catalogue(stale,gameplay_config.DEFAULTS)['lootlist:set_xpshop_wpn_04']['points'],'125')
+
     @unittest.skipUnless(shutil.which('node'), 'Node needed for executable timer fixture')
     def test_javascript_picks_one_from_each_pool_and_closes_stale_inspect(self):
         source = '''    const m_elContentPanel = root;

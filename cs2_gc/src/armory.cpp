@@ -102,13 +102,17 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
             if (auto rarity = m_schema.SkinRarity(fixed.front().weaponDefIndex, fixed.front().paintKitIndex))
                 item = MakeLootItem(fixed.front(), *rarity, random, 0);
     }
-    else if (goods->itemName.starts_with(LootListPrefix))
+    else if (goods->itemName.starts_with(LootListPrefix) || goods->rotationSlot == "souvenir")
     {
         CaseOdds collectionOdds = odds;
         collectionOdds.statTrakPerMille = 0;
         collectionOdds.fifthTier = 13;
         collectionOdds.sixthTier = 3;
-        const std::string name = goods->itemName.substr(LootListPrefix.size());
+        const auto definition = m_schema.ItemDefIndex(goods->itemName);
+        const auto *souvenir = goods->rotationSlot=="souvenir" && definition ? m_schema.FindCrate(*definition) : nullptr;
+        const std::string name = goods->rotationSlot=="souvenir" ? (souvenir?souvenir->lootListName:std::string{}) :
+            goods->itemName.substr(LootListPrefix.size());
+        const std::string pityKey = souvenir ? "souvenir:"+name : name;
         auto tiers = m_schema.LootTiers(name);
         std::erase_if(tiers, [](const auto &tier) { return tier.rarity == 0; });
         std::stable_sort(tiers.begin(), tiers.end(), [](const auto &a, const auto &b) { return a.rarity < b.rarity; });
@@ -122,7 +126,9 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
         {
             std::vector<LootItem> resolved;
             for (const auto &entry : tiers[index].items)
-                if (auto outcome = m_schema.ResolveLootItem(entry)) resolved.push_back(*outcome);
+                if (auto outcome = m_schema.ResolveLootItem(entry))
+                    if (!souvenir || (outcome->kind==LootKind::Skin && !m_schema.IsKnife(outcome->weaponDefIndex) && !m_schema.IsGlove(outcome->weaponDefIndex)))
+                        resolved.push_back(*outcome);
             if (resolved.empty() || !weights[index]) continue;
             total += weights[index];
             if (tiers[index].rarity > highest)
@@ -141,7 +147,7 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
             pity.pity_enabled = config.armory_pity_enabled;
             pity.pity_soft_at = config.armory_pity_soft_at; pity.pity_hard_at = config.armory_pity_hard_at;
             const auto base = std::max(config.armory_top_per_10000, static_cast<std::uint32_t>(topWeight * 10000 / total));
-            const auto chance = lower ? PityChance(inventory.Items().ArmoryPity(name), base, pity) : 10000u;
+            const auto chance = lower ? PityChance(inventory.Items().ArmoryPity(pityKey), base, pity) : 10000u;
             const auto below = [&](std::uint64_t bound) {
                 const auto limit = UINT64_MAX - UINT64_MAX % bound;
                 for (;;) { const auto value = random(); if (value < limit) return value % bound; }
@@ -152,14 +158,10 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
                 topReward = true;
             }
             else item = RollLootList(m_schema, name, random, collectionOdds, highest);
-            rolledCollection = name;
+            if (goods->rotationSlot=="souvenir" && (!souvenir || !item || !DecorateSouvenir(*item,m_schema,*souvenir,random)))
+                item.reset();
+            rolledCollection = pityKey;
         }
-    }
-    else if (goods->rotationSlot == "souvenir")
-    {
-        const auto definition = m_schema.ItemDefIndex(goods->itemName);
-        const auto *crate = definition ? m_schema.FindCrate(*definition) : nullptr;
-        if (crate) item = RollSouvenir(m_schema, *crate, random, odds);
     }
     else if (goods->rotationSlot == "capsule")
     {

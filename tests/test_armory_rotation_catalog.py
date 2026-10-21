@@ -93,6 +93,7 @@ assert.equal(aShopItemsData[2].local_direct_case,false);
         source=SCHEMA.replace('"set_xpshop_wpn_01" { "weapon_test" "1" }',
             '"set_xpshop_wpn_01" { "weapon_test" "1" } "set_xpshop_wpn_04" { "weapon_test" "1" }')
         goods=catalog.catalogue(source,gameplay_config.DEFAULTS)
+        self.assertEqual(catalog.LIMITED_PRICES['set_xpshop_wpn_02'],15)
         self.assertEqual(goods['lootlist:set_xpshop_wpn_01']['points'],'25')
         self.assertEqual(goods['lootlist:set_xpshop_wpn_04']['points'],'125')
         patched,_=catalog.patch_catalogue(source,gameplay_config.DEFAULTS)

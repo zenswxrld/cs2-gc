@@ -19,7 +19,7 @@ COMMUNITY_CAPSULES = ('crate_sticker_pack_cs20_capsule', 'crate_sticker_pack_csg
                       'crate_sticker_pack_halo_capsule', 'crate_sticker_pack_hlalyx_capsule',
                       'crate_sticker_pack_skillgroup_capsule', 'crate_sticker_pack_enfu_capsule',
                       'crate_sticker_pack_community01')
-LIMITED_PRICES = {'set_xpshop_wpn_01': 25, 'set_xpshop_wpn_02': 25,
+LIMITED_PRICES = {'set_xpshop_wpn_01': 25, 'set_xpshop_wpn_02': 15,
                   'set_xpshop_wpn_03': 25, 'set_xpshop_wpn_04': 125}
 LIMITED_LISTS = tuple(LIMITED_PRICES)
 
@@ -68,7 +68,9 @@ def catalogue(source, config):
     if config.get('knife_finishes', 1) and 'crate_cs2gc_black_market' in items:
         # The knife-only Black Market Case rotates through the big limited-edition tile.
         # Never cheaper than selling the knife it gives (that would be a free star loop).
-        price = max(config.get('black_market_price', 100), config.get('sell_knife_glove', 72) + 1)
+        wear_max = max(config.get('sell_wear_'+wear,default) for wear,default in
+                       [('fn',125),('mw',110),('ft',100),('ww',80),('bs',60)]) if config.get('sell_wear_enabled',1) else 100
+        price = max(config.get('black_market_price', 100), config.get('sell_knife_glove', 72)*wear_max//100 + 1)
         add('crate_cs2gc_black_market', 'limited', price, {'flags': '2'})
         if config.get('glove_finishes', 1) and 'crate_cs2gc_gauntlet' in items:
             add('crate_cs2gc_gauntlet', 'limited', price, {'flags': '2'})  # the glove-only twin, same price

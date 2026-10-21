@@ -26,6 +26,8 @@ DEFAULTS = {
     'sell_covert': 50,
     'sell_knife_glove': 72,
     'sell_sticker_percent': 50,
+    'sell_charm_mil_spec': 1, 'sell_charm_restricted': 3, 'sell_charm_classified': 9, 'sell_charm_covert': 25,
+    'sell_wear_enabled': 1, 'sell_wear_fn': 125, 'sell_wear_mw': 110, 'sell_wear_ft': 100, 'sell_wear_ww': 80, 'sell_wear_bs': 60,
     'sell_music_kit': 10,
     'sell_container_percent': 30,
     'sell_agent_percent': 50,
@@ -54,6 +56,8 @@ DEFAULTS = {
     'premier_bonus_wins': 0,
 }
 LIMITS = {key: (0, 1) for key in DEFAULTS}
+LIMITS.update({key:(0,1000000) for key in DEFAULTS if key.startswith('sell_charm_')})
+LIMITS.update({key:(0,1000) for key in DEFAULTS if key.startswith('sell_wear_') and key!='sell_wear_enabled'})
 LIMITS.update({key: (0, 1000000) for key in ('kill_xp', 'headshot_xp', 'mvp_xp', 'match_complete_xp')})
 LIMITS.update({'viewmodel_range_percent': (100, 1000), 'viewmodel_fov_min': (1, 179), 'viewmodel_fov_max': (1, 179), 'armory_case_price': (1, 1000000), 'black_market_price': (1, 1000000), 'glove_finishes': (0, 1), 'free_case_keys': (0, 1), 'armory_collection_slots': (0, 6), 'armory_charm_slots': (0, 6), 'armory_sticker_slots': (0, 6), 'armory_case_slots': (0, 6), 'armory_capsule_slots': (0, 6), 'armory_limited_slots': (0, 6), 'armory_agent_slots': (0, 6), 'armory_agent_price': (0, 1000000), 'match_weekly_pool_only': (0, 1), 'item_sales_enabled': (0, 1), 'sell_consumer': (0, 1000000), 'sell_industrial': (0, 1000000), 'sell_mil_spec': (0, 1000000), 'sell_restricted': (0, 1000000), 'sell_classified': (0, 1000000), 'sell_covert': (0, 1000000), 'sell_knife_glove': (0, 1000000), 'sell_sticker_percent': (0, 100), 'sell_music_kit': (0, 1000000), 'sell_container_percent': (0, 100), 'sell_agent_percent': (0, 100), 'premier_rating_variation': (0, 10000), 'premier_bot_spread': (0, 10000)})
 LIMITS.update(reward_rare_case_per_10000=(0, 10000), armory_souvenir_slots=(0, 6), armory_souvenir_price=(1, 1000000), armory_terminal_slots=(0, 6), armory_terminal_price=(1, 1000000), end_match_duration=(6, 60), match_end_delay=(25, 120), armory_pity_soft_at=(2, 99), armory_pity_hard_at=(3, 100), armory_top_per_10000=(0, 10000), level_drop_count=(1, 20), armory_howl_star_price=(1, 1000000), premier_placement_wins=(1, 100), premier_start_rating=(0, 99999), premier_win_rating=(0, 10000),

@@ -4,9 +4,11 @@ Native InventoryAPI.DeleteItem -> CMsgDeleteItem (1004) is the existing inventor
 path. Eligible local deletions become sales just as in OfflineCS; no console/BAT.
 """
 import json
+import re
 from pathlib import Path
 from inventory_item import collect, parse, as_dict
 from armory_rotation_catalog import agent_names
+from armory_rotation_catalog import catalogue
 from price_sheet import find_case_items
 from native_resources import install_override
 
@@ -57,9 +59,30 @@ def settings(source, config):
             series = as_dict(attributes).get('set supply crate series') if isinstance(attributes, list) else None
             if series and not ('volatile_pricing' in ancestors and 'weapon_case_selfopening_collection' in ancestors):
                 flat.setdefault(definition, percent(1, config['sell_container_percent']))
-    return {'enabled': bool(config['item_sales_enabled']), 'flat': flat,
+    fixed_caps = {}
+    lists=sections.get('client_loot_lists',{})
+    kits={as_dict(v).get('name'):str(k) for k,v in sections.get('paint_kits',{}).items() if isinstance(v,list)}
+    def skins(name, seen=()):
+        if name in seen:return set()
+        result=set()
+        for entry,_ in lists.get(name,[]):
+            match=re.fullmatch(r'\[([^]]+)\](\w+)',entry)
+            if match and match[1] in kits and match[2] in names:result.add(names[match[2]]+':'+kits[match[1]])
+            elif entry in lists:result|=skins(entry,seen+(name,))
+        return result
+    if '11' in sections.get('seasonaloperations',{}):
+        for good in catalogue(source,config).values():
+            if good['local_rotation_slot']=='limited' and good['item_name'].startswith('lootlist:'):
+                outcomes=skins(good['item_name'][9:])
+                if len(outcomes)==1:
+                    key=next(iter(outcomes));cap=max(0,int(good['points'])-1)
+                    fixed_caps[key]=min(fixed_caps.get(key,cap),cap)
+    return {'enabled': bool(config['item_sales_enabled']), 'flat': flat, 'fixedCaps':fixed_caps,
             'rarity': [0] + [config['sell_' + key] for key in ('consumer', 'industrial', 'mil_spec', 'restricted', 'classified', 'covert')],
-            'goldDefinitions': gold_definitions, 'gold': config['sell_knife_glove'], 'stickerPercent': config['sell_sticker_percent']}
+            'goldDefinitions': gold_definitions, 'gold': config['sell_knife_glove'], 'stickerPercent': config['sell_sticker_percent'],
+            'charm': [0,0,0,min(config['sell_charm_mil_spec'],2),config['sell_charm_restricted'],config['sell_charm_classified'],config['sell_charm_covert']],
+            'wearEnabled':bool(config['sell_wear_enabled']),
+            'wear':[config['sell_wear_'+wear] for wear in ('fn','mw','ft','ww','bs')]}
 
 
 PRICE = '''
@@ -68,14 +91,28 @@ PRICE = '''
     function _LocalSalePrice(id) {
         const numeric = Number(id);
         if (!cs2gcSell.enabled || numeric <= 1000000000000 || numeric >= 2000000000000) return 0;
+        if (InventoryAPI.GetItemAttributeValue && Number(InventoryAPI.GetItemAttributeValue(id,'cannot trade'))) return 0;
         const definition = String(InventoryAPI.GetItemDefinitionIndex(id));
         if (Object.prototype.hasOwnProperty.call(cs2gcSell.flat, definition)) return cs2gcSell.flat[definition];
         const rarity = InventoryAPI.GetItemRarity(id);
         const base = cs2gcSell.rarity[rarity] || 0;
-        if (ItemInfo.IsSticker(id) || ItemInfo.IsPatch(id) || ItemInfo.IsSprayPaint(id) || ItemInfo.IsSpraySealed(id) || ItemInfo.IsKeychain(id))
+        if (ItemInfo.IsKeychain(id)) return (cs2gcSell.charm || [0,0,0,1,3,9,25])[rarity] || 0;
+        if (ItemInfo.IsSticker(id) || ItemInfo.IsPatch(id) || ItemInfo.IsSprayPaint(id) || ItemInfo.IsSpraySealed(id))
             return base && cs2gcSell.stickerPercent ? Math.max(1, Math.floor(base * cs2gcSell.stickerPercent / 100)) : 0;
-        if ((cs2gcSell.goldDefinitions || []).indexOf(definition) !== -1 || ItemInfo.IsMelee(id) || ItemInfo.IsGloves(id)) return cs2gcSell.gold;
-        return ItemInfo.IsWeapon(id) ? base : 0;
+        let value = (cs2gcSell.goldDefinitions || []).indexOf(definition) !== -1 || ItemInfo.IsMelee(id) || ItemInfo.IsGloves(id) ? cs2gcSell.gold : ItemInfo.IsWeapon(id) ? base : 0;
+        if (value && cs2gcSell.wearEnabled) {
+            const rawWear = InventoryAPI.GetItemAttributeValue(id,'set item texture wear');
+            const wear = rawWear === '' || rawWear === null || rawWear === undefined ? NaN : Number(rawWear);
+            if (Number.isFinite(wear) && wear >= 0 && wear <= 1) {
+                const bucket = wear < .07 ? 0 : wear < .15 ? 1 : wear < .38 ? 2 : wear < .45 ? 3 : 4;
+                const percent = cs2gcSell.wear[bucket];
+                value = percent ? Math.max(1,Math.floor(value*percent/100)) : 0;
+            }
+        }
+        const paint = InventoryAPI.GetItemAttributeValue ? Number(InventoryAPI.GetItemAttributeValue(id,'set item texture prefab')) : 0;
+        const key = definition + ':' + paint;
+        if (Object.prototype.hasOwnProperty.call(cs2gcSell.fixedCaps || {},key)) value = Math.min(value,cs2gcSell.fixedCaps[key]);
+        return value;
     }
 '''
 

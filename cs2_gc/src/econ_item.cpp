@@ -121,6 +121,7 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
     out.Varint(4, item.defIndex);
     out.Varint(7, item.expiration ? 14 : item.souvenir ? QualityTournament : item.unusual ? 3 : item.statTrak ? QualityStrange : QualityUnique);
     // Attribute ids verified against the installed items_game.txt.
+    if (item.noStarSale) AddIntegerAttribute(out, 2, 1); // cannot trade: free local Store grant
     if (item.tournamentEvent) AddIntegerAttribute(out, 137, item.tournamentEvent);
     if (item.tournamentTeam0) AddIntegerAttribute(out, 139, item.tournamentTeam0);
     if (item.tournamentTeam1) AddIntegerAttribute(out, 140, item.tournamentTeam1);

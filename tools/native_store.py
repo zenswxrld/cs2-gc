@@ -2,7 +2,7 @@
 
 The native laptop calls StoreItemPurchase(definition(container_id)). An outdated
 price sheet cannot resolve newer definitions and may never send PurchaseInit.
-Keep all original response fields, prices/currencies and existing store entries.
+Keep original response fields and prices/currencies; remove case Store offers in favour of Armory rotation.
 """
 from pathlib import Path
 import struct
@@ -26,7 +26,7 @@ def terminal_names(source):
     return found
 
 
-def patch(body, source):
+def patch(body, source, terminals_enabled=True):
     _, _, container = sheet.read_message(body)
     raw = sheet.decompress(container)
     tree = sheet.decode_kv(raw)
@@ -35,8 +35,24 @@ def patch(body, source):
     template = next((name for name, values in entries if isinstance(values, list) and
                      isinstance(dict(values).get('prices'), list) and dict(values)['prices']), None)
     if template is None: raise ValueError('Store sheet has no validated price template')
-    added = sheet.add_entries(tree, terminal_names(source), template)
-    if not added: return body, 0
+    added = sheet.add_entries(tree, terminal_names(source), template) if terminals_enabled else 0
+    sections = sheet.items_game.collect(sheet.items_game.parse(source))
+    cases = sheet.find_case_items(sections)
+    case_names = {row[0] for row in cases}
+    case_ids = {row[2] for row in cases}
+    # Custom cases are keyless, so the standard case/key finder does not list them.
+    for definition, node in sections.get('items', {}).items():
+        if isinstance(node, list):
+            name = sheet.items_game.as_dict(node).get('name', '')
+            if name in ('crate_cs2gc_black_market', 'crate_cs2gc_gauntlet'):
+                case_names.add(name); case_ids.add(str(definition))
+    before = len(entries)
+    entries[:] = [(name, values) for name, values in entries
+        if name not in case_names and not (isinstance(values,list) and dict(values).get('item_link') in case_names)]
+    removed = before - len(entries)
+    layout = sheet.section(tree, 'store', 'store_banner_layout')
+    layout[:] = [(name, values) for name, values in layout if str(name) not in case_ids]
+    if not added and not removed and sheet.encode_kv(tree) == raw: return body, 0
     changed = sheet.encode_kv(tree)
     replacements = {4: (5, struct.pack('<I', zlib.crc32(changed))), 8: (2, sheet.compress(changed))}
     output = bytearray()
@@ -52,14 +68,11 @@ def patch(body, source):
 def prepare(directory, config):
     directory = Path(directory)
     target = directory / 'cs2_gc_store_2501.bin'
-    if not config['terminals_enabled']:
-        if target.exists(): target.unlink()
-        return 'disabled'
     original = directory / 'cs2_gc_replay/2501.bin'
     source = directory / 'items_game.txt'
     if not original.is_file() or not source.is_file(): return 'unavailable: replay/2501.bin or original schema missing'
-    result, count = patch(original.read_bytes(), source.read_text(encoding='utf-8-sig'))
+    result, count = patch(original.read_bytes(), source.read_text(encoding='utf-8-sig'), bool(config['terminals_enabled']))
     if not target.exists() or target.read_bytes() != result:
         temporary = target.with_name(target.name + '.tmp')
         temporary.write_bytes(result); temporary.replace(target)
-    return f'ready: {count} missing terminal Store definitions added; original replay unchanged'
+    return f'ready: {count} missing terminal Store definitions added; cases removed from Store; original replay unchanged'

@@ -1,3 +1,19 @@
+# Build26: economy safeguards, Store cases, bot labels and material inspection
+
+See TEST-BUILD.md for current behavior and test list; it supersedes older notes below. DLLtag26. Terminal purchases explicitly remain sellable by rarity/wear: do not mark terminal offers noStarSale. Free generic Store grants are marked noStarSale, persisted and inherited by opening/coupon repair/contracts/charm detach/slab seal. Native attribute2 (cannot trade, verified in schema) exposes the restriction to the sale menu. Existing inventory is not retroactively marked. Free terminal purchases are an intentional remaining income route per user instruction, so do not claim an exploit-proof economy.
+
+Store patch removes standard/custom case entries and banner tiles while retaining terminal entries. Proxy canSell rejects direct/coupon case purchases. Default charm blue1/purple3/pink9/red25, blue cap2; weapon/glove wear multipliers125/110/100/80/60. Fixed LTD resale capcost-1; custom gold purchase floor above max wear-adjusted gold resale. XM official price corrected15; Deagle25/M4A1-S25/Aphrodite125; custom Howl250. Collection pity reused for souvenir with independent souvenir:<lootlist> keys; decorate native quality/decals after tier roll, charge only on success.
+
+Bot prefix fix generates COMPLETE installed English localization, replacing exactly two native decoration token values while preserving %s1/%s2. Separate reversible owned pack cs2_gc_bot_labels, bot_hide_tag controls it. No guessed killfeed event/API and no layout patch; native client validation needed. Other game languages not yet covered.
+
+Teal and Hardened knife fixes are on branch after PR17 merged and must be included in follow-up PR. Snow Leopard panel changes preserve dark neutrals<=.25 in this finish only; native appearance unverified. Recent screenshots: Lunar Ash subdued grey/brown consistent; Racing Sunset too subtle; Black Tie Aurora almost unchanged; Emerald Web Aurora/Toxic nearly identical. Record/refine selectively, avoid blanket palette changes.
+
+Dead Hand request: official originals stay in terminal, independent recolours in Gauntlet. Removed blanket skip of composite_material_path: resolve actual schema path and recolour ONLY when existing strict SPECIFIC_MATERIAL + csgo_customglove.vfx + eight g_vColorTint1..8 validation succeeds. Unknown formats remain unchanged; launch writes cs2_gc_glove_materials.json with material shader/vector diagnostics. Need that current report before implementing different shaders/container layouts. No fabricated offsets/parameters or full-coverage claim. Existing Gauntlet pool count2084 is previous coverage, not an updated count after probing.
+
+Claim timeout is still pending. Current log7 was inspected: no9219 frames/claim diagnostics in latest session. StoreAPI may be refusing synthetic descriptor IDs before send (inference). No transport rewrite in26. Never restore unowned preview econ objects that crashed clients. Mission completion XP/stars/Career/release packaging remain pending.
+
+---
+
 # Build25: souvenir-only local contracts and feature notes
 
 Backend TradeUp no longer rejects every souvenir as NotASkin. Config souvenir_tradeups=1 in both parsers. All-souvenir same-rarity ten-input contracts use existing collection weighting/wear mapping and retain Souvenir quality plus one provenance donor selected only from the winning collection. Applied stickers/charms do not transfer, and no new gold decal set is minted. Mixed normal/Souvenir, invalid Souvenir StatTrak and disabled mode refuse atomically; Covert souvenirs never generate souvenir gold items. Unsupported higher-tier outcomes refuse without consuming inputs. Normal/mixed StatTrak behavior retained.

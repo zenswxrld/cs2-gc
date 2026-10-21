@@ -56,7 +56,8 @@ def _is_accent(color, threshold=.35, hue_range=None):
     return value > .12 and saturation >= threshold and (hue_range is None or hue_range[0] <= hue*360 <= hue_range[1])
 
 
-def recolor_accents(colors, theme, fade=False, panels='original', accent_saturation=.35, accent_hue_range=None):
+def recolor_accents(colors, theme, fade=False, panels='original', accent_saturation=.35, accent_hue_range=None,
+                    protect_dark_neutrals=False):
     """Recolour chromatic accents; preserve structural tones and alpha unless a panel variant is requested.
 
     Read the actual material palette. No channel number is assumed to mean a palm, seam or panel.
@@ -74,6 +75,9 @@ def recolor_accents(colors, theme, fade=False, panels='original', accent_saturat
             hue, target_saturation, _ = colorsys.rgb_to_hsv(*target[:3])
             color[:3] = colorsys.hsv_to_rgb(hue, min(saturation, target_saturation), value)
         elif panels != 'original' and (saturation <= .2 or value <= .12):
+            if protect_dark_neutrals and value <= .25:
+                result.append(color)
+                continue
             if panels == 'white': tone = .82 + .10 * math.sqrt(value)
             elif panels == 'black': tone = .12 + .08 * math.sqrt(value)
             else: tone = .12 + .78 * (1 - value)
@@ -111,7 +115,7 @@ def _tints(root):
     return found if len(found) == len(TINTS) else None
 
 
-def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels='original', report=None):
+def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels='original', report=None, inspection=None):
     """(vcompmat bytes, vmat bytes) for a recolour, or None when the finish is not an eight-tint glove material."""
     compmat = source.read(compmat_path + '_c')
     if compmat is None: return None
@@ -120,6 +124,9 @@ def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels=
     if data is None: return None
     guid, root = kv3.read_kv3(data)
     specific = finishes._specific_material(root)
+    if inspection is not None:
+        inspection[compmat_path] = {'status':'unsupported composite layout',
+            'root_fields':[key for key,_ in root.value] if root.type == kv3.OBJECT else []}
     if specific is None: return None
     material = source.read(specific.value + '_c')
     if material is None: return None
@@ -128,17 +135,27 @@ def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels=
     if m_data is None: return None
     m_guid, m_root = kv3.read_kv3(m_data)
     shader = m_root.get('m_shaderName')
+    if inspection is not None:
+        vectors = m_root.get('m_vectorParams')
+        inspection[compmat_path].update(material=specific.value, shader=shader.value if shader else '',
+            vectors={entry.get('m_name').value:[v.value for v in entry.get('m_value').value]
+                for entry in vectors.value if entry.type == kv3.OBJECT and entry.get('m_name') and entry.get('m_value')
+                    and isinstance(entry.get('m_value').value,list)}
+                if vectors and isinstance(vectors.value,list) else {})
     if shader is None or shader.value != 'csgo_customglove.vfx': return None
     tints = _tints(m_root)
     if tints is None: return None
+    if inspection is not None: inspection[compmat_path]['status']='supported eight-tint material'
     current = [[item.value for item in tints[name].value] for name in TINTS]
     if any(len(color) != 4 for color in current): return None
     approved = panels == 'original' and (compmat_path, theme) in APPROVED_PALETTES
     threshold = ACCENT_THRESHOLDS.get(compmat_path,.35)
     hue_range = ACCENT_HUE_RANGES.get(compmat_path)
+    protect_dark = compmat_path == 'gloves/paints/slick_jaguar_white.vcompmat'
     try:
         new = (finishes.recolor(current, theme, fade=fade, keep_value=True) if approved else
-               recolor_accents(current, theme, fade=fade, panels=panels,accent_saturation=threshold,accent_hue_range=hue_range))
+               recolor_accents(current, theme, fade=fade, panels=panels,accent_saturation=threshold,accent_hue_range=hue_range,
+                               protect_dark_neutrals=protect_dark))
     except ValueError: return None
     if report is not None:
         report[compmat_path] = {
@@ -147,10 +164,12 @@ def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels=
                 if _is_accent(c,threshold,hue_range)],
             'accent_saturation_threshold': threshold,
             'accent_hue_range_degrees': hue_range,
+            'protect_dark_neutrals': protect_dark,
             'policy': 'accent-only-v1',
             'preserved_legacy_themes': sorted(t for path,t in APPROVED_PALETTES if path == compmat_path),
         }
-    if panels != 'original' and new == recolor_accents(current, theme, fade=fade,accent_saturation=threshold,accent_hue_range=hue_range): return None
+    if panels != 'original' and new == recolor_accents(current, theme, fade=fade,accent_saturation=threshold,accent_hue_range=hue_range,
+                                                     protect_dark_neutrals=protect_dark): return None
     for name, color in zip(TINTS, new):
         for item, value in zip(tints[name].value, color): item.value = value
     vmat_path = VMAT_DIR + new_name + '.vmat'
@@ -161,7 +180,7 @@ def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels=
             finishes._with_block(material, 'DATA', kv3.write_kv3(m_guid, m_root)))
 
 
-def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, panel_variants=True, report=None):
+def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, panel_variants=True, report=None, inspection=None):
     """(files, kit entries, case items, {glove name: def index}); deterministic for the same game files.
 
     known_ids: saved {kit name: id}; used_ids: ids already given out this run (knife recolours)."""
@@ -186,8 +205,9 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
     for glove in sorted(official):
         for base in official[glove]:
             values = kits[base][1]
-            if values.get('composite_material_path'): continue  # newer composited gloves have no tints to change
-            compmat = 'gloves/paints/%s.vcompmat' % base
+            # Use the schema's actual path for newer gloves. Only the verified
+            # eight-tint shader is recoloured; other formats are reported for inspection.
+            compmat = values.get('composite_material_path') or 'gloves/paints/%s.vcompmat' % base
             picks = themes[:]
             random.Random(base).shuffle(picks)
             picks = picks[:THEMES_PER_GLOVE] + (list(finishes.GRADIENT_THEMES) if base in GLOVE_FADES else [])
@@ -198,8 +218,14 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
                     name = 'rg_%s_%s%s' % (base, theme.lower(), suffix)
                     # Retain known variants in the schema if disabled later, but stop offering them as drops.
                     if panels != 'original' and not panel_variants and name not in known_ids: continue
-                    made = make_glove_finish(source, compmat, name, theme, fade=base in GLOVE_FADES,
-                                             panels=panels, report=palette_report)
+                    try:
+                        made = make_glove_finish(source, compmat, name, theme, fade=base in GLOVE_FADES,
+                                                 panels=panels, report=palette_report, inspection=inspection)
+                    except (ValueError, NotImplementedError) as error:
+                        if not values.get('composite_material_path'): raise
+                        if inspection is not None:
+                            inspection[compmat] = {'status':'unsupported resource format', 'reason':str(error)}
+                        continue
                     if not made: continue
                     has_accents = bool(palette_report[compmat]['accent_channels'])
                     # Do not sell differently named themes that cannot colour this source palette.

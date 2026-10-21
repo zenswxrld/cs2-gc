@@ -12,6 +12,16 @@ SOURCE = ('// botprofile.db\r\n\r\nDefault\n\tSkill = 50\nEnd\n\nTemplate Elite\
 
 
 class BotNames(unittest.TestCase):
+    def test_native_labels_keep_names_and_all_other_localization(self):
+        source = ('\ufeff"lang" { "Tokens" {\n"Other" "Do not change"\n'
+            '"SFUI_bot_decorated_name" "BOT %s1"\n'
+            '"SFUI_bot_decorated_name_controlled" "BOT %s1 (%s2)"\n} }')
+        expected = source.replace('BOT %s1', '%s1')
+        self.assertEqual(bots.patch_labels(source), expected)
+        self.assertEqual(bots.patch_labels(expected), expected)
+        with self.assertRaises(ValueError): bots.patch_labels(source.replace('%s1', ''))
+        with self.assertRaises(ValueError): bots.patch_labels(source + '\n"SFUI_bot_decorated_name" "BOT %s1"')
+
     def test_only_profile_names_change_and_names_are_unique(self):
         patched = bots.patch(SOURCE, 5)
         self.assertEqual(patched.count('\n'), SOURCE.count('\n'))

@@ -84,10 +84,26 @@ def _seed(proxy_directory, reshuffle):
     return seed
 
 
+def patch_labels(text):
+    """Keep the full installed localization and its positional name placeholders."""
+    for key, replacement in (('SFUI_bot_decorated_name', '%s1'),
+                             ('SFUI_bot_decorated_name_controlled', '%s1 (%s2)')):
+        pattern = re.compile(r'("' + key + r'"\s*)"([^"\r\n]*)"', re.I)
+        matches = list(pattern.finditer(text))
+        if len(matches) != 1 or '%s1' not in matches[0][2]:
+            raise ValueError('Changed bot localization format: ' + key)
+        text = pattern.sub(lambda match: match[1] + '"' + replacement + '"', text)
+    return text
+
+
 def prepare(proxy_directory, config, reshuffle=False):
     """reshuffle: new names (the launcher, before CS2 starts); the helper keeps the launcher's names."""
     from native_resources import install_override
     enabled = bool(config.get('bot_random_names', 1))
     seed = _seed(proxy_directory, reshuffle) if enabled else 0
-    return install_override(proxy_directory, enabled=enabled, folder=FOLDER, comment=COMMENT, owner=OWNER,
-                            asset=ASSET, patch=lambda source: patch(source, seed))
+    names = install_override(proxy_directory, enabled=enabled, folder=FOLDER, comment=COMMENT, owner=OWNER,
+                             asset=ASSET, patch=lambda source: patch(source, seed))
+    labels = install_override(proxy_directory, enabled=bool(config.get('bot_hide_tag', 1)),
+        folder='cs2_gc_bot_labels', comment='cs2_gc native bot labels', owner='cs2-gc-bot-labels-v1',
+        asset='resource/csgo_english.txt', patch=patch_labels)
+    return names + '; bot labels: ' + labels

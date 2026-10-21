@@ -2987,6 +2987,15 @@ void TradeUps()
         return ids;
     };
 
+    {
+        Inventory freeInputs;
+        auto freeIds=fill(freeInputs,10,10,.2f);
+        freeInputs.Find(freeIds[0])->noStarSale=true;
+        const auto freeOutput=TradeUp(freeInputs,*schema,freeIds,[]{return 0ull;});
+        Check(freeOutput.error==TradeUpError::None && freeOutput.item.noStarSale,
+            "free Store inputs cannot be laundered through trade-ups into star income");
+    }
+
     // Ten rare skins of one collection become the collection's one mythical skin, with the wear mapped.
     Inventory inventory;
     auto ids = fill(inventory, 10, 10, 0.4f);
@@ -3819,13 +3828,15 @@ void WeeklyPoolAndItemSales()
         "50" { "name" "key" } "60" { "name" "crate_test" "prefab" "weapon_case"
           "attributes" { "set supply crate series" { "value" "1" } } }
         "100" { "name" "customplayer_test" "prefab" "operator" }
-        "1209" { "name" "sticker" } "1201" { "name" "coupon_test" } }
+        "1209" { "name" "sticker" } "1355" { "name" "keychain" } "1201" { "name" "coupon_test" } }
       "paint_kits" { "10" { "name" "weekly_blue" } "11" { "name" "case_blue" } "12" { "name" "weekly_grey" } }
       "paint_kits_rarity" { "weekly_blue" "rare" "case_blue" "rare" "weekly_grey" "common" }
       "item_sets" { "set_timed_drops_test" { "items" { "[weekly_blue]weapon_test" "1" "[weekly_grey]weapon_test" "1" } }
         "set_case_test" { "items" { "[case_blue]weapon_test" "1" } } }
       "client_loot_lists" { "case_list" { "[case_blue]weapon_test" "1" } }
       "revolving_loot_lists" { "1" "case_list" }
+      "seasonaloperations" { "11" { "redeemable_goods" "xpshop"
+        "operational_point_redeemable" { "item_name" "lootlist:case_list" "points" "4" "local_rotation_slot" "limited" } } }
     })");
     Check(schema && schema->AgentDefinitions() == std::vector<std::uint32_t>{100}, "only official eligible agents resolve");
     const auto weekly = schema->MatchRewardSkins();
@@ -3838,8 +3849,30 @@ void WeeklyPoolAndItemSales()
         Check(drops && drops->size() == 3 && (*drops)[0].paintKitIndex == 10,
               "all-weapon rewards draw from the non-case weekly pool");
     }
-    InventoryItem skin; skin.defIndex = 7; skin.paintKitIndex = 10; skin.rarity = 3;
+    InventoryItem skin; skin.defIndex = 7; skin.paintKitIndex = 10; skin.rarity = 3; skin.wear=.2f;
     Check(ItemSaleValue(*schema, config, skin) == 5, "OfflineCS blue sale price");
+    auto freeSkin=skin;freeSkin.noStarSale=true;
+    Check(ItemSaleValue(*schema,config,freeSkin)==0,"free Store items cannot create star income");
+    Inventory freeSaved;freeSkin.charm=AppliedKeychain{1,0,0,0,0,true};
+    const auto freeId=freeSaved.Add(freeSkin);
+    const auto freeRestored=Inventory::FromText(freeSaved.ToText());
+    Check(freeRestored && freeRestored->Find(freeId)->noStarSale && freeRestored->Find(freeId)->charm->noStarSale,
+        "free origin and attached charm origin persist across restart");
+    const auto freeWire=DecodeItem(BuildEconItem(freeSkin,42,CustomItemIdBase+freeId,1));
+    Check(freeWire.floatBits.at(2)==1,"native cannot-trade attribute hides star sale for free Store items");
+    skin.wear=.01f;const auto fn=ItemSaleValue(*schema,config,skin);
+    skin.wear=.10f;const auto mw=ItemSaleValue(*schema,config,skin);
+    skin.wear=.4f;const auto ww=ItemSaleValue(*schema,config,skin);
+    skin.wear=.7f;const auto bs=ItemSaleValue(*schema,config,skin);
+    Check(fn==6 && mw==5 && ww==4 && bs==3,"wear-adjusted sale prices retain integer stars and exterior ordering");
+    skin.wear=.2f;
+    auto limited=skin;limited.paintKitIndex=11;limited.wear=.01f;
+    Check(ItemSaleValue(*schema,config,limited)==3,"guaranteed fixed skin resale stays below its purchase cost");
+    InventoryItem charm;charm.defIndex=1355;charm.keychain=1;charm.rarity=3;
+    Check(ItemSaleValue(*schema,config,charm)==1,"blue charm sells for one star rather than a skin-derived price");
+    auto inflated=config;inflated.sell_charm_mil_spec=999;
+    Check(ItemSaleValue(*schema,inflated,charm)==2,"blue charm config cannot exceed its three-star purchase price");
+    charm.rarity=6;Check(ItemSaleValue(*schema,config,charm)==25,"rare charms may sell for more than their random purchase cost");
     skin.statTrak = true;
     Check(ItemSaleValue(*schema, config, skin) == 5, "StatTrak has the same OfflineCS base sale value");
     InventoryItem agent; agent.defIndex = 100;
@@ -4005,6 +4038,34 @@ void SouvenirPackagesAndHandwraps()
     })");
     Check(schema && schema->FindCrate(60)->kind == CrateKind::Souvenir && schema->FindCrate(60)->keyDefIndex == 0 &&
           schema->FindCrate(60)->tournamentEvent == 25, "souvenir series and inherited event coexist");
+    {
+        auto pitySchemaText=std::string(R"("items_game" {
+          "rarities" { "rare" { "value" "3" } "ancient" { "value" "6" } }
+          "prefabs" { "weapon_case_souvenirpkg" { "prefab" "weapon_case_base" } "weapon_case_base" {} }
+          "items" { "7" { "name" "weapon_test" } "60" { "name" "crate_promo_test" "prefab" "weapon_case_souvenirpkg"
+            "attributes" { "set supply crate series" { "value" "1" } "tournament event id" { "value" "25" } } } }
+          "paint_kits" { "10" { "name" "blue" } "11" { "name" "red" } }
+          "paint_kits_rarity" { "blue" "rare" "red" "ancient" }
+          "revolving_loot_lists" { "1" "pool" }
+          "client_loot_lists" { "pool" { "pool_rare" "1" "pool_ancient" "1" } "pool_rare" { "[blue]weapon_test" "1" } "pool_ancient" { "[red]weapon_test" "1" } }
+          "seasonaloperations" { "11" { "redeemable_goods" "xpshop" "operational_point_redeemable" {
+            "item_name" "crate_promo_test" "points" "5" "local_rotation_slot" "souvenir" } } }
+        })");
+        auto pitySchema=Schema::Load(pitySchemaText);
+        Check(pitySchema.has_value(),"two-tier souvenir fixture loads");
+        Inventory inv;inv.SetArmoryCredits(10);inv.SetArmoryPity("souvenir:pool",99);inv.SetArmoryPity("unrelated",7);inv.SetCasePity(12);
+        LiveInventory pityLive(inv);Armory pityShop(*pitySchema,11,10);
+        auto forced=pityShop.Redeem({11,Crc32("crate_promo_test"),10,5},pityLive,[]{return 9999ull;});
+        Check(forced.status==Armory::Status::Ok && forced.item.paintKitIndex==11 && forced.item.souvenir &&
+            !forced.item.statTrak && pityLive.Items().ArmoryPity("souvenir:pool")==0 &&
+            pityLive.Items().ArmoryPity("unrelated")==7 && pityLive.Items().CasePity()==12 && pityShop.Balance()==5,
+            "100th souvenir roll guarantees its top tier, preserves quality and only resets its own pity");
+        auto config=inv.Gameplay();config.armory_pity_enabled=0;inv.SetGameplay(config);
+        LiveInventory off(inv);Armory offShop(*pitySchema,11,10);
+        auto ordinary=offShop.Redeem({11,Crc32("crate_promo_test"),10,5},off,[]{return 9999ull;});
+        Check(ordinary.status==Armory::Status::Ok && ordinary.item.paintKitIndex==10,
+            "disabling souvenir pity returns to the ordinary tier roll");
+    }
     Inventory inventory; inventory.SetArmoryCredits(15); inventory.SetCasePity(44);
     LiveInventory live(inventory); Armory shop(*schema,11,15);
     GameplayConfig config; config.armory_rotation_enforce=1;

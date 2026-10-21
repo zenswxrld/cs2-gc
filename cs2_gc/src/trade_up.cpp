@@ -205,6 +205,7 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     item.statTrak = outputStatTrak;
     item.statTrakFromContract = outputStatTrak;
     item.unusual = rarity == Covert;
+    item.noStarSale = std::any_of(inputs.begin(), inputs.end(), [](const auto *input) { return input->noStarSale; });
     if (souvenirCount)
     {
         std::vector<const InventoryItem *> donors;

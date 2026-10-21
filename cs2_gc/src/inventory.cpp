@@ -201,6 +201,8 @@ std::string Inventory::ToText() const
                 << "\t\t\t\"tournament_player\"\t\"" << item.tournamentPlayer << "\"\n";
         if (item.statTrakFromContract)
             out << "\t\t\t\"contract_stattrak\"\t\"1\"\n";
+        if (item.noStarSale)
+            out << "\t\t\t\"no_star_sale\"\t\"1\"\n";
         if (item.unusual)
             out << "\t\t\t\"unusual\"\t\"1\"\n";
         if (item.terminalRemaining)
@@ -220,7 +222,7 @@ std::string Inventory::ToText() const
         if (item.charm)
             out << "\t\t\t\"charm\"\t\"" << item.charm->kit << ' ' << FloatText(item.charm->offsetX) << ' '
                 << FloatText(item.charm->offsetY) << ' ' << FloatText(item.charm->offsetZ) << ' '
-                << item.charm->slabSticker << "\"\n";
+                << item.charm->slabSticker << ' ' << (item.charm->noStarSale ? 1 : 0) << "\"\n";
         for (const AppliedSticker &sticker : item.stickers)
             out << "\t\t\t\"sticker_" << sticker.slot << "\"\t\"" << sticker.kit << ' ' << FloatText(sticker.wear)
                 << ' ' << FloatText(sticker.scale) << ' ' << FloatText(sticker.rotation) << ' '
@@ -401,7 +403,13 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             for (float *offset : offsets)
                 ok = ok && ParseNumber(next(), *offset) && std::isfinite(*offset);
             if (ok && !text.empty()) // the sticker inside a sealed slab; files from before it existed lack it
-                ok = ParseNumber(next(), applied.slabSticker) && text.empty();
+                ok = ParseNumber(next(), applied.slabSticker);
+            if (ok && !text.empty())
+            {
+                std::uint32_t free = 0;
+                ok = ParseNumber(next(), free) && free <= 1 && text.empty();
+                applied.noStarSale = free == 1;
+            }
             if (!ok)
                 return std::nullopt;
             item.charm = applied;
@@ -413,6 +421,11 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             item.customName = name->value;
         }
         item.statTrak = statTrak == 1;
+        if (const auto *free = entry.Find("no_star_sale"))
+        {
+            if (free->block || free->value != "1") return std::nullopt;
+            item.noStarSale = true;
+        }
         if (entry.Find("expiration") && !ParseNumber(entry.Value("expiration"), item.expiration))
             return std::nullopt;
         for (const auto &[key, target] : {std::pair{"terminal_remaining", &item.terminalRemaining},

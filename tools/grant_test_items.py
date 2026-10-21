@@ -88,7 +88,11 @@ def test_items(sections, gold_text):
 
 def grant(schema_path, inventory_path, gold_path):
     sections = collect(parse(schema_path.read_text(encoding='utf-8-sig')))
-    additions = test_items(sections, gold_path.read_text(encoding='utf-8'))
+    return add_items(inventory_path, test_items(sections, gold_path.read_text(encoding='utf-8')))
+
+
+def add_items(inventory_path, additions):
+    """Append item field lists to the inventory; returns (count, backup path or None)."""
     existing = inventory_path.read_text(encoding='utf-8-sig') if inventory_path.exists() else '"inventory" { "next_id" "1" "items" { } }'
     nodes = parse(existing)
     root = as_dict(nodes).get('inventory')

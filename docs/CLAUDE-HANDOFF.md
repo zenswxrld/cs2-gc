@@ -1,3 +1,23 @@
+# Helper26c (Claude): Dead Hand recolours in the Gauntlet Case
+
+User request: Dead Hand gloves recoloured with the same care as the classic gloves; originals stay in the Dead
+Hand Terminal, recolours go only to the Gauntlet. Inspected the user's extracted
+glove_driver_brocade_phoenix_red.vcompmat_c / .vmat_c (same volatile_02 layout): a LOOSE_VARIABLES container
+alias 'paint' holds one LOOSE_VARIABLE_TYPE_RESOURCE_MATERIAL m_strResourceMaterial (the finish's own
+items/assets/paintkits/volatile_02/<kit>.vmat, shader csgo_customglove_preview.vfx), and
+COMP_MAT_PROPERTY_MUTATOR_COPY_MATCHING_KEYS from 'paint' copies its parameters into the all-white
+glove_compositor template. So the white g_vId*Color in the template are defaults; the finish colours are in the
+paint material: g_vId1..8Color (tint-ID regions, F_TINT_ID=1, alpha kept) plus g_vSurface/Substrate/Burnishing/
+DamageBevelColorTint1..4. native_gloves.make_dead_hand_finish copies both files, changes only those colour
+vectors with the same recolor_accents policy (chromatic only, value/alpha kept, saturation capped; greys/whites
+untouched) and repoints m_strResourceMaterial/m_materialName. Textures, normals, floats, placement and
+non-colour vectors stay identical (test restores and compares). Requires the copy mutator, exactly one paint
+resource material, a known shader and all eight g_vId*Color; anything else falls back to the old path/report.
+Original panels only: Dead Hand white tints are identity layer multipliers, so panel variants would black out
+layers. Pattern colour baked into textures (e.g. brocade colour maps) cannot change; native appearance unverified.
+The four ug_ unused finishes are unchanged. New grant_custom_cases.py / grant_gauntlet_cases.cmd add test
+cases by generated schema name (test tool, keep out of release packaging).
+
 # Current client report: build26 BOT prefix still present
 
 User screenshot shows literal [BOT] before Ari_, goldnova_, Arlo_ and grayfox_ in the killfeed. Names themselves remain visible. Treat native bot decoration localization override as NOT live-validated/fixed. Investigate whether killfeed uses a separate native bot marker or localization token; do not reintroduce blank names or claim scoreboard-name fix removes killfeed marker. User specifically requested this note for Claude.

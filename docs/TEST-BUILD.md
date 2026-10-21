@@ -1,3 +1,11 @@
+# Helper update26c (Claude) — Dead Hand recolours
+
+Same DLLtag26. Extract all files into game/bin/win64 and launch twice. The Gauntlet Case now also has recolours of
+all 22 Dead Hand gloves (8 colours each, same accent-only style as the other gloves); the original Dead Hand gloves
+stay in the Dead Hand Terminal only. To test, close CS2 and run grant_gauntlet_cases.cmd (adds 20 Gauntlet Cases;
+start CS2 once first so the case exists). Check: Dead Hand recolours render with patterns intact, whites/greys
+unchanged, names like "Wave Chaser Cobalt". Send cs2_gc_glove_materials.json if any look wrong.
+
 # Helper update26b — corrected Dead Hand report
 
 Includes26a Keys-tab removal; same DLLtag26. Extract all files and launch once. Send the regenerated **cs2_gc_glove_materials.json**: version2 now includes each Dead Hand composite's own parameter overrides, not just its shared all-white template. Dead Hand recolours are still pending this inspection; none are falsely added from template colours. Originals stay in the terminal.

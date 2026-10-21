@@ -45,6 +45,46 @@ def glove_files():
     return files
 
 
+DEAD_HAND = 'gloves/paints/volatile_02/glove_driver_fixture_red.vcompmat'
+DEAD_HAND_VMAT = 'items/assets/paintkits/volatile_02/glove_driver_fixture_red.vmat'
+DEAD_HAND_IDS = [[.404, .02, .18, .835], [.38, .047, .047, 0], [.263, .259, .259, .776], [.306, .012, .141, .812],
+                 [.298, .102, .169, 1], [1, 1, 1, 0], [1, 1, 1, 0], [.282, .063, .063, 1]]
+
+
+def vector(name, values):
+    return obj(('m_name', string(name)),
+               ('m_value', Node(kv3.ARRAY_TYPE_BYTE_LENGTH, [Node(kv3.FLOAT, v) for v in values], 0, kv3.FLOAT)))
+
+
+def dead_hand_files():
+    """The inspected Dead Hand layout: 'paint' names the finish material, copied into the white compositor."""
+    loose = obj(('m_strName', string('m_strResourceMaterial')),
+                ('m_nVariableType', string('LOOSE_VARIABLE_TYPE_RESOURCE_MATERIAL')),
+                ('m_strResourceMaterial', string(DEAD_HAND_VMAT)))
+    paint = obj(('m_nCompositeMaterialInputContainerSourceType', string('CONTAINER_SOURCE_TYPE_LOOSE_VARIABLES')),
+                ('m_strAlias', string('paint')), ('m_vecLooseVariables', Node(kv3.ARRAY, [loose])))
+    compositor = obj(('m_nCompositeMaterialInputContainerSourceType', string('CONTAINER_SOURCE_TYPE_SPECIFIC_MATERIAL')),
+                     ('m_strSpecificContainerMaterial', string('workshop/paintkits/templates/glove_compositor.vmat')),
+                     ('m_strAlias', string('paint_compositor')))
+    copy = obj(('m_nMutatorCommandType', string('COMP_MAT_PROPERTY_MUTATOR_COPY_MATCHING_KEYS')),
+               ('m_strCopyMatchingKeys_InputContainerSrc', string('paint')))
+    procedure = obj(('m_vecCompositeInputContainers', Node(kv3.ARRAY, [paint, compositor])),
+                    ('m_vecPropertyMutators', Node(kv3.ARRAY, [copy])))
+    root = obj(('_class', string('CCompositeMaterialEditorDoc')),
+               ('m_Points', Node(kv3.ARRAY, [obj(('m_vecCompositeMaterialAssemblyProcedures', Node(kv3.ARRAY, [procedure])))])))
+    vectors = [vector('g_vId%dColor' % (i + 1), c) for i, c in enumerate(DEAD_HAND_IDS)]
+    vectors += [vector('g_vSurfaceColorTint1', [.275, .027, .027, 0]), vector('g_vSurfaceColorTint2', [1, 1, 1, 0]),
+                vector('g_vDamageBevelColorTint2', [.659, .824, .835, 0]), vector('g_vDamageMinMax1', [0, 1.439, 0, 0])]
+    material = obj(('m_materialName', string(DEAD_HAND_VMAT)), ('m_shaderName', string('csgo_customglove_preview.vfx')),
+                   ('m_floatParams', Node(kv3.ARRAY, [obj(('m_name', string('g_flSheenScale')),
+                                                          ('m_flValue', Node(kv3.FLOAT, .667)))])),
+                   ('m_vectorParams', Node(kv3.ARRAY_TYPE_BYTE_LENGTH, vectors, 0, kv3.OBJECT)),
+                   ('m_textureParams', Node(kv3.ARRAY, [obj(('m_name', string('g_tTintId')),
+                                                            ('m_pValue', string('items/tintid.vtex')))])))
+    return {DEAD_HAND + '_c': kv3.write_resource(0, [['DATA', kv3.write_kv3(GUID, root)]]),
+            DEAD_HAND_VMAT + '_c': kv3.write_resource(0, [['RERL', b'refs'], ['DATA', kv3.write_kv3(GUID, material)]])}
+
+
 class NativeGloves(unittest.TestCase):
     def test_composite_diagnostic_keeps_nested_override_types_names_and_values(self):
         root=obj(('m_Points',Node(kv3.ARRAY,[obj(('color',Node(kv3.ARRAY,
@@ -127,6 +167,51 @@ class NativeGloves(unittest.TestCase):
         self.assertEqual(report['gloves/paints/sporty_jaguar.vcompmat']['accent_channels'],[])
         _,new,_,_=gloves.plan(schema,GOLD_GLOVES,{},source,{},[])
         self.assertFalse(any(name.startswith('rg_sporty_jaguar_') for _,name,_,_ in new))
+
+    def test_dead_hand_recolours_change_only_accent_colour_vectors_and_stay_out_of_the_terminal(self):
+        schema = SCHEMA_GLOVES.replace('"5030" {', '"5031" { "name" "slick_gloves" "prefab" "hands_paintable" }\n\t\t"5030" {').replace(
+            '"1001" {', '"1399" { "name" "glove_driver_fixture_red" "description_tag" "#PaintKit_fixture_Tag" '
+                        '"composite_material_path" "%s" }\n\t\t"1001" {' % DEAD_HAND)
+        gold = GOLD_GLOVES.replace('"5030:10037" "1"', '"5030:10037" "1" "5031:1399" "1"')
+        files = glove_files(); files.update(dead_hand_files())
+        source = finishes.Source(folder=None); source.read = files.get; source.exists = lambda name: name in files
+        report, inspection = {}, {}
+        made, entries, case, _ = gloves.plan(schema, gold, {'glove_driver_fixture_red': 'Wave Chaser'}, source, {}, [],
+                                             report=report, inspection=inspection)
+        dead = [item for item in case if item.startswith('[rg_glove_driver_fixture_red_')]
+        self.assertEqual(len(dead), gloves.THEMES_PER_GLOVE)  # every theme, original panels only
+        self.assertTrue(all(item.endswith(']slick_gloves') for item in dead))
+        self.assertNotIn('[glove_driver_fixture_red]slick_gloves', case)  # the original stays in its terminal
+        self.assertEqual(inspection[DEAD_HAND]['status'], 'supported Dead Hand finish material')
+        self.assertEqual(report[DEAD_HAND]['accent_vectors'],
+                         ['g_vId1Color', 'g_vId2Color', 'g_vId4Color', 'g_vId5Color', 'g_vId8Color', 'g_vSurfaceColorTint1'])
+        name = dead[0][1:dead[0].index(']')]
+        self.assertTrue([title for _, kit, title, _ in entries if kit == name][0].startswith('Wave Chaser '))
+        _, blocks = kv3.read_resource(made[gloves.COMPMAT_DIR + name + '.vcompmat_c'])
+        self.assertEqual(gloves._dead_hand_paint(kv3.read_kv3(dict(blocks)['DATA'])[1]).value, gloves.VMAT_DIR + name + '.vmat')
+        _, blocks = kv3.read_resource(made[gloves.VMAT_DIR + name + '.vmat_c'])
+        self.assertEqual([block for block, _ in blocks], ['RERL', 'DATA'])
+        new = kv3.read_kv3(dict(blocks)['DATA'])[1]
+        _, blocks = kv3.read_resource(files[DEAD_HAND_VMAT + '_c'])
+        old = kv3.read_kv3(dict(blocks)['DATA'])[1]
+        values = lambda root: {e.get('m_name').value: [round(v.value, 4) for v in e.get('m_value').value]
+                               for e in root.get('m_vectorParams').value}
+        before, after = values(old), values(new)
+        changed = sorted(k for k in before if before[k] != after[k])
+        self.assertEqual(changed, sorted(report[DEAD_HAND]['accent_vectors']))
+        for key in changed:
+            a, b = colorsys.rgb_to_hsv(*before[key][:3]), colorsys.rgb_to_hsv(*after[key][:3])
+            self.assertAlmostEqual(a[2], b[2], 3)  # brightness kept
+            self.assertLessEqual(b[1], a[1] + 1e-3)  # never more saturated than shipped
+            self.assertEqual(before[key][3], after[key][3])  # tint-ID alpha kept
+        # Textures, floats and every non-colour vector are untouched; only the name changes.
+        new.get('m_materialName').value = DEAD_HAND_VMAT
+        for entry in new.get('m_vectorParams').value:
+            entry.get('m_value').value = [Node(kv3.FLOAT, v) for v in before[entry.get('m_name').value]]
+        restored = values(new)
+        self.assertEqual(restored, before)
+        self.assertEqual(new.get('m_textureParams').value[0].get('m_pValue').value, 'items/tintid.vtex')
+        self.assertAlmostEqual(new.get('m_floatParams').value[0].get('m_flValue').value, .667, 5)
 
     def test_gauntlet_case_has_glove_recolours_and_the_unreleased_finishes(self):
         with tempfile.TemporaryDirectory() as folder:

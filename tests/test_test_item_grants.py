@@ -36,6 +36,14 @@ class TestGrants(unittest.TestCase):
             items = tool.as_dict(tool.as_dict(tool.parse(after))['inventory'])['items']
             self.assertEqual([item[0] for item in items], ['1', '2'])
 
+    def test_custom_cases_are_added_by_generated_schema_name(self):
+        import grant_custom_cases as cases
+        schema = '"items_game" { "items" { "5024" { "name" "crate_cs2gc_gauntlet" } "5023" { "name" "crate_cs2gc_black_market" } } }'
+        added = cases.case_items(schema, {cases.CASES['gauntlet']: 3, cases.CASES['black_market']: 1})
+        self.assertEqual([dict(item)['def_index'] for item in added], ['5024'] * 3 + ['5023'])
+        with self.assertRaises(ValueError): cases.case_items('"items_game" { "items" { } }', {cases.CASES['gauntlet']: 1})
+        self.assertEqual(cases.case_items('"items_game" { "items" { } }', {cases.CASES['gauntlet']: 0}), [])
+
     def test_invalid_id_does_not_overwrite_inventory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

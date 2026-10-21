@@ -306,6 +306,21 @@ def schema_info(source_text, gold_pools_text):
 
 
 REEL_FILE = 'cs2_gc_black_market_reel.json'
+# Armory previews for the custom collections: CS2 reports 0 items for their lootlist rewards (26r), so the
+# patched xpshop.js (rotate_armory.py) builds the tiles from this list of [weapon, paint kit id].
+PREVIEW_FILE = 'cs2_gc_collection_previews.json'
+
+
+def collection_previews(lists_text, names, kit_ids):
+    """{collection: [[weapon, kit id], ...]} best tier first, from the generated tier lists."""
+    order = ('ancient', 'legendary', 'mythical', 'rare', 'uncommon')
+    previews = {}
+    for name in names:
+        for tier in order:
+            block = re.search(r'"%s_%s"\s*\{([^}]*)\}' % (re.escape(name), tier), lists_text)
+            for kit, weapon in re.findall(r'"\[([^\]]+)\]([^"]+)"', block.group(1) if block else ''):
+                if kit in kit_ids: previews.setdefault(name, []).append([weapon, int(kit_ids[kit])])
+    return previews
 
 
 def reel_sample(source_text, gold_pools_text, entries, case, size=60, defs=None):
@@ -627,12 +642,12 @@ def prepare(proxy_directory, config, items_game_text):
                 files['panorama/images/econ/weapon_cases/' + native_skins.TEST2_CASE_NAME + '_png.vtex_c'] = \
                     make_vtex(template, ICON.read_bytes())
             skins += skins2
-    sections_extra = {}
+    sections_extra, previews = {}, {}
     if config.get('custom_skins_test', 1) or config.get('custom_collections', 0) or config.get('custom_cases', 1):
         import native_skins
         family_kits, sets_text, lists_text, families, set_names, collection_items, chases = native_skins.collections(
             items_game_text, kits, [name for _, name, _, _ in entries if name.startswith('rk_')], kit_path, titles)
-        case_lists = ''
+        case_lists, icons = '', {}
         if config.get('custom_cases', 1):
             case_kits, case_files, case_lists, case_specs, case_items, icons = native_skins.custom_cases(
                 items_game_text, kits, titles, kit_path, source, families, {n for n, _, _ in family_kits})
@@ -654,6 +669,7 @@ def prepare(proxy_directory, config, items_game_text):
             known.update({name: int(kit_id) for kit_id, name, _, _ in entries})
             atomic_write(ids_path, json.dumps(known, indent=1, sort_keys=True) + '\n')
             atomic_write(proxy / native_skins.FAMILIES_FILE, native_skins.family_text(families))
+            previews = collection_previews(case_lists, icons, known)
             # Loot lists only: CS2 refuses the whole schema for an item_set whose name is not a #CSGO_ token
             # (26m: CEconItemSystem::ParseItemSchemaFile assertion), and overriding the language file breaks text.
             sections_extra = {'client_loot_lists': '\n'.join(t for t in (lists_text, case_lists) if t)}
@@ -668,6 +684,7 @@ def prepare(proxy_directory, config, items_game_text):
                             make_vtex(template, ICON.read_bytes())
     patched, details = patch_items_game(items_game_text, entries, case, extra_cases=extra, extra_sections=sections_extra)
     atomic_write(proxy / REEL_FILE, json.dumps(reels, sort_keys=True) + '\n')
+    atomic_write(proxy / PREVIEW_FILE, json.dumps(previews, sort_keys=True) + '\n')
     atomic_write(manifest_path, json.dumps(dict(owner=OWNER, files=len(files), **details), indent=2) + '\n')
     wanted = {mod / path for path in files}
     for path, content in files.items():

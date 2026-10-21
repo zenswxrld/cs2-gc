@@ -682,6 +682,10 @@ Based on `schema-loader` commit `42150481ac7db513a64f4b6704cd3c0a1b8349c0` (PR #
   and the name starts with 'lootlist:set_cs2gc_', it fills itemsList from a generated JSON
   (list name -> [def index + paint kit] -> InventoryAPI.GetFauxItemIDFromDefAndPaintIndex), written by native_finishes
   next to the collection lists. Do not invent APIs; GetFauxItemIDFromDefAndPaintIndex is already used in xpshop.js.
+- 26s (Claude): implemented that fix. native_finishes writes cs2_gc_collection_previews.json
+  ({collection: [[weapon, kit id]]}, chase first) and rotate_armory passes it in m_localRotation.previews; the patched
+  _GetLootListForReward uses it only when the native count is 0. NOT verified live yet; if the tiles stay empty, check
+  that cs2_gc_collection_previews.json exists next to the proxy and that the Armory override was regenerated (restart twice).
 - Still to do: trade-ups for custom skins (GC-side collection membership; client item_sets are not possible),
   effect finishes (glitter/pearl) waiting on the user's extract_finish_materials output, custom_collections (40 chase
   collections) default 0 until the user asks.

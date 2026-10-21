@@ -163,6 +163,39 @@ assert.deepEqual(visible(), ['capsule', 'case_a', 'charm_a']);
         self.assertEqual(result.returncode,0,result.stderr)
 
     @unittest.skipUnless(shutil.which('node'), 'Node required for native layout fixture')
+    def test_custom_collection_previews_fill_an_empty_native_loot_list(self):
+        import native_finishes
+        lists = ('\t\t"set_cs2gc_case_x_uncommon"\n\t\t{\n\t\t\t"[cga_a_uncommon]weapon_p90"\t\t"1"\n\t\t}\n'
+                 '\t\t"set_cs2gc_case_x_ancient"\n\t\t{\n\t\t\t"[cgf_doppler_ancient]weapon_ak47"\t\t"1"\n\t\t}')
+        previews = native_finishes.collection_previews(lists, ['set_cs2gc_case_x'], {'cga_a_uncommon': 9001, 'cgf_doppler_ancient': 9002})
+        self.assertEqual(previews, {'set_cs2gc_case_x': [['weapon_ak47', 9002], ['weapon_p90', 9001]]})  # chase first
+        source = """    const m_elContentPanel = root;
+    function _UpdateShopGoods(m_nTrack) {
+        aShopItemsData.forEach((element) => {
+            _MakeNavButton(element);
+        });
+    }
+    function _GetLootListForReward(rewardId) {
+        var count = InventoryAPI.GetLootListItemsCount(rewardId);
+        var itemsList = [];
+        if (!count) {
+            itemsList.push(rewardId);
+        }
+        return itemsList;
+    }
+"""
+        patched = rotate_armory.patch(source, dict(gameplay_config.DEFAULTS, armory_rotation_enabled=False, armory_howl_enabled=False), None, None, previews)
+        script = """const InventoryAPI = {GetLootListItemsCount: () => 0, GetItemDefinitionIndexFromDefinitionName: n => n,
+  GetFauxItemIDFromDefAndPaintIndex: (d, p) => d + ':' + p};
+""" + patched.split('    function _UpdateShopGoods')[0].replace('    const m_elContentPanel = root;', '') + """
+""" + patched[patched.index('    function _GetLootListForReward'):] + """
+const assert = require('assert');
+assert.deepEqual(_GetLootListForReward('lootlist:set_cs2gc_case_x'), ['weapon_ak47:9002', 'weapon_p90:9001']);
+assert.deepEqual(_GetLootListForReward('lootlist:set_other'), ['lootlist:set_other']);
+"""
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_native_category_paging_and_countdown_keep_stock_rows(self):
         import json
         script = '''const assert = require('assert');

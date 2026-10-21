@@ -46,6 +46,18 @@ def glove_files():
 
 
 class NativeGloves(unittest.TestCase):
+    def test_composite_diagnostic_keeps_nested_override_types_names_and_values(self):
+        root=obj(('m_Points',Node(kv3.ARRAY,[obj(('color',Node(kv3.ARRAY,
+            [Node(kv3.FLOAT,.2),Node(kv3.FLOAT,.8)])),('color',string('repeated-name')))])),
+            ('binary',Node(kv3.BINARY_BLOB,b'private-bytes')))
+        before=repr(root)
+        data=gloves.diagnostic_node(root)
+        fields=data['value'][0][1]['value'][0]['value']
+        self.assertEqual([name for name,_ in fields],['color','color'])
+        self.assertEqual(fields[0][1]['value'][1]['value'],.8)
+        self.assertEqual(data['value'][1][1]['value'],{'binary_length':13})
+        self.assertEqual(repr(root),before)
+
     def test_snow_leopard_panel_variants_preserve_dark_pattern_contrast(self):
         colors=[[.69,.65,.635,0],[.659,.655,.655,0],[.47,.388,.306,0],[.725,.71,.71,0],
                 [.216,.216,.216,0],[.235,.212,.212,0],[.49,.467,.431,0],[.769,.757,.737,0]]

@@ -1,3 +1,13 @@
+# Current client report: build26 BOT prefix still present
+
+User screenshot shows literal [BOT] before Ari_, goldnova_, Arlo_ and grayfox_ in the killfeed. Names themselves remain visible. Treat native bot decoration localization override as NOT live-validated/fixed. Investigate whether killfeed uses a separate native bot marker or localization token; do not reintroduce blank names or claim scoreboard-name fix removes killfeed marker. User specifically requested this note for Claude.
+
+# Helper26b: corrected Dead Hand inspection, recolours still blocked
+
+User supplied glove_materials94 entries / glove_palettes72. Exactly22 volatile_02 Dead Hand composites all reference workshop/paintkits/templates/glove_compositor.vmat, shader csgo_customglove.vfx. All22 have IDENTICAL template vectors: g_vId1Color..8Color white, not classic g_vColorTint1..8. Exporter only dumped template, not m_Points overrides; that is insufficient for detailed recolours. Do NOT tint all white template channels or fake material parameter names.
+
+Corrected report_version2 adds typed/ordered composite_document from the actual compiled vcompmat DATA, preserving nested names/values/types (including duplicate names), omitting binary bytes. Next launcher prep regenerates cs2_gc_glove_materials.json. Need user's regenerated report to identify per-finish parameters and implement accent-only edits while preserving normals/roughness/texture masks. No Dead Hand recolours added in26b, originals/terminal pools unchanged. Existing classic-glove recolours unchanged. Same DLL26. Includes26a Store Keys removal.
+
 # Helper update26a: Store Keys tab
 
 User confirms cases removed, rarity resale desired and tested best knife/glove resale below custom-case cost. native_store removes case-associated key names/IDs and every weapon_case_key prefab (including inherited/unlinked keys) from price entries/banner layout. Inspected native StoreItems.MakeStoreItemList classifies key banners; MakeTabsBtnsFromStoreData creates key tab only when category nonempty. No guessed UI IDs or layout rewrite. Existing inventory key selling unchanged. Same DLL26, helper pack26a. Store tests14 pass. Live tab disappearance requires user restart/test.

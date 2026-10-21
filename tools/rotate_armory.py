@@ -226,7 +226,11 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
                 const caption = $.CreatePanel('Label', button, '', {text: 'REFRESH ARMORY'});
                 caption.style.fontSize = '16px'; caption.style.color = '#ffffff'; caption.style.verticalAlign = 'center';
                 button.SetPanelEvent('onactivate', () => {
+                    // The alias tells the GC (its echo is counted by the helper); the page offset is set here directly
+                    // because incrementvar on the setinfo variable only advanced once.
+                    const next = (parseInt(GameInterfaceAPI.GetSettingString('cs2_gc_rotation_offset')) || 0) + 1;
                     GameInterfaceAPI.ConsoleCommand('cs2_gc_force_rotation');
+                    GameInterfaceAPI.ConsoleCommand('setinfo cs2_gc_rotation_offset ' + next);
                     $.DispatchEvent('CSGOPlaySoundEffect', 'UIPanorama.generic_button_press', 'MOUSE');
                     $.Schedule(0.2, _LocalRotationRefresh);
                 });

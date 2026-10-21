@@ -230,6 +230,26 @@ def schema_info(source_text, gold_pools_text):
     return sections, knives, kits, official
 
 
+REEL_FILE = 'cs2_gc_black_market_reel.json'
+
+
+def reel_sample(source_text, gold_pools_text, entries, case, size=60):
+    """[[knife def index, paint kit id], ...] for the opening reel: the client collapses an all-knife loot list to
+    one placeholder, so native_knife_reel.py fills the reel from this list instead."""
+    _, knives, kits, _ = schema_info(source_text, gold_pools_text)
+    defs = {name: int(key) for key, name in knives.items()}
+    ids = {name: int(key) for name, (key, _) in kits.items()}
+    ids.update({name: int(kit_id) for kit_id, name, _, _ in entries})
+    pairs = []
+    for entry in case:
+        match = re.fullmatch(r'\[([^\]]+)\](weapon_\w+)', entry)
+        if match and match.group(2) in defs and match.group(1) in ids:
+            pairs.append([defs[match.group(2)], ids[match.group(1)]])
+    rng = random.Random(len(pairs))
+    rng.shuffle(pairs)
+    return sorted(pairs[:size])
+
+
 def kit_path(name, values):
     return values.get('composite_material_path') or 'weapons/paints/legacy/' + name + '.vcompmat'
 
@@ -461,6 +481,7 @@ def prepare(proxy_directory, config, items_game_text):
     if template is not None and ICON.is_file():
         files['panorama/images/' + CASE_IMAGE + '_png.vtex_c'] = make_vtex(template, ICON.read_bytes())
     patched, details = patch_items_game(items_game_text, entries, case)
+    atomic_write(proxy / REEL_FILE, json.dumps(reel_sample(items_game_text, gold, entries, case)) + '\n')
     atomic_write(manifest_path, json.dumps(dict(owner=OWNER, files=len(files), **details), indent=2) + '\n')
     wanted = {mod / path for path in files}
     for path, content in files.items():

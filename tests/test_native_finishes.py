@@ -143,6 +143,8 @@ class NativeFinishes(unittest.TestCase):
             icon = (mod / ('panorama/images/' + finishes.CASE_IMAGE + '_png.vtex_c')).read_bytes()
             size = struct.unpack_from('<I', icon, 0)[0]
             self.assertEqual(len(icon) - size, 256 * 192 * 4)
+            sample = json.loads((proxy / finishes.REEL_FILE).read_text())
+            self.assertTrue(sample and all(pair[0] in (500, 507) for pair in sample))
             ids = json.loads((proxy / 'cs2_gc_finish_ids.json').read_text())
             self.assertEqual(str(ids['rk_aa_fade_crimson']), [k for k, v in sections['paint_kits'].items()
                                                               if as_dict(v)['name'] == 'rk_aa_fade_crimson'][0])

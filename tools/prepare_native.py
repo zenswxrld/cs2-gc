@@ -15,6 +15,7 @@ from native_offer_numbers import prepare as offers
 from native_bot_names import prepare as bot_names
 from skip_key_select import prepare as key_select
 from native_endmatch_stock import prepare as stock_results
+from native_knife_reel import prepare as knife_reel
 from native_resources import ensure_first_game_path
 from vpk_signatures import update as signatures
 
@@ -25,7 +26,7 @@ def prepare(directory):
     for name, action in [('Armory', armory), ('Scoreboard', scoreboard), ('Store', store),
                          ('Opening confirmation', confirmation), ('Item sales', sales),
                          ('Match results', results), ('Terminal offers', offers), ('Key picker', key_select),
-                         ('Stock XP/rating panels', stock_results)]:
+                         ('Stock XP/rating panels', stock_results), ('Black Market reel', knife_reel)]:
         print(name + ': ' + action(directory, config), flush=True)
     try: print('Bot names: ' + bot_names(directory, config, reshuffle=True), flush=True)
     except (OSError, ValueError, KeyError) as error: print('Bot names skipped (bots keep their normal names): ' + str(error), flush=True)

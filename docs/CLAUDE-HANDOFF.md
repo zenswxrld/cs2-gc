@@ -495,3 +495,8 @@ command (no default RCON exposure). Still open: random bot names did not apply (
 - 17t: every theme for Twilight Galaxy / Gold Brick / Blue Phosphor (added after the original set so existing
   ids do not move), extra-finish recolours on 4 knives each. Paint kit ids are now saved in
   game/bin/win64/cs2_gc_finish_ids.json and reused, so owned knives keep their finish when the list changes.
+- 17v: the Black Market Case opened with the stock countdown because the client collapses an all-knife loot list
+  to one placeholder (GetLootListItemsCount <= 1). New native_knife_reel.py (folder cs2_gc_reel) patches the user's
+  popup_capability_decodable: for crate_cs2gc_black_market only, aItemsInLootlist is filled from a 60-knife sample
+  (cs2_gc_black_market_reel.json, written by native_finishes) and the stock scroll runs; the stop tile shows the
+  granted item as usual.

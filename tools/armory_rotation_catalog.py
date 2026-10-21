@@ -62,7 +62,9 @@ def catalogue(source, config):
     templates = {v['local_rotation_slot']: v for v in goods.values()}
     if config.get('knife_finishes', 1) and 'crate_cs2gc_black_market' in items:
         # The knife-only Black Market Case rotates through the big limited-edition tile.
-        add('crate_cs2gc_black_market', 'limited', config.get('black_market_price', 100), {'flags': '2'})
+        # Never cheaper than selling the knife it gives (that would be a free star loop).
+        price = max(config.get('black_market_price', 100), config.get('sell_knife_glove', 150) + 50)
+        add('crate_cs2gc_black_market', 'limited', price, {'flags': '2'})
 
     def loot(name, slot, price):
         if name in lists:

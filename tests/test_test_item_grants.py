@@ -36,6 +36,30 @@ class TestGrants(unittest.TestCase):
             items = tool.as_dict(tool.as_dict(tool.parse(after))['inventory'])['items']
             self.assertEqual([item[0] for item in items], ['1', '2'])
 
+    def test_care_package_preview_next_ids_follow_the_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            inventory = Path(directory) / 'inventory.txt'
+            item = '"def_index" "7" "paint_kit" "0" "wear" "0" "seed" "0" "stattrak" "0"'
+            previews = ' '.join('"%d" { %s }' % (i, item) for i in range(10, 14))
+            inventory.write_text('"inventory" { "next_id" "14" "items" { "1" { %s } } "last_care_generation" "2" '
+                                 '"care_packages" { "2" { "next_id" "14" "items" { %s } } } }' % (item, previews))
+            count, _ = tool.add_items(inventory, [[('def_index', '9'), ('paint_kit', '0'), ('wear', '0'),
+                                                   ('seed', '0'), ('stattrak', '0')]] * 2)
+            self.assertEqual(count, 2)
+            root = tool.as_dict(tool.as_dict(tool.parse(inventory.read_text()))['inventory'])
+            self.assertEqual(root['next_id'], '16')
+            self.assertEqual(tool.as_dict(tool.as_dict(root['care_packages'])['2'])['next_id'], '16')
+            self.assertEqual([key for key, _ in root['items']], ['1', '14', '15'])
+            self.assertEqual(len(tool.as_dict(tool.as_dict(root['care_packages'])['2'])['items']), 4)
+
+    def test_custom_cases_are_added_by_generated_schema_name(self):
+        import grant_custom_cases as cases
+        schema = '"items_game" { "items" { "5024" { "name" "crate_cs2gc_gauntlet" } "5023" { "name" "crate_cs2gc_black_market" } } }'
+        added = cases.case_items(schema, {cases.CASES['gauntlet']: 3, cases.CASES['black_market']: 1})
+        self.assertEqual([dict(item)['def_index'] for item in added], ['5024'] * 3 + ['5023'])
+        with self.assertRaises(ValueError): cases.case_items('"items_game" { "items" { } }', {cases.CASES['gauntlet']: 1})
+        self.assertEqual(cases.case_items('"items_game" { "items" { } }', {cases.CASES['gauntlet']: 0}), [])
+
     def test_invalid_id_does_not_overwrite_inventory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

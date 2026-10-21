@@ -584,8 +584,9 @@ def prepare(proxy_directory, config, items_game_text):
         atomic_write(proxy / 'cs2_gc_glove_materials.json', json.dumps(glove_inspection, sort_keys=True, indent=1) + '\n')
         files.update(glove_files)
         if glove_case and template is not None and native_gloves.ICON.is_file():
-            files['panorama/images/econ/weapon_cases/' + native_gloves.CASE_NAME + '_png.vtex_c'] = \
-                make_vtex(template, native_gloves.ICON.read_bytes())
+            for name in (native_gloves.CASE_NAME, native_gloves.TEST_CASE_NAME):
+                files['panorama/images/econ/weapon_cases/' + name + '_png.vtex_c'] = \
+                    make_vtex(template, native_gloves.ICON.read_bytes())
     entries += glove_entries
     known.update({name: int(kit_id) for kit_id, name, _, _ in entries})
     atomic_write(ids_path, json.dumps(known, indent=1, sort_keys=True) + '\n')
@@ -597,6 +598,10 @@ def prepare(proxy_directory, config, items_game_text):
         import native_gloves
         extra.append(native_gloves.case_spec(glove_case))
         reels[native_gloves.CASE_NAME] = reel_sample(items_game_text, gold, entries, glove_case, defs=glove_defs)
+        test_items = native_gloves.dead_hand_test_items(glove_case)
+        if test_items:
+            extra.append(native_gloves.test_case_spec(test_items))
+            reels[native_gloves.TEST_CASE_NAME] = reel_sample(items_game_text, gold, entries, test_items, defs=glove_defs)
     patched, details = patch_items_game(items_game_text, entries, case, extra_cases=extra)
     atomic_write(proxy / REEL_FILE, json.dumps(reels, sort_keys=True) + '\n')
     atomic_write(manifest_path, json.dumps(dict(owner=OWNER, files=len(files), **details), indent=2) + '\n')

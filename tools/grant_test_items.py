@@ -88,7 +88,11 @@ def test_items(sections, gold_text):
 
 def grant(schema_path, inventory_path, gold_path):
     sections = collect(parse(schema_path.read_text(encoding='utf-8-sig')))
-    additions = test_items(sections, gold_path.read_text(encoding='utf-8'))
+    return add_items(inventory_path, test_items(sections, gold_path.read_text(encoding='utf-8')))
+
+
+def add_items(inventory_path, additions):
+    """Append item field lists to the inventory; returns (count, backup path or None)."""
     existing = inventory_path.read_text(encoding='utf-8-sig') if inventory_path.exists() else '"inventory" { "next_id" "1" "items" { } }'
     nodes = parse(existing)
     root = as_dict(nodes).get('inventory')
@@ -115,7 +119,9 @@ def grant(schema_path, inventory_path, gold_path):
         backup = inventory_path.with_name(inventory_path.name + '.pre-test-items-' + stamp + '.bak')
         shutil.copy2(inventory_path, backup)
     # Patch only next_id and insert at the items block's closing brace. Existing text stays byte-for-byte.
-    stack, pending, close, next_span = [], None, None, None
+    # Care-package previews are saved as small inventories that must repeat the profile's next_id exactly
+    # (the GC refuses the whole file otherwise), so every copy is updated together.
+    stack, pending, close, next_spans = [], None, None, []
     for match in TOKEN.finditer(existing):
         string, brace = match.group(1), match.group(2)
         if string is None and not brace:
@@ -130,16 +136,18 @@ def grant(schema_path, inventory_path, gold_path):
         elif pending is None:
             pending = string
         else:
-            if stack == ['inventory'] and pending == 'next_id':
-                next_span = match.span()
+            if pending == 'next_id' and (stack == ['inventory'] or
+                                         (len(stack) == 3 and stack[:2] == ['inventory', 'care_packages'])):
+                next_spans.append(match.span())
             pending = None
-    if close is None or next_span is None:
+    if close is None or not next_spans or stack != []:
         raise ValueError('Could not locate inventory fields; nothing changed')
     first_id = next_id - len(additions)
     inserted = '\n' + encode([(str(first_id + i), item) for i, item in enumerate(additions)], 2) + '\n\t'
-    updated = existing[:close] + inserted + existing[close:]
-    start, end = next_span
-    updated = updated[:start] + '"' + str(next_id) + '"' + updated[end:]
+    edits = [(close, close, inserted)] + [(start, end, '"' + str(next_id) + '"') for start, end in next_spans]
+    updated = existing
+    for start, end, text in sorted(edits, reverse=True):
+        updated = updated[:start] + text + updated[end:]
     atomic_text(inventory_path, updated)
     return len(additions), backup
 

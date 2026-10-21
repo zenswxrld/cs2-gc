@@ -49,6 +49,14 @@ ACCENT_THRESHOLDS = {'gloves/paints/bloodhound_metallic.vcompmat': .20,
 ACCENT_HUE_RANGES = {'gloves/paints/slick_stitched_green_grey.vcompmat': (75,180),
                     'gloves/paints/slick_black.vcompmat': (160,250)}
 GLOVE_TITLES = {'slick_stitched_green_grey': 'Racing'}
+# Dead Hand (volatile_02) composites: a LOOSE_VARIABLES container 'paint' names the finish's own material
+# (csgo_customglove_preview.vfx) and COPY_MATCHING_KEYS copies its parameters into the shared, all-white
+# glove_compositor template. That finish material holds the colours: eight tint-ID region colours plus
+# per-layer surface/substrate/burnishing/damage-bevel tints (inspected on the user's
+# glove_driver_brocade_phoenix_red files). A recolour edits only those colour vectors in a copy.
+DEAD_HAND_SHADERS = ('csgo_customglove_preview.vfx', 'csgo_customglove.vfx')
+DEAD_HAND_COLOURS = re.compile(r'^g_v(?:Id[1-8]Color|(?:Surface|Substrate|Burnishing|DamageBevel)ColorTint[1-4])$')
+DEAD_HAND_IDS = ['g_vId%dColor' % i for i in range(1, 9)]
 
 
 def _is_accent(color, threshold=.35, hue_range=None):
@@ -130,6 +138,96 @@ def diagnostic_node(node):
     else:
         value = node.value
     return dict(type=node.type, flag=node.flag, subtype=node.subtype, value=value)
+
+
+def _dead_hand_paint(root):
+    """The 'paint' resource-material variable of a Dead Hand composite, when its parameters are copied into
+    the compositor; otherwise None."""
+    found, copies = [], []
+
+    def walk(node):
+        if node.type == kv3.OBJECT:
+            kind, alias = node.get('m_nCompositeMaterialInputContainerSourceType'), node.get('m_strAlias')
+            if (kind and kind.value == 'CONTAINER_SOURCE_TYPE_LOOSE_VARIABLES' and alias and alias.value == 'paint'):
+                variables = node.get('m_vecLooseVariables')
+                for variable in (variables.value if variables and isinstance(variables.value, list) else []):
+                    vtype = variable.get('m_nVariableType') if variable.type == kv3.OBJECT else None
+                    material = variable.get('m_strResourceMaterial') if variable.type == kv3.OBJECT else None
+                    if (vtype and vtype.value == 'LOOSE_VARIABLE_TYPE_RESOURCE_MATERIAL' and material is not None
+                            and material.type == kv3.STRING):
+                        found.append(material)
+            command, src = node.get('m_nMutatorCommandType'), node.get('m_strCopyMatchingKeys_InputContainerSrc')
+            if command and command.value == 'COMP_MAT_PROPERTY_MUTATOR_COPY_MATCHING_KEYS' and src and src.value == 'paint':
+                copies.append(node)
+            for _, child in node.value: walk(child)
+        elif isinstance(node.value, list):
+            for child in node.value: walk(child)
+    walk(root)
+    return found[0] if len(found) == 1 and copies else None
+
+
+def dead_hand_colours(m_root):
+    """{name: vector node} for the finish material's colour vectors, or None without all eight tint-ID colours."""
+    params = m_root.get('m_vectorParams')
+    if params is None or not isinstance(params.value, list): return None
+    found = {}
+    for entry in params.value:
+        if entry.type != kv3.OBJECT: continue
+        name, value = entry.get('m_name'), entry.get('m_value')
+        if name and value and DEAD_HAND_COLOURS.match(name.value) and isinstance(value.value, list) and len(value.value) == 4:
+            found[name.value] = value
+    return found if all(name in found for name in DEAD_HAND_IDS) else None
+
+
+def make_dead_hand_finish(source, compmat_path, new_name, theme, report=None, inspection=None):
+    """(vcompmat bytes, vmat bytes) for a Dead Hand recolour, or None when the composite is not that layout.
+
+    Only colour vectors change: textures, normals, roughness, wear, placement and every other parameter stay
+    byte-for-byte as shipped. The same accent-only policy as the classic gloves: chromatic colours take the
+    theme hue with their brightness, alpha and (capped) saturation; greys, whites and blacks are untouched."""
+    compmat = source.read(compmat_path + '_c')
+    if compmat is None: return None
+    _, blocks = kv3.read_resource(compmat)
+    data = dict(blocks).get('DATA')
+    if data is None: return None
+    guid, root = kv3.read_kv3(data)
+    paint = _dead_hand_paint(root)
+    if paint is None: return None
+    material = source.read(paint.value + '_c')
+    if material is None: return None
+    _, m_blocks = kv3.read_resource(material)
+    m_data = dict(m_blocks).get('DATA')
+    if m_data is None: return None
+    m_guid, m_root = kv3.read_kv3(m_data)
+    shader = m_root.get('m_shaderName')
+    colours = dead_hand_colours(m_root)
+    if inspection is not None:
+        inspection.setdefault(compmat_path, {}).update(
+            dead_hand_material=paint.value, dead_hand_shader=shader.value if shader else '',
+            dead_hand_colours={name: [v.value for v in node.value] for name, node in sorted((colours or {}).items())})
+    if shader is None or shader.value not in DEAD_HAND_SHADERS or colours is None: return None
+    names = DEAD_HAND_IDS + sorted(name for name in colours if name not in DEAD_HAND_IDS)
+    current = [[item.value for item in colours[name].value] for name in names]
+    try:
+        new = recolor_accents(current, theme)
+    except ValueError:
+        return None
+    accents = [names[i] for i, c in enumerate(current) if _is_accent(c)]
+    if report is not None:
+        report[compmat_path] = {'original_colours': dict(zip(names, current)), 'accent_vectors': accents,
+                                'accent_channels': accents, 'policy': 'dead-hand-accent-only-v1',
+                                'material': paint.value}
+    if inspection is not None:
+        inspection[compmat_path]['status'] = 'supported Dead Hand finish material'
+    if not accents: return None
+    for name, color in zip(names, new):
+        for item, value in zip(colours[name].value, color): item.value = value
+    vmat_path = VMAT_DIR + new_name + '.vmat'
+    material_name = m_root.get('m_materialName')
+    if material_name is not None: material_name.value = vmat_path
+    paint.value = vmat_path
+    return (finishes._with_block(compmat, 'DATA', kv3.write_kv3(guid, root)),
+            finishes._with_block(material, 'DATA', kv3.write_kv3(m_guid, m_root)))
 
 
 def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels='original', report=None, inspection=None):
@@ -242,8 +340,17 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
                     # Retain known variants in the schema if disabled later, but stop offering them as drops.
                     if panels != 'original' and not panel_variants and name not in known_ids: continue
                     try:
-                        made = make_glove_finish(source, compmat, name, theme, fade=base in GLOVE_FADES,
-                                                 panels=panels, report=palette_report, inspection=inspection)
+                        made = None
+                        if '/volatile_02/' in compmat:
+                            # Dead Hand: original panels only. Its white tints are identity multipliers of
+                            # whole material layers, so the panel variants' neutral rewrite would black them out.
+                            if panels != 'original': continue
+                            made = make_dead_hand_finish(source, compmat, name, theme, report=palette_report,
+                                                         inspection=inspection)
+                        dead_hand = palette_report.get(compmat, {}).get('policy') == 'dead-hand-accent-only-v1'
+                        if made is None and not dead_hand:
+                            made = make_glove_finish(source, compmat, name, theme, fade=base in GLOVE_FADES,
+                                                     panels=panels, report=palette_report, inspection=inspection)
                     except (ValueError, NotImplementedError) as error:
                         if not values.get('composite_material_path'): raise
                         if inspection is not None:
@@ -261,6 +368,22 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
                                     {'composite_material_path': COMPMAT_DIR + name + '.vcompmat'}))
                     if has_accents and (panel_variants or panels == 'original'): case.append('[%s]%s' % (name, glove))
     return files, entries, sorted(set(case)), {name: int(key) for name, key in gloves.items()}
+
+
+TEST_CASE_NAME = 'crate_cs2gc_dead_hand_test'
+TEST_CASE_TITLE = 'Dead Hand Test Case'
+
+
+def dead_hand_test_items(case):
+    """Gauntlet entries that are Dead Hand recolours: every Dead Hand paint kit name starts with glove_, no
+    classic one does. For the grant-only test case (never in the Armory or Store)."""
+    return [item for item in case if item.startswith('[rg_glove_')]
+
+
+def test_case_spec(items):
+    return dict(name=TEST_CASE_NAME, title=TEST_CASE_TITLE, base=CASE_BASE, items=items,
+                description='Test case: only the Dead Hand glove recolours from the Gauntlet Case. '
+                            'Only given by grant_dead_hand_test_cases.cmd.')
 
 
 def case_spec(items):

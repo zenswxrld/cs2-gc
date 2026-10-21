@@ -4138,7 +4138,8 @@ void NativeCarePackages()
         "50" { "name" "the_key" }
         "60" { "name" "crate_normal" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
         "61" { "name" "crate_cs2gc_black_market" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
-        "62" { "name" "crate_cs2gc_gauntlet" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } } }
+        "62" { "name" "crate_cs2gc_gauntlet" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
+        "63" { "name" "crate_cs2gc_dead_hand_test" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } } }
       "paint_kits" { "10" { "name" "blue" } }
       "paint_kits_rarity" { "blue" "common" }
       "item_sets" { "set_timed_drops_test" { "items" { "[blue]weapon_test" "1" } } }
@@ -4147,6 +4148,13 @@ void NativeCarePackages()
     })");
     Check(schema.has_value(),"care package fixture loads");
     GameplayConfig config;config.match_case_percent=100;
+    {
+        std::mt19937_64 engine(77);bool testCase=false;
+        for (int n=0;n<500;++n)
+            if (const auto drops=RollMatchDrops(*schema,[&]{return engine();},config))
+                for (const auto &drop:*drops) testCase|=drop.defIndex==63;
+        Check(!testCase,"the grant-only Dead Hand Test Case never drops");
+    }
     Inventory saved;saved.SetGameplay(config);
     LiveInventory live(saved);
     Check(live.GrantMatchRewards(*schema,1,[]{return 500ull;}).has_value() && live.Items().Items().empty() &&

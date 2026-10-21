@@ -200,7 +200,7 @@ def prepare(proxy_directory, enabled=True, config=None):
         try:
             patched, details['knife_finishes'] = prepare_finishes(proxy_directory, config, patched)
         except (OSError, ValueError, KeyError, struct.error) as error:
-            details['knife_finishes'] = 'skipped: ' + str(error)  # never blocks recipes or the Armory
+            raise ValueError('Finish preparation failed; launch stopped to avoid mismatched schema/material/family files: ' + str(error)) from error
     if catalogue_enabled:
         from armory_rotation_catalog import patch_catalogue
         patched, catalogue = patch_catalogue(patched, config)

@@ -252,6 +252,9 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None):
     version, blocks = kv3.read_resource(compmat)
     data = dict(blocks).get('DATA')
     if data is None: return None
+    # Older official donors can use KV3 v4. They cannot be recoloured by this
+    # writer; skip the donor rather than aborting the entire schema generation.
+    if len(data) < 4 or struct.unpack_from('<I', data)[0] != kv3.MAGIC5: return None
     guid, root = kv3.read_kv3(data)
     specific = _specific_material(root)
     if specific is None: return None
@@ -260,6 +263,7 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None):
     m_version, m_blocks = kv3.read_resource(material)
     m_data = dict(m_blocks).get('DATA')
     if m_data is None: return None
+    if len(m_data) < 4 or struct.unpack_from('<I', m_data)[0] != kv3.MAGIC5: return None
     m_guid, m_root = kv3.read_kv3(m_data)
     colors = _vector_params(m_root)
     if colors is None: return None

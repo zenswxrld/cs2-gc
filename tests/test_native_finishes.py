@@ -102,6 +102,38 @@ def vpk_files():
 
 
 class NativeFinishes(unittest.TestCase):
+    def test_finish_failure_stops_native_catalogue_preparation(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            game=Path(folder)/'game';proxy=game/'bin/win64';proxy.mkdir(parents=True)
+            info=game/'csgo/gameinfo.gi';info.parent.mkdir();info.write_text(GAMEINFO)
+            (proxy/'items_game.txt').write_text(SCHEMA)
+            target=game/native_tradeups.FOLDER/'scripts/items/items_game.txt'
+            target.parent.mkdir(parents=True);target.write_text('previous complete schema')
+            with patch.object(finishes,'prepare',side_effect=ValueError('unsupported material test')):
+                with self.assertRaisesRegex(ValueError,'launch stopped'):
+                    native_tradeups.prepare(proxy,False,{'knife_finishes':1,'armory_rotation_enabled':True})
+            self.assertEqual(target.read_text(),'previous complete schema')
+            self.assertEqual(info.read_text(),GAMEINFO)
+
+
+    def test_unsupported_donor_compmat_or_material_is_skipped(self):
+        from unittest.mock import patch
+        import copy
+        def older(resource):
+            version, blocks = kv3.read_resource(resource)
+            return kv3.write_resource(version, [[name, struct.pack('<I',0x4b563304)+data[4:] if name=='DATA' else data] for name,data in blocks])
+        original=vpk_files()
+        comp='weapons/paints/legacy/aa_fade.vcompmat_c'
+        mat='materials/models/weapons/customization/paints/vmats/aa_fade.vmat_c'
+        for path in (comp,mat):
+            files=copy.copy(original);files[path]=older(files[path])
+            class Source:
+                def read(self,path):return files.get(path)
+            self.assertIsNone(finishes.make_finish(Source(),'aa_fade',comp[:-2],'test','Teal'))
+            # Another verified donor remains available; one old format never cancels it.
+            self.assertIsNotNone(finishes.make_finish(Source(),'am_zebra','weapons/paints/legacy/am_zebra.vcompmat','other','Teal'))
+
     def test_gold_brick_keeps_related_metal_tones_instead_of_ranked_two_tone(self):
         colors=[[1,.88,.5,1],[.98,.9,.6,.8],[.8,.7,.4,.5],[.7,.55,.15,0]]
         result=finishes.recolor_gold_brick(colors,'Toxic')

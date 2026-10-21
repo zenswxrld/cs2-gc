@@ -1,3 +1,24 @@
+# Helper hotfix27a — preparation failure after build27
+
+Same DLL tag `codex-20261022-27`; Python helper fixes. Extract ALL files over build27, close CS2 and run
+cs2_gc_debug.exe. Do not start CS2 directly for this check: preparation must finish successfully first.
+Keep your inventory, active config and finish-ID map; no reset is needed.
+
+The supplied preparation log showed KV3-v4 material parsing aborting finish generation while the launcher
+still continued. The latest GC session loaded build27 but rejected the colour-family file. The dump records
+a null read in client.dll+0x1138394; without game symbols this does not identify the exact crash trigger.
+A mismatched generated schema/material/family set is a plausible cause, not yet proven by a successful retest.
+
+- Skip unsupported donor KV3 versions before recolouring; the KV3 writer remains v5-only.
+- Use verified gun-pattern donors for recoloured filler slots rather than attempting arbitrary official materials.
+- Unexpected finish preparation errors now stop launch instead of silently rebuilding a partial catalogue.
+
+Test: run the helper; cs2_gc_prepare.log must show successful finish generation with no `skipped` KV3 error.
+The GC log must accept cs2_gc_skin_families.txt. Then open Armory, inspect custom collections, and restart.
+If it crashes again, send the new preparation/GC logs and dump. Native tile rendering remains unverified.
+
+---
+
 # Test build27 — custom collection previews and variety
 
 DLL tag: `codex-20261022-27`. Target CS2 build25966348.

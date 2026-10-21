@@ -453,7 +453,7 @@ def custom_cases(source_text, kits, titles, kit_path, finish_source, families, m
                 # Pink/purple rewards are distinct recolours too, instead of filler
                 # carrying an inflated rarity. At blue, two slots get custom colours.
                 colour = tier in ('legendary','mythical') or (tier=='rare' and slot<2)
-                pool=list(dict.fromkeys(donors+fillers)) if colour else fillers
+                pool=donors if colour else fillers
                 candidates=[(b,w) for b in pool for w in weapons if w not in taken
                             and (material(b),w,'coloured' if colour else 'original') not in used
                             and (colour or (material(b),w) not in official_materials)]

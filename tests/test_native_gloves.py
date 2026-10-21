@@ -86,6 +86,28 @@ def dead_hand_files():
 
 
 class NativeGloves(unittest.TestCase):
+    def setUp(self):
+        # The Dead Hand recolour rules stay tested even though the user turned the feature off.
+        self.dead_hand = gloves.DEAD_HAND_RECOLOURS
+        gloves.DEAD_HAND_RECOLOURS = True
+
+    def tearDown(self):
+        gloves.DEAD_HAND_RECOLOURS = self.dead_hand
+
+    def test_dead_hand_recolours_are_off_but_owned_ones_still_render(self):
+        gloves.DEAD_HAND_RECOLOURS = False
+        schema = SCHEMA_GLOVES.replace('"5030" {', '"5031" { "name" "slick_gloves" "prefab" "hands_paintable" }\n\t\t"5030" {').replace(
+            '"1001" {', '"1399" { "name" "glove_driver_fixture_red" "description_tag" "#PaintKit_fixture_Tag" '
+                        '"composite_material_path" "%s" }\n\t\t"1001" {' % DEAD_HAND)
+        gold = GOLD_GLOVES.replace('"5030:10037" "1"', '"5030:10037" "1" "5031:1399" "1"')
+        files = glove_files(); files.update(dead_hand_files())
+        source = finishes.Source(folder=None); source.read = files.get; source.exists = lambda name: name in files
+        owned = {'rg_glove_driver_fixture_red_cobalt': 39002}
+        _, entries, case, _ = gloves.plan(schema, gold, {}, source, owned, [])
+        self.assertFalse(gloves.dead_hand_test_items(case))  # nothing to drop, so no Dead Hand Test Case either
+        self.assertTrue(any(item.startswith('[rg_sporty_purple_') for item in case))  # classic gloves unchanged
+        self.assertIn(('39002', 'rg_glove_driver_fixture_red_cobalt'), [(k, n) for k, n, _, _ in entries])
+
     def test_composite_diagnostic_keeps_nested_override_types_names_and_values(self):
         root=obj(('m_Points',Node(kv3.ARRAY,[obj(('color',Node(kv3.ARRAY,
             [Node(kv3.FLOAT,.2),Node(kv3.FLOAT,.8)])),('color',string('repeated-name')))])),

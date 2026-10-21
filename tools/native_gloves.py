@@ -71,6 +71,10 @@ DEAD_HAND_SKIP = {'glove_specialist_quilted_black', 'glove_specialist_sunburst_r
                   'glove_driver_brocade_flower_red', 'glove_driver_scallop_metallic_blue',
                   'glove_driver_silk_dragon_white'}
 HARMONY_DEGREES = 60
+# User (21 Oct): "forget the dead hand custom gloves, remove them completely". No Dead Hand recolour is offered
+# in any case (and so no Dead Hand Test Case); already-owned ones keep their definitions so they still render.
+# The rules above stay for reference; True brings them back.
+DEAD_HAND_RECOLOURS = False
 # Pale tint-ID regions (saturation .14-.18, so below the muted-shade threshold) that are whole panels, not
 # printed: Red Racer's tan suede (Id4, confirmed in game), Ultra Violent's pale violet base (Id2, Id3) and
 # Frosty's pale blue panel (Id7). Brocade Flowers' cream (Id4) stays cream on purpose.
@@ -446,7 +450,8 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
             picks = themes[:]
             random.Random(base).shuffle(picks)
             picks = picks[:THEMES_PER_GLOVE] + (list(finishes.GRADIENT_THEMES) if base in GLOVE_FADES else [])
-            if base in DEAD_HAND_SKIP: picks = []
+            if '/volatile_02/' in compmat and not DEAD_HAND_RECOLOURS: picks = []
+            elif base in DEAD_HAND_SKIP: picks = []
             elif base in DEAD_HAND_PRINT_HUES: picks = harmonious_themes(DEAD_HAND_PRINT_HUES[base])
             elif '/volatile_02/' in compmat and base not in DEAD_HAND_FREE:
                 hue = dead_hand_main_hue(source, compmat)

@@ -1,3 +1,11 @@
+# Helper26j (Claude): Dead Hand custom gloves removed
+
+User: "forget the dead hand custom gloves, remove them completely". DEAD_HAND_RECOLOURS = False: no Dead Hand
+recolour is in any case, so the Dead Hand Test Case is no longer generated (grant_dead_hand_test_cases.cmd
+removed). Already-owned rg_glove_* recolours keep their definitions/materials (known ids) so inventories stay
+valid. Classic glove recolours, the four ug_ unreleased finishes and the Gauntlet Case are unchanged. The
+Dead Hand rules/tests remain (tests flip the flag on). Next user request: an LTD custom weapon-skin case.
+
 # Helper26i (Claude): Dead Hand curation — only recolours that look proper
 
 User: "keep the ones that work really well, and ones that dont really change or have clashing colors take

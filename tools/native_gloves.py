@@ -65,6 +65,8 @@ DEAD_HAND_PRINT_HUES = {'glove_sport_beadwork_diamonds_purple': 265, 'glove_spor
 # Looked wrong in every colour (printed wave and blue leather; printed flames): no recolours (user's call).
 DEAD_HAND_SKIP = {'glove_specialist_wave_blue', 'glove_sport_flames_orange'}
 HARMONY_DEGREES = 60
+# Colours outside a glove's range that the user approved on screen.
+DEAD_HAND_EXTRA_THEMES = {'glove_driver_ostrich_purple': ['Sunset']}
 # Every Dead Hand glove gets colours that match its own (user: "use colors that work well with whats already
 # there ... same with all dead hand gloves"). Add a finish here to offer every colour on it again.
 DEAD_HAND_FREE = set()
@@ -410,6 +412,8 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
             elif '/volatile_02/' in compmat and base not in DEAD_HAND_FREE:
                 hue = dead_hand_main_hue(source, compmat)
                 if hue is not None: picks = harmonious_themes(hue)
+            if base in DEAD_HAND_EXTRA_THEMES and base not in DEAD_HAND_SKIP:
+                picks += [t for t in DEAD_HAND_EXTRA_THEMES[base] if t not in picks]
             # Owned recolours keep rendering even when their colour is no longer offered.
             retained = [t for t in themes if t not in picks and 'rg_%s_%s' % (base, t.lower()) in known_ids]
             offered = set(picks)

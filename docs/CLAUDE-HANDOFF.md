@@ -1,3 +1,11 @@
+# Helper26n (Claude): 26m crashed CS2's schema load — no item_sets
+
+User got "Assertion Failed in function CEconItemSystem::ParseItemSchemaFile(): false" with 26m. client.dll
+strings include "Item Set %s: item locname tokens must be #CSGO_%s" / "no localized name": the three custom
+item_sets used literal names. Removed item_sets; the collections are client_loot_lists only (like charm and
+sticker packs), and the Armory rows get their callout from native_skins.COLLECTIONS. Do not add item_sets
+without a real #CSGO_ token (the language file cannot be overridden safely). Same DLL 26m.
+
 # Build26m (Claude): custom colour-family collections + test case
 
 User approved colour families ("families sounds great"). native_skins.collections(): family paint kits

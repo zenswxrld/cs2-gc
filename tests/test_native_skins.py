@@ -75,7 +75,8 @@ class CustomSkins(unittest.TestCase):
             (game / 'csgo/pak01_000.vpk').write_bytes(archive)
             patched, _ = finishes.prepare(proxy, {'knife_finishes': 1}, schema)
             sections = collect(parse(patched))
-            self.assertIn('set_cs2gc_spectrum', sections['item_sets'])
+            self.assertFalse(sections.get('item_sets'))  # an item_set without a #CSGO_ name token crashes CS2
+            self.assertIn('set_cs2gc_spectrum', sections['client_loot_lists'])
             self.assertEqual(dict(sections['client_loot_lists'][skins.COLLECTIONS_TEST_NAME]), {'set_cs2gc_spectrum': '1', 'set_cs2gc_classics': '1'})  # Fade and Slaughter in the fixture
             kits = {as_dict(v)['name']: as_dict(v) for v in sections['paint_kits'].values()}
             self.assertEqual(sections['paint_kits_rarity']['cgf_fade_ancient'], 'ancient')

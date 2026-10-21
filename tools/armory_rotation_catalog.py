@@ -92,7 +92,11 @@ def catalogue(source, config):
     for name in ARMORY_COLLECTIONS: loot(name, 'collection', 4)
     # Custom colour-family collections (native_skins.py), once the user has checked them with the test case.
     if config.get('custom_collections', 0):
-        for name in sorted(n for n in sections.get('item_sets', {}) if n.startswith('set_cs2gc_')): loot(name, 'collection', 4)
+        from native_skins import COLLECTIONS
+        for name, (title, _) in COLLECTIONS.items():
+            if name in lists:
+                loot(name, 'collection', 4)
+                goods['lootlist:' + name]['callout'] = title  # no item_set (needs a #CSGO_ token), so name it here
     # The current weekly drop pool collections rotate through the collection tiles too.
     for name in sorted(n for n in sections.get('item_sets', {}) if n.startswith('set_timed_drops_')): loot(name, 'collection', 4)
     for name in lists:

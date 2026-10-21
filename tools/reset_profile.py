@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import time
+from native_tradeups import parse as parse_spans
 
 STATE = ['cs2_gc_gsi_state.json', 'cs2_gc_rewards.txt', 'cs2_gc_matches.txt', 'cs2_gc_premier.txt',
          'cs2_gc_console.txt', 'cs2_gc_console_boot.txt']
@@ -23,7 +24,15 @@ def reset_inventory_progress(text):
     if len(PROGRESSION.findall(text)) > 1:
         raise ValueError('Inventory has more than one progression block; leaving it unchanged')
     text = PROGRESSION.sub(lambda m: m.group(1) + '"progression" { "level" "1" "xp" "0" "reward_total" "0" }', text)
-    return LEVEL_REWARDS.sub('', text)
+    text = LEVEL_REWARDS.sub('', text)
+    for key in ('match_reward_total', 'console_star_total'):
+        text = re.sub(r'(?m)^([ \t]*"'+key+r'"[ \t]+")\d+(")', lambda m: m.group(1)+'0'+m.group(2), text)
+    root = parse_spans(text).one('inventory')
+    packages = [node for node in root.children if node.key == 'care_packages']
+    for node in reversed(packages):
+        start = text.rfind('"care_packages"',0,node.opening)
+        text = text[:start]+text[node.end:]
+    return text
 
 
 def reset(directory, mode):

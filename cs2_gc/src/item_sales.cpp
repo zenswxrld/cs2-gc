@@ -5,6 +5,8 @@ std::uint32_t ItemSaleValue(const Schema &schema, const GameplayConfig &c, const
 {
     if (!c.item_sales_enabled || item.storedIn || item.casketCount || item.terminalRemaining || item.purchasePrice || item.expiration)
         return 0;
+    for (const auto &crate:schema.Crates())
+        if (crate.keyDefIndex && crate.keyDefIndex==item.defIndex) return 5;
     const auto name = schema.ItemName(item.defIndex);
     if (name.empty() || name.starts_with("coupon")) return 0;
     const auto share = [](std::uint32_t price, std::uint32_t percent) {
@@ -23,8 +25,8 @@ std::uint32_t ItemSaleValue(const Schema &schema, const GameplayConfig &c, const
         if (crate->kind == CrateKind::Terminal) return 0;
         return share(crate->kind == CrateKind::Case ? 2u : 1u, c.sell_container_percent);
     }
-    if (!name.starts_with("weapon_") && name.find("glove") == std::string::npos) return 0;
-    if (item.unusual || schema.IsKnife(item.defIndex) || name.find("glove") != std::string::npos)
+    if (!name.starts_with("weapon_") && !schema.IsGlove(item.defIndex)) return 0;
+    if (item.unusual || schema.IsKnife(item.defIndex) || schema.IsGlove(item.defIndex))
         return item.paintKitIndex || item.unusual ? c.sell_knife_glove : 0;
     return item.paintKitIndex ? base : 0;
 }

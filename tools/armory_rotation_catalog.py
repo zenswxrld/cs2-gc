@@ -33,12 +33,13 @@ def catalogue(source, config):
     goods = {}
     cases = {case[0] for case in find_case_items(sections)}
     terminals = set(terminal_names(source))
+    souvenirs = set(souvenir_names(source))
 
     def add(name, slot, cost, template=None):
         if name in goods: return
         values = dict(template or {})
         values.update(item_name=name, points=str(cost), local_rotation_slot=slot)
-        values['ui_order'] = {'collection': '2', 'charm': '1', 'sticker': '3', 'case': '3', 'capsule': '3', 'limited': '2', 'agent': '1', 'terminal': '3'}[slot]
+        values['ui_order'] = {'collection': '2', 'charm': '1', 'sticker': '1', 'souvenir': '3', 'case': '3', 'capsule': '3', 'limited': '2', 'agent': '1', 'terminal': '3'}[slot]
         values.pop('bidding_cycle', None)
         if slot == 'limited': values['limited_until'] = '2147483647'
         goods[name] = values
@@ -48,12 +49,13 @@ def catalogue(source, config):
         data = as_dict(value); name = data['item_name']
         if name == 'lootlist:removed_items' and not config['armory_howl_enabled']: continue
         if not all(isinstance(v, str) for v in data.values()): raise ValueError('Unknown nested Armory goods field')
-        if data.get('local_rotation_slot') in ('collection', 'charm', 'sticker', 'case', 'capsule', 'limited', 'agent', 'terminal'):
+        if data.get('local_rotation_slot') in ('collection', 'charm', 'sticker', 'case', 'capsule', 'limited', 'agent', 'terminal', 'souvenir'):
             slot = data['local_rotation_slot']
         elif name.startswith('lootlist:keychain_pack_'): slot = 'charm'
         elif name.startswith('lootlist:sticker_pack_'): slot = 'sticker'
         elif name.startswith('lootlist:set_xpshop_wpn_') or data.get('limited_until'): slot = 'limited'
         elif name.startswith('lootlist:'): slot = 'collection'
+        elif name in souvenirs: slot = 'souvenir'
         elif name in terminals: slot = 'terminal'
         elif name in cases: slot = 'case'
         else: raise ValueError('Unclassified native Armory good: ' + name)
@@ -89,6 +91,7 @@ def catalogue(source, config):
         if name.startswith('keychain_pack_') and name.endswith('_lootlist'): loot(name, 'charm', 3)
         if name.startswith('sticker_pack_') and name.endswith('_lootlist'): loot(name, 'sticker', 1)
     for name in sorted(cases): add(name, 'case', config.get('armory_case_price', 5), {'flags': '2'})
+    for name in sorted(souvenirs): add(name, 'souvenir', config['armory_souvenir_price'], {'flags': '2'})
     if config['terminals_enabled']:
         for name in sorted(terminals): add(name, 'terminal', config['armory_terminal_price'])
     wanted = set(COMMUNITY_CAPSULES)
@@ -159,3 +162,41 @@ def terminal_names(source):
                   if isinstance(node, list) and as_dict(node).get('name', '').startswith('crate_')
                   and 'weapon_case_selfopening_collection' in chain(node)
                   and any('volatile_pricing' in name for name in chain(node)))
+
+
+def souvenir_names(source):
+    """Installed keyless souvenir packages whose own series resolves to usable weapon loot.
+
+    Early packages whose loot is server-only are deliberately excluded, rather than sold empty.
+    """
+    sections = collect(parse(source))
+    prefabs = sections.get('prefabs', {})
+    lists = sections.get('client_loot_lists', {})
+    revolving = sections.get('revolving_loot_lists', {})
+    def property(node, key, depth=0):
+        values = as_dict(node)
+        if key in values: return values[key]
+        if depth < 8:
+            for parent in reversed(values.get('prefab', '').split()):
+                if parent in prefabs:
+                    value = property(prefabs[parent], key, depth + 1)
+                    if value is not None: return value
+        return None
+    def souvenir(node, depth=0):
+        parents = as_dict(node).get('prefab', '').split()
+        return 'weapon_case_souvenirpkg' in parents or (depth < 8 and any(
+            name in prefabs and souvenir(prefabs[name], depth + 1) for name in parents))
+    def weapon_loot(name, visiting=None):
+        visiting = set() if visiting is None else visiting
+        if name in visiting or len(visiting) > 8: return False
+        visiting = visiting | {name}
+        return any((key.startswith('[') and ']weapon_' in key) or (key in lists and weapon_loot(key, visiting))
+                   for key, value in lists.get(name, []) if isinstance(value, str))
+    result = []
+    for node in sections.get('items', {}).values():
+        if not isinstance(node, list) or not souvenir(node): continue
+        attributes = dict(property(node, 'attributes') or [])
+        series = dict(attributes.get('set supply crate series') or []).get('value')
+        if series and weapon_loot(revolving.get(series)):
+            result.append(as_dict(node)['name'])
+    return sorted(result)

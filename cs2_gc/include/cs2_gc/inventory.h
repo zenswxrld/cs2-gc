@@ -62,7 +62,15 @@ struct InventoryItem
     std::optional<std::uint32_t> purchasePrice;
     bool ownerCertificate{}; // accepted terminal offer: shows the Original Owner Certificate (purchaser account id)
     std::uint32_t musicKit{}; // music id attribute (166)
+    bool souvenir{};
+    std::uint32_t tournamentEvent{}, tournamentTeam0{}, tournamentTeam1{}, tournamentPlayer{};
     bool statTrakFromContract{}; // preserve intentional local mixed-contract variants across startup repair
+};
+
+struct CarePackage
+{
+    std::uint32_t generation{};
+    std::vector<InventoryItem> offers;
 };
 
 struct LoadoutSlot
@@ -114,6 +122,11 @@ public:
     }
     void SetArmoryPity(const std::string &collection, std::uint32_t failures) { m_armoryPity[collection] = failures; }
 
+    const std::vector<CarePackage> &CarePackages() const { return m_carePackages; }
+    bool QueueCarePackage(std::vector<InventoryItem> offers);
+    std::optional<std::vector<InventoryItem>> ClaimCarePackage(std::uint32_t generation,
+                                                             const std::vector<std::uint64_t> &ids);
+
     // KeyValues text, so the file stays hand-editable. FromText is strict: any
     // malformed, duplicate or out-of-range entry rejects the whole file rather
     // than loading a partial inventory.
@@ -139,6 +152,8 @@ private:
     std::uint32_t m_casePity{};
     std::map<std::uint32_t, std::uint32_t> m_terminalPity;
     std::map<std::string, std::uint32_t> m_armoryPity;
+    std::vector<CarePackage> m_carePackages;
+    std::uint32_t m_lastCareGeneration{};
     std::uint64_t m_nextId{1};
 };
 }

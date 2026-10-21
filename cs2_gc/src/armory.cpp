@@ -166,6 +166,8 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
         InventoryItem plain;
         plain.defIndex = *definition;
         plain.rarity = m_schema.ItemRarity(*definition);
+        if (const auto *crate = m_schema.FindCrate(*definition); crate && crate->kind == CrateKind::Souvenir)
+            plain.tournamentEvent = crate->tournamentEvent;
         item = plain;
     }
     if (!item)
@@ -215,7 +217,7 @@ Armory::Rotation Armory::RotationAt(std::uint64_t unixSeconds, const GameplayCon
         {
             const auto wanted = slot == "collection" ? config.armory_collection_slots :
                 slot == "charm" ? config.armory_charm_slots : slot == "sticker" ? config.armory_sticker_slots :
-                slot == "case" ? config.armory_case_slots : slot == "capsule" ? config.armory_capsule_slots :
+                slot == "souvenir" ? config.armory_souvenir_slots : slot == "case" ? config.armory_case_slots : slot == "capsule" ? config.armory_capsule_slots :
                 slot == "limited" ? config.armory_limited_slots : slot == "agent" ? config.armory_agent_slots :
                 slot == "terminal" && config.terminals_enabled ? config.armory_terminal_slots : 0u;
             const auto count = std::min<std::size_t>(wanted, entries.size());

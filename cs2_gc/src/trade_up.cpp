@@ -96,7 +96,7 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     std::map<std::string, std::uint32_t> supplied; // collection -> how many of the ten it supplies
     for (const InventoryItem *item : inputs)
     {
-        if (item->paintKitIndex == 0)
+        if (item->paintKitIndex == 0 || item->souvenir)
             return fail(TradeUpError::NotASkin);
         const auto skinRarity = schema.SkinRarity(item->defIndex, item->paintKitIndex);
         if (!skinRarity)

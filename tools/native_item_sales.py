@@ -16,10 +16,12 @@ def settings(source, config):
     names = {as_dict(v).get('name'): str(k) for k, v in sections.get('items', {}).items() if isinstance(v, list)}
     agents = agent_names(source)
     flat = {}
+    gold_definitions = []
     def percent(price, value): return max(1, price * value // 100) if price and value else 0
     for name in agents:
         flat[names[name]] = percent(config['armory_agent_price'], config['sell_agent_percent'])
-    for case, _, definition, _ in find_case_items(sections):
+    for case, _, definition, key_index in find_case_items(sections):
+        flat[str(key_index)] = 5
         flat[definition] = percent(2, config['sell_container_percent'])
     # Container classification uses the same native prefab family as the C++ schema loader.
     prefabs = sections.get('prefabs', {})
@@ -42,15 +44,22 @@ def settings(source, config):
         if not isinstance(node, list): continue
         values = as_dict(node); name = values.get('name', '')
         ancestors = chain(node)
+        if 'weapon_case_base' in ancestors and 'weapon_case_souvenirpkg' not in ancestors:
+            key = resolve(node, 'associated_item')
+            associated = resolve(node, 'associated_items')
+            if isinstance(associated, list) and associated: key = associated[0][0]
+            if key and str(key).isdigit(): flat[str(key)] = 5
+        if 'hands_paintable' in ancestors or resolve(node, 'item_class') == 'weapon_knife':
+            gold_definitions.append(str(definition))
         if name == 'musickit': flat[definition] = config['sell_music_kit']
-        elif 'weapon_case_base' in ancestors and 'weapon_case_souvenirpkg' not in ancestors:
+        elif 'weapon_case_base' in ancestors:
             attributes = resolve(node, 'attributes')
             series = as_dict(attributes).get('set supply crate series') if isinstance(attributes, list) else None
             if series and not ('volatile_pricing' in ancestors and 'weapon_case_selfopening_collection' in ancestors):
                 flat.setdefault(definition, percent(1, config['sell_container_percent']))
     return {'enabled': bool(config['item_sales_enabled']), 'flat': flat,
             'rarity': [0] + [config['sell_' + key] for key in ('consumer', 'industrial', 'mil_spec', 'restricted', 'classified', 'covert')],
-            'gold': config['sell_knife_glove'], 'stickerPercent': config['sell_sticker_percent']}
+            'goldDefinitions': gold_definitions, 'gold': config['sell_knife_glove'], 'stickerPercent': config['sell_sticker_percent']}
 
 
 PRICE = '''
@@ -65,7 +74,7 @@ PRICE = '''
         const base = cs2gcSell.rarity[rarity] || 0;
         if (ItemInfo.IsSticker(id) || ItemInfo.IsPatch(id) || ItemInfo.IsSprayPaint(id) || ItemInfo.IsSpraySealed(id) || ItemInfo.IsKeychain(id))
             return base && cs2gcSell.stickerPercent ? Math.max(1, Math.floor(base * cs2gcSell.stickerPercent / 100)) : 0;
-        if (ItemInfo.IsMelee(id) || ItemInfo.IsGloves(id)) return cs2gcSell.gold;
+        if ((cs2gcSell.goldDefinitions || []).indexOf(definition) !== -1 || ItemInfo.IsMelee(id) || ItemInfo.IsGloves(id)) return cs2gcSell.gold;
         return ItemInfo.IsWeapon(id) ? base : 0;
     }
 '''

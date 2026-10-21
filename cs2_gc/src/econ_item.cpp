@@ -119,7 +119,12 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
     out.Varint(2, accountId);
     out.Varint(3, inventoryPosition);
     out.Varint(4, item.defIndex);
-    out.Varint(7, item.expiration ? 14 : item.unusual ? 3 : item.statTrak ? QualityStrange : QualityUnique);
+    out.Varint(7, item.expiration ? 14 : item.souvenir ? QualityTournament : item.unusual ? 3 : item.statTrak ? QualityStrange : QualityUnique);
+    // Attribute ids verified against the installed items_game.txt.
+    if (item.tournamentEvent) AddIntegerAttribute(out, 137, item.tournamentEvent);
+    if (item.tournamentTeam0) AddIntegerAttribute(out, 139, item.tournamentTeam0);
+    if (item.tournamentTeam1) AddIntegerAttribute(out, 140, item.tournamentTeam1);
+    if (item.tournamentPlayer) AddIntegerAttribute(out, 223, item.tournamentPlayer);
     if (item.terminalRemaining)
         AddIntegerAttribute(out, 169, *item.terminalRemaining);
     if (item.expiration)
@@ -128,7 +133,7 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
         AddIntegerAttribute(out, 316, *item.purchasePrice);
     if (item.ownerCertificate)
         AddIntegerAttribute(out, 317, accountId);
-    if (item.statTrak)
+    if (item.statTrak && !item.souvenir)
     {
         AddIntegerAttribute(out, AttributeKillEater, 0);
         AddIntegerAttribute(out, AttributeKillEaterScoreType, item.musicKit ? 1 : 0); // music kits count MVPs

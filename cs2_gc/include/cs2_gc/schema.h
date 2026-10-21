@@ -11,7 +11,7 @@
 
 namespace cs2_gc
 {
-enum class CrateKind { Case, Capsule, GraffitiBox, Pins, Terminal, Other }; // Pins: collectible pin capsules, keyless
+enum class CrateKind { Case, Capsule, GraffitiBox, Pins, Terminal, Souvenir, Other }; // Pins: collectible pin capsules, keyless
 
 struct CrateInfo
 {
@@ -21,7 +21,14 @@ struct CrateInfo
     std::uint32_t series{};          // supply crate series
     std::uint32_t keyDefIndex{};     // zero when the crate opens without a key
     std::string lootListName;        // client_loot_lists entry, resolved via the series
+    std::uint32_t tournamentEvent{}; // installed package event, including inherited attributes
     CrateKind kind{CrateKind::Other}; // from the prefab chain; Case means keyed weapon case
+};
+
+struct SouvenirSticker
+{
+    std::uint32_t kit{}, event{}, team{}, player{};
+    bool gold{};
 };
 
 struct LootTier
@@ -83,7 +90,7 @@ public:
 
     static std::optional<Schema> Load(std::string_view itemsGameText);
 
-    // Standard cases only; souvenir packages are not crates here.
+    // Installed containers, including keyless souvenir packages.
     const std::vector<CrateInfo> &Crates() const { return m_crates; }
     const CrateInfo *FindCrate(std::uint32_t defIndex) const;
 
@@ -114,6 +121,8 @@ public:
     std::vector<SkinRef> CrateGoldOutcomes(std::uint32_t defIndex) const;
     bool IsKnife(std::uint32_t defIndex) const;
     bool IsGlove(std::uint32_t defIndex) const;
+    std::vector<SouvenirSticker> SouvenirStickers(std::uint32_t event) const;
+    std::uint32_t SouvenirMapSticker(std::uint32_t crateDefinition) const;
     std::vector<SkinRef> MatchRewardSkins(bool weeklyOnly = true) const;
     std::vector<std::uint32_t> AgentDefinitions() const;
     bool ProducesStatTrak(std::uint32_t definition) const;
@@ -169,6 +178,7 @@ private:
     std::unordered_map<std::string, std::uint32_t> m_keychains;     // name -> index
     std::vector<ArmoryRedeemable> m_armoryRedeemables;
     std::unordered_map<std::string, const KvNode *> m_prefabs;
+    std::vector<SouvenirSticker> m_souvenirStickers;
     std::vector<const KvNode *> m_itemSets;
     std::unordered_map<std::string, std::vector<SkinRef>> m_collectionSkins;
     std::unordered_map<std::uint64_t, std::vector<std::string>> m_skinCollections; // weapon << 32 | kit

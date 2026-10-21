@@ -44,12 +44,21 @@ public:
             m_inventory.MarkMatchRewarded();
             return std::vector<InventoryItem>{};
         }
-        auto drops = RollMatchDrops(schema, random, m_inventory.Gameplay());
+        auto config = m_inventory.Gameplay();
+        if (config.care_packages_enabled) config.match_drop_count = 4;
+        auto drops = RollMatchDrops(schema, random, config);
         if (!drops) return std::nullopt;
+        if (config.care_packages_enabled)
+        {
+            if (!m_inventory.QueueCarePackage(*drops)) return std::nullopt;
+            m_inventory.MarkMatchRewarded(); return std::vector<InventoryItem>{};
+        }
         for (auto &item : *drops) item = AddItem(item);
         m_inventory.MarkMatchRewarded();
         return drops;
     }
+    std::optional<std::vector<InventoryItem>> ClaimCarePackage(std::uint32_t generation, const std::vector<std::uint64_t> &ids)
+    { return m_inventory.ClaimCarePackage(generation,ids); }
     bool ApplyEarnedXp(std::uint64_t cumulativeXp) { return m_inventory.ApplyEarnedXp(cumulativeXp); }
     std::optional<std::vector<InventoryItem>> GrantLevelRewards(const Schema &schema, const RandomSource &random)
     {
@@ -61,9 +70,14 @@ public:
         }
         auto config = m_inventory.Gameplay();
         config.match_drops_enabled = 1; // level rewards are independent of the match-drop switch
-        config.match_drop_count = config.level_drop_count;
+        config.match_drop_count = config.care_packages_enabled ? 4u : config.level_drop_count;
         auto drops = RollMatchDrops(schema, random, config);
         if (!drops) return std::nullopt;
+        if (config.care_packages_enabled)
+        {
+            if (!m_inventory.QueueCarePackage(*drops)) return std::nullopt;
+            m_inventory.MarkLevelRewarded(); return std::vector<InventoryItem>{};
+        }
         for (auto &item : *drops) item = AddItem(item);
         m_inventory.MarkLevelRewarded();
         return drops;
@@ -182,7 +196,8 @@ public:
     std::size_t RepairSlabs(const Schema &schema);
 
     // Earlier Armory rolls incorrectly assigned hidden StatTrak to collection-only finishes.
-    // Clear those flags on known collection skins, preserving valid case finishes and unknown items.
+    // Also clears invalid glove StatTrak, preserving ids, finishes, wear and equipped slots.
+    // Valid case/mixed-contract weapon StatTrak remains unchanged.
     std::size_t RepairCollectionStatTrak(const Schema &schema);
 
     struct Sealed

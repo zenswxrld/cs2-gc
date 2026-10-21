@@ -251,7 +251,7 @@ void SchemaCrates()
     Check(!Schema::Load("\"other\" { }"), "needs items_game root");
     const auto schema = Schema::Load(SchemaFixture);
     Check(schema.has_value(), "fixture loads");
-    Check(schema->Crates().size() == 4, "souvenir and seriesless items excluded, repeated sections merged");
+    Check(schema->Crates().size() == 5, "souvenir packages included, seriesless items excluded, repeated sections merged");
     const CrateInfo *one = schema->FindCrate(901);
     Check(one && one->keyDefIndex == 900 && one->series == 5 && one->nameToken == "Case_One", "prefab key and token");
     Check(one->lootListName == "case_one_lootlist", "series resolves loot list");
@@ -259,7 +259,7 @@ void SchemaCrates()
     Check(two && two->keyDefIndex == 903, "associated_items key");
     Check(one->kind == CrateKind::Case && schema->FindCrate(906)->kind == CrateKind::Capsule, "kind from prefab chain");
     Check(schema->FindCrate(905)->kind == CrateKind::Case, "prefab-inherited key makes a case");
-    Check(schema->FindCrate(905) && !schema->FindCrate(910) && !schema->FindCrate(1), "lookup");
+    Check(schema->FindCrate(905) && schema->FindCrate(910)->kind == CrateKind::Souvenir && !schema->FindCrate(1), "lookup");
 
     const auto tiers = schema->LootTiers("case_one_lootlist");
     Check(tiers.size() == 2 && tiers[0].name == "case_one_rare" && tiers[0].items.size() == 2, "tiers flattened");
@@ -334,8 +334,8 @@ void CaseOpening()
         live.AddItem({0, 60});
         live.AddItem({0, 60});
         const auto keys = live.EnsureCaseKeys(*schema);
-        Check(keys.size() == 1 && keys.front().defIndex == 50 && live.EnsureCaseKeys(*schema).empty(),
-              "free_case_keys adds one matching key per case type, once");
+        Check(keys.empty() && live.EnsureCaseKeys(*schema).empty(),
+              "free opening does not create inventory keys");
         Inventory inv;
         const auto c = inv.Add({0, 60});
         const auto k = inv.Add({0, 50});
@@ -3584,7 +3584,7 @@ void ConfiguredRewardsAndPity()
         Inventory gloveInventory;
         const auto gloveCase = gloveInventory.Add({0, 61}), gloveKey = gloveInventory.Add({0, 50});
         const auto glove = OpenCase(gloveInventory, *schema, gloveCase, gloveKey, [] { return 0ull; });
-        Check(glove.error == OpenError::None && glove.item.defIndex == 5030 && glove.item.unusual,
+        Check(glove.error == OpenError::None && glove.item.defIndex == 5030 && glove.item.unusual && !glove.item.statTrak,
               "a glove in a case's own loot list (the Gauntlet Case) is a gold item");
     }
     for (auto def : {5176u, 5181u}) restored->Add({0, def});
@@ -3618,13 +3618,14 @@ void ConfiguredRewardsAndPity()
         }
     }
     Check(caseDrops > 1400 && caseDrops < 1600 && caseDrops + skinDrops == 3000, "independent case/weapon split is 50 percent");
-    LiveInventory rewards(Inventory{});
+    Inventory direct; GameplayConfig directConfig; directConfig.care_packages_enabled=0; direct.SetGameplay(directConfig);
+    LiveInventory rewards(direct);
     Check(rewards.GrantMatchRewards(*schema, 1, [&] { return engine(); })->size() == 3 &&
           !rewards.GrantMatchRewards(*schema, 1, [&] { return engine(); }), "duplicate completion grants nothing");
     auto savedRewards = Inventory::FromText(rewards.Items().ToText());
     Check(savedRewards && savedRewards->MatchRewardTotal() == 1, "completion cursor and three items save together");
     LocalGameCoordinator endpoint({});
-    auto live = std::make_shared<LiveInventory>(Inventory{});
+    auto live = std::make_shared<LiveInventory>(direct);
     auto shared = std::shared_ptr<const Schema>(&*schema, [](const Schema *) {});
     endpoint.EnableContainers(live, shared, [&] { return engine(); }, {});
     int saves = 0;
@@ -3639,11 +3640,12 @@ void ConfiguredRewardsAndPity()
     const bool droppedCase = std::any_of(live->Items().Items().begin(), live->Items().Items().end(),
                                          [](const InventoryItem &item) { return item.defIndex == 60; });
     auto expectedTypes = std::vector<std::uint32_t>{21, 9137, 21, 9137, 21, 9137};
-    if (droppedCase) expectedTypes.push_back(21);
+    (void)droppedCase; // Free openings no longer generate a matching key.
     Check(types == expectedTypes && saves == 1, "native match drop notifications follow each created item and save once");
     Inventory levelInventory;
     GameplayConfig levelConfig;
     levelConfig.match_drops_enabled = 0;
+    levelConfig.care_packages_enabled = 0;
     levelInventory.SetGameplay(levelConfig);
     LiveInventory levels(levelInventory);
     Check(!levels.GrantLevelRewards(*schema, [&] { return engine(); }), "starting level 1 has no free level reward");
@@ -3873,10 +3875,225 @@ void ArmoryTerminals()
     Check(shop.RotationAt(0,config).redeemIds.empty(),"disabled terminals disappear from Armory rotation");
 }
 
+void SouvenirPackagesAndHandwraps()
+{
+    const auto schema = Schema::Load(R"("items_game" {
+      "prefabs" {
+        "weapon_case_base" {} "weapon_case_souvenirpkg" { "prefab" "weapon_case_base" }
+        "event_package" { "prefab" "weapon_case_souvenirpkg" "attributes" { "tournament event id" { "value" "25" } } }
+        "hands_paintable" {} }
+      "rarities" { "common" { "value" "1" } "rare" { "value" "3" } "ancient" { "value" "6" } }
+      "items" {
+        "7" { "name" "weapon_test" "item_rarity" "rare" }
+        "5032" { "name" "leather_handwraps" "prefab" "hands_paintable" }
+        "60" { "name" "crate_test2025_promo_de_test" "prefab" "event_package"
+          "attributes" { "set supply crate series" { "value" "1" } } }
+        "61" { "name" "crate_empty" "prefab" "event_package"
+          "attributes" { "set supply crate series" { "value" "2" } } }
+        "62" { "name" "crate_signature_promo_unknown" "prefab" "event_package"
+          "attributes" { "set supply crate series" { "value" "1" } } } }
+      "paint_kits" { "10" { "name" "blue" "wear_remap_min" "0.1" "wear_remap_max" "0.2" } }
+      "paint_kits_rarity" { "blue" "common" }
+      "item_sets" { "set_test" { "items" { "[blue]weapon_test" "1" } } }
+      "sticker_kits" {
+        "1" { "name" "event_org_gold" "tournament_event_id" "25" "tournament_team_id" "0" }
+        "2" { "name" "event_a_gold" "tournament_event_id" "25" "tournament_team_id" "10" }
+        "3" { "name" "event_b_gold" "tournament_event_id" "25" "tournament_team_id" "20" }
+        "4" { "name" "event_a_signature_gold" "tournament_event_id" "25" "tournament_team_id" "10" "tournament_player_id" "123" }
+        "5" { "name" "de_test_gold" }
+        "6" { "name" "another_event_gold" "tournament_event_id" "24" "tournament_team_id" "30" }
+        "7" { "name" "event_a_paper" "tournament_event_id" "25" "tournament_team_id" "10" } }
+      "revolving_loot_lists" { "1" "souvenir_loot" "2" "missing" }
+      "client_loot_lists" { "souvenir_loot" { "set_test_common" "1" "match_highlight_reel_keychain" "kc_test" }
+        "set_test_common" { "[blue]weapon_test" "1" } }
+      "seasonaloperations" { "11" { "redeemable_goods" "xpshop"
+        "operational_point_redeemable" { "item_name" "crate_test2025_promo_de_test" "points" "5" "local_rotation_slot" "souvenir" }
+        "operational_point_redeemable" { "item_name" "crate_signature_promo_unknown" "points" "5" "local_rotation_slot" "souvenir" } } }
+    })");
+    Check(schema && schema->FindCrate(60)->kind == CrateKind::Souvenir && schema->FindCrate(60)->keyDefIndex == 0 &&
+          schema->FindCrate(60)->tournamentEvent == 25, "souvenir series and inherited event coexist");
+    Inventory inventory; inventory.SetArmoryCredits(15); inventory.SetCasePity(44);
+    LiveInventory live(inventory); Armory shop(*schema,11,15);
+    GameplayConfig config; config.armory_rotation_enforce=1;
+    Check(shop.RotationAt(0,config).redeemIds != shop.RotationAt(900,config).redeemIds,
+          "souvenir packages rotate independently");
+    auto offer = shop.Redeem({11,Crc32("crate_test2025_promo_de_test"),15,5},live,[]{return 0ull;});
+    Check(offer.status == Armory::Status::Ok && offer.item.defIndex == 60 &&
+          offer.item.tournamentEvent == 25 && shop.Balance() == 10, "Armory grants a closed souvenir package for its cost");
+    const auto packageId = offer.item.id;
+    const auto result = live.Open(*schema,CustomItemIdBase+packageId,0,[]{return 0ull;});
+    Check(result && result->item.souvenir && !result->item.statTrak && !result->item.unusual &&
+          result->item.paintKitIndex == 10 && result->item.wear >= .1f && result->item.wear <= .2f &&
+          result->item.stickers.size() == 4 && result->item.stickers.back().kit == 5 &&
+          result->item.tournamentTeam0 == 10 && result->item.tournamentTeam1 == 20 &&
+          live.Items().CasePity() == 44 && !live.Items().Find(packageId),
+          "keyless souvenir open consumes once, preserves pity, and adds event/two-team/map gold stickers");
+    const auto wire = DecodeItem(BuildEconItem(result->item,42,CustomItemIdBase+result->item.id,1));
+    Check(wire.ok && wire.quality == QualityTournament && wire.floatBits.at(137)==25 && wire.floatBits.at(139)==10 &&
+          wire.floatBits.at(140)==20 && !wire.floatBits.contains(AttributeKillEater),
+          "native Souvenir quality and tournament attributes without StatTrak counter");
+    auto restored = Inventory::FromText(live.Items().ToText());
+    Check(restored && restored->Items()[0].souvenir && restored->Items()[0].tournamentEvent == 25 &&
+          restored->Items()[0].stickers.size() == 4, "souvenir quality, provenance and stickers survive save/reload");
+    const auto signatureCase = restored->Add({0,62});
+    const auto signature = OpenCase(*restored,*schema,signatureCase,0,[]{return 0ull;});
+    Check(signature.error == OpenError::None && signature.item.stickers.back().kit == 4 &&
+          signature.item.tournamentPlayer==123, "mapless package uses a signature from one of its same-event teams");
+    const auto empty = restored->Add({0,61});
+    Check(OpenCase(*restored,*schema,empty,0,[]{return 0ull;}).error == OpenError::EmptyLootList && restored->Find(empty),
+          "missing souvenir loot never consumes a package");
+    std::vector<std::uint64_t> inputs;
+    for (unsigned i=0; i<10; ++i) inputs.push_back(restored->Add(result->item));
+    const auto before=restored->Items().size();
+    Check(TradeUp(*restored,*schema,inputs,[]{return 0ull;}).error == TradeUpError::NotASkin &&
+          restored->Items().size()==before,"souvenir weapons cannot be consumed by trade-ups");
+    InventoryItem wraps; wraps.defIndex=5032; wraps.paintKitIndex=10; wraps.statTrak=true;
+    wraps.statTrakFromContract=true; wraps.unusual=true; wraps.wear=.15f; wraps.seed=17;
+    const auto wrapId=restored->Add(wraps);
+    restored->Loadout().push_back({2,41,CustomItemIdBase+wrapId,5032});
+    LiveInventory repaired(*restored);
+    Check(repaired.RepairCollectionStatTrak(*schema)==1 && repaired.RepairCollectionStatTrak(*schema)==0,
+          "invalid custom glove StatTrak repairs once even without collection metadata");
+    const auto *fixed=repaired.Items().Find(wrapId);
+    Check(fixed && !fixed->statTrak && !fixed->statTrakFromContract && fixed->wear==.15f && fixed->seed==17 &&
+          fixed->paintKitIndex==10 && repaired.Items().Loadout().size()==1 &&
+          ItemSaleValue(*schema,config,*fixed)==config.sell_knife_glove,
+          "hand wraps keep id/finish/wear/loadout and use the configured glove sale price");
+    auto saleLive=std::make_shared<LiveInventory>(repaired.Items());
+    saleLive->SetArmoryCredits(8);
+    auto sharedSchema=std::shared_ptr<const Schema>(&*schema,[](const Schema *){});
+    LocalGameCoordinator coordinator({}); int saves=0;
+    coordinator.EnableContainers(saleLive,sharedSchema,[]{return 0ull;},[&]{++saves;});
+    PbWriter sale; sale.Varint(1,CustomItemIdBase+wrapId); std::vector<std::uint8_t> bytes;
+    WriteProtobufFrame(gc_msg::EGCItemMsg::k_EMsgGCDelete,{},sale.bytes(),bytes);
+    for (int i=0; i<2; ++i) coordinator.SendMessage(gc_msg::EGCItemMsg::k_EMsgGCDelete|ProtobufMask,bytes.data(),bytes.size());
+    Check(!saleLive->Items().Find(wrapId) && saleLive->Items().Loadout().empty() &&
+          saleLive->Items().ArmoryCredits()==80 && saves==1,"native handwrap sale pays once and removes the equipped item");
+
+}
+
+void NativeCarePackages()
+{
+    const auto schema=Schema::Load(R"("items_game" {
+      "prefabs" { "weapon_case_base" {} "weapon_case" { "prefab" "weapon_case_base" "associated_item" "50" } }
+      "rarities" { "common" { "value" "1" } "rare" { "value" "3" } }
+      "items" { "7" { "name" "weapon_test" "item_rarity" "rare" }
+        "50" { "name" "the_key" }
+        "60" { "name" "crate_normal" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
+        "61" { "name" "crate_cs2gc_black_market" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
+        "62" { "name" "crate_cs2gc_gauntlet" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } } }
+      "paint_kits" { "10" { "name" "blue" } }
+      "paint_kits_rarity" { "blue" "common" }
+      "item_sets" { "set_timed_drops_test" { "items" { "[blue]weapon_test" "1" } } }
+      "client_loot_lists" { "crate_list" { "crate_list_rare" "1" } "crate_list_rare" { "[blue]weapon_test" "1" } }
+      "revolving_loot_lists" { "1" "crate_list" }
+    })");
+    Check(schema.has_value(),"care package fixture loads");
+    GameplayConfig config;config.match_case_percent=100;
+    Inventory saved;saved.SetGameplay(config);
+    LiveInventory live(saved);
+    Check(live.GrantMatchRewards(*schema,1,[]{return 500ull;}).has_value() && live.Items().Items().empty() &&
+          live.Items().CarePackages().size()==1 && live.Items().CarePackages()[0].offers.size()==4,
+          "a match reserves four offers, granting no automatic inventory items");
+    Check(!live.GrantMatchRewards(*schema,1,[]{return 0ull;}),"same match cannot reroll a saved package");
+    auto restored=Inventory::FromText(live.Items().ToText());
+    Check(restored && restored->CarePackages().size()==1 && restored->Items().empty(),"pending choices survive restart");
+    const auto package=restored->CarePackages().front();
+    std::vector<std::uint64_t> chosen{package.offers[0].id,package.offers[1].id,package.offers[2].id};
+    Check(!restored->ClaimCarePackage(package.generation,{chosen[0],chosen[0],chosen[1]}) &&
+          !restored->ClaimCarePackage(package.generation,{chosen[0],chosen[1]}) &&
+          !restored->ClaimCarePackage(package.generation+1,chosen) &&
+          !restored->ClaimCarePackage(package.generation,{chosen[0],chosen[1],999999}),
+          "duplicate, partial, stale and foreign claims fail atomically");
+    auto claimed=restored->ClaimCarePackage(package.generation,chosen);
+    Check(claimed && claimed->size()==3 && restored->Items().size()==3 && restored->CarePackages().empty() &&
+          !restored->Find(package.offers[3].id) && !restored->ClaimCarePackage(package.generation,chosen),
+          "three chosen ids become owned exactly once; fourth is discarded");
+    restored=Inventory::FromText(restored->ToText());
+    Check(restored && restored->Items().size()==3 && restored->CarePackages().empty(),"claimed state persists without regrant");
+    LiveInventory levels(*restored);levels.ApplyEarnedXp(2*ProfileLevelXp);
+    Check(levels.GrantLevelRewards(*schema,[]{return 700ull;}).has_value() &&
+          levels.GrantLevelRewards(*schema,[]{return 900ull;}).has_value() &&
+          !levels.GrantLevelRewards(*schema,[]{return 0ull;}) && levels.Items().CarePackages().size()==2,
+          "each earned profile level queues its own choice package with no weekly timer");
+    auto afterLevels=Inventory::FromText(levels.Items().ToText());
+    Check(afterLevels && afterLevels->CarePackages()[0].generation < afterLevels->CarePackages()[1].generation,
+          "multiple pending packages retain order and distinct generations");
+    Check(!afterLevels->ClaimCarePackage(afterLevels->CarePackages()[1].generation,
+          {afterLevels->CarePackages()[1].offers[0].id,afterLevels->CarePackages()[1].offers[1].id,
+           afterLevels->CarePackages()[1].offers[2].id}),"later queue entries cannot be claimed out of order");
+    auto shared=std::shared_ptr<const Schema>(&*schema,[](const Schema*){});
+    auto endpointInventory=std::make_shared<LiveInventory>(saved);LocalGameCoordinator endpoint({});int saves=0;
+    endpoint.EnableContainers(endpointInventory,shared,[]{return 500ull;},[&]{++saves;});
+    Check(endpoint.ApplyMatchRewards(1,[&]{++saves;}),"native choice package queues through the coordinator");
+    bool personal=false,oldDrop=false;std::uint32_t size=0;
+    while(endpoint.IsMessageAvailable(&size)) {
+        std::vector<std::uint8_t> bytes(size);std::uint32_t type=0,got=0;endpoint.RetrieveMessage(&type,bytes.data(),size,&got);
+        oldDrop|=(type&~ProtobufMask)==gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification;
+        FrameView frame;ReadProtobufFrame(type,bytes,frame);
+        if((type&~ProtobufMask)==gc_msg::ESOMsg::k_ESOMsg_Create) {
+            const auto object=DecodeSoSingleObject(frame.body);if(object && object->typeId==4)personal=true;
+        }
+    }
+    Check(personal && !oldDrop && saves==1,"native PersonalStore published without old end-match drops");
+    {
+        const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
+        Check(disk.has_value(),"queued package reloads for reconnect");
+        auto resumed=std::make_shared<LiveInventory>(*disk);LocalGameCoordinator reconnect({});
+        reconnect.EnableContainers(resumed,shared,[]{return 1ull;},{});
+        PbWriter hello;std::vector<std::uint8_t> wire;
+        WriteProtobufFrame(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello,{},hello.bytes(),wire);
+        reconnect.SendMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello|ProtobufMask,wire.data(),wire.size());
+        std::uint32_t available=0;bool storeFound=false;unsigned previewCount=0;
+        while(reconnect.IsMessageAvailable(&available)) {
+            std::vector<std::uint8_t> message(available);std::uint32_t type=0,got=0;
+            reconnect.RetrieveMessage(&type,message.data(),available,&got);
+            if((type&~ProtobufMask)!=gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome)continue;
+            FrameView frame;ReadProtobufFrame(type,message,frame);const auto welcome=DecodeClientWelcome(frame.body);
+            Check(welcome.has_value(),"reconnected welcome decodes");
+            for(const auto &cache:welcome->outOfDateCaches)for(const auto &object:cache.types) {
+                if(object.typeId==4)storeFound=object.objects.size()==1;
+                if(object.typeId==1)previewCount+=static_cast<unsigned>(object.objects.size());
+            }
+        }
+        Check(storeFound && previewCount==4 && resumed->Items().Items().empty(),
+              "reconnect publishes four unowned previews and the native PersonalStore without granting them");
+    }
+    const auto &offer=endpointInventory->Items().CarePackages().front();
+    PbWriter request;request.Varint(1,offer.generation);request.Varint(2,3);
+    for(unsigned i=0;i<3;++i)request.Varint(3,CustomItemIdBase+offer.offers[i].id);
+    std::vector<std::uint8_t> body;WriteProtobufFrame(9219,{},request.bytes(),body);
+    endpoint.SendMessage(9219|ProtobufMask,body.data(),body.size());
+    endpoint.SendMessage(9219|ProtobufMask,body.data(),body.size());
+    Check(endpointInventory->Items().Items().size()==3 && endpointInventory->Items().CarePackages().empty() && saves==2,
+          "native StoreRedeemFreeRewards path pays three once and saves before notification");
+    Inventory opens;const auto crate=opens.Add({0,60});
+    Check(OpenCase(opens,*schema,crate,0,[]{return 0ull;}).error==OpenError::None && opens.Items().size()==1,
+          "free case opens with no key object");
+    const auto selfTool=opens.Add({0,60});
+    Check(OpenCase(opens,*schema,selfTool,selfTool,[]{return 0ull;}).error==OpenError::None,
+          "native keyless UseTool(case,case) opens without treating the case as a wrong key");
+    InventoryItem key;key.defIndex=50;
+    Check(ItemSaleValue(*schema,config,key)==5,"leftover keys sell for five stars");
+    config.reward_rare_case_per_10000=10000;
+    const auto rare=RollMatchDrops(*schema,[]{return 0ull;},config);
+    Check(rare && (*rare)[0].defIndex==61,"custom cases use the configurable rare-case channel");
+    Check(RollMatchDrops(*schema,[]{return 1ull;},config)->front().defIndex==62,
+          "Gauntlet shares the rare channel with Black Market");
+    config.knife_finishes=0;
+    const auto normal=RollMatchDrops(*schema,[]{return 0ull;},config);
+    Check(normal && (*normal)[0].defIndex==60,"disabled custom finishes never enter rare drop choices");
+    config.knife_finishes=1;config.reward_rare_case_per_10000=0;
+    Check(RollMatchDrops(*schema,[]{return 0ull;},config)->front().defIndex==60,
+          "custom cases are excluded from the ordinary case pool");
+}
+
 int main()
 {
     try
     {
+        NativeCarePackages(); std::cout << "PASS native three-of-four care packages, keyless cases and rare rewards\n";
+        SouvenirPackagesAndHandwraps(); std::cout << "PASS souvenir packages, glove repair and handwrap sales\n";
         ArmoryTerminals(); std::cout << "PASS terminal Armory offers\n";
         MusicKitsAndCouponMigration(); std::cout << "PASS music kits and coupon migration\n";
         WeeklyPoolAndItemSales(); std::cout << "PASS weekly pool and native item sales\n";

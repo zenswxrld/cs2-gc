@@ -82,6 +82,7 @@ SCRIPT = '''
         $.Schedule(.5, _LocalResultsRefresh);
     }
     function _LocalResultsInitialize() {
+        if (__CARE_PACKAGES__) return; // native rank/XP panels remain, item choices happen back in the menus
         if (GameStateAPI.IsDemoOrHltv() || GameStateAPI.IsQueuedMatchmaking()) return;
         if (!m_localResultsBaseline && MyPersonaAPI.IsInventoryValid()) {
             // Without a pre-match baseline, do not label old unacknowledged items as new drops.
@@ -137,7 +138,7 @@ def patch(source, config):
     title = '            elRBtn.FindChildTraverse("id-navbar-button__label").text = $.Localize("#" + elPanel.id);'
     if any(source.count(a) != 1 for a in (start, layout, shutdown, title)):
         raise ValueError('Installed end-of-match layout differs from the inspected client')
-    code = SCRIPT.replace('__PLACEMENTS__', str(config['premier_placement_wins'])).replace('__DURATION__', str(config['end_match_duration'])).replace('__DELAY__', str(config['match_end_delay']))
+    code = SCRIPT.replace('__PLACEMENTS__', str(config['premier_placement_wins'])).replace('__DURATION__', str(config['end_match_duration'])).replace('__DELAY__', str(config['match_end_delay'])).replace('__CARE_PACKAGES__', 'true' if config.get('care_packages_enabled', 1) else 'false')
     navigate = '    function _NavigateToTab(tab) {'
     if source.count(navigate) != 1: raise ValueError('Changed end-of-match navigation')
     source = source.replace(navigate, navigate + "\n        _m_cP.FindChildTraverse('id-eom-layout').style.height = tab === 'eom-local-results' ? '100%' : '300px';", 1)

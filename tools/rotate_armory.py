@@ -50,9 +50,18 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
                 const kind = m_localRotation.categories[entry.item_name] || 'other';
                 (types[kind] || (types[kind] = [])).push(entry);
             });
-            const kinds = Object.keys(types).sort(), ordered = [];
+            const order = row === '1' ? ['charm','sticker','agent'] : row === '3' ? ['souvenir','case','terminal','capsule'] : ['collection','limited'];
+            const kinds = Object.keys(types).sort((a,b) => order.indexOf(a)-order.indexOf(b)), ordered = [];
+            // Fixed native slots: two charms + sticker + agent above; souvenir + case + terminal + capsule below.
+            const limits = row === '1' ? {charm:2,sticker:1,agent:1} : row === '3' ? {souvenir:1,case:1,terminal:1,capsule:1} : {};
+            kinds.forEach(kind => {
+                if (limits[kind] === undefined || types[kind].length <= limits[kind]) return;
+                const pool = types[kind], start = ((cycle || 0) * limits[kind]) % pool.length;
+                types[kind] = Array.from({length:limits[kind]}, (_,i) => pool[(start+i)%pool.length]);
+            });
             const length = Math.max(...kinds.map(kind => types[kind].length));
-            for (let index = 0; index < length; ++index)
+            if (row === '1' || row === '3') kinds.forEach(kind => ordered.push(...types[kind]));
+            else for (let index = 0; index < length; ++index)
                 kinds.forEach(kind => {if (types[kind][index]) ordered.push(types[kind][index]);});
             groups[row] = ordered;
         });
@@ -207,6 +216,20 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
             }
             if (nav) nav.visible = show;
         });
+        // Catalogue generation order is independent of visual order. Move visible tiles within each small row.
+        ['1','3'].forEach(rowId => {
+            const row = m_elContentPanel.FindChildInLayoutFile('id-xpshop-row-' + rowId);
+            if (!row) return;
+            let previous = null;
+            view.forEach(name => {
+                const entry = entries.find(e => e.item_name === name);
+                if (!entry || (entry.ui_order || '3') !== rowId) return;
+                const tile = m_elContentPanel.FindChildInLayoutFile(name);
+                if (!tile) return;
+                if (previous) row.MoveChildAfter(tile, previous);
+                previous = tile;
+            });
+        });
         _LocalCentreFeatured();
         const remaining = m_localRotation.seconds - now % m_localRotation.seconds;
         m_localRotationActive = active;
@@ -271,6 +294,7 @@ PREPARE = '''        // Resolve each tile from its own native row, without inher
         aShopItemsData.forEach(entry => {
             const slot = m_localRotation.categories[entry.item_name];
             entry.local_terminal = slot === 'terminal';
+            entry.local_souvenir = slot === 'souvenir';
             if (slot === 'agent') {
                 entry.lootlist = m_localRotation.agents.map(name => InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
                     InventoryAPI.GetItemDefinitionIndexFromDefinitionName(name), 0));
@@ -321,7 +345,7 @@ def patch_previews(source):
             return panel;
         }'''
     source = source.replace(create, create + agent, 1)
-    source = source.replace("if (ShopEntry.entry_type !== 'crate') {", "if (ShopEntry.local_terminal || ShopEntry.entry_type !== 'crate') {", 1)
+    source = source.replace("if (ShopEntry.entry_type !== 'crate') {", "if (ShopEntry.local_terminal || ShopEntry.local_souvenir || ShopEntry.entry_type !== 'crate') {", 1)
     placement = '    function PlaceTiles(elTilesContainer, ShopEntry) {'
     source = source.replace(placement, placement + "\n        if (ShopEntry.local_agent) { _LocalPlaceAgentTiles(elTilesContainer, ShopEntry); return; }", 1)
 
@@ -373,7 +397,7 @@ def patch(source, config, categories=None, agents=None):
                 'seconds': config['armory_rotation_seconds'], 'slots': config['armory_rotation_slots'],
                 'categories': categories or {}, 'agents': agents or [],
                 'counts': {slot: config.get('armory_' + slot + '_slots', 1) for slot in
-                           ('collection', 'case', 'capsule', 'charm', 'sticker', 'limited', 'agent', 'terminal')}}
+                           ('collection', 'case', 'capsule', 'charm', 'sticker', 'limited', 'agent', 'terminal', 'souvenir')}}
     source = source.replace('    function _UpdateShopGoods(m_nTrack) {',
                             INSERT.replace('__SETTINGS__', json.dumps(settings)) + '    function _UpdateShopGoods(m_nTrack) {', 1)
     source = source.replace(ANCHOR, PREPARE + ANCHOR, 1) if categories else source

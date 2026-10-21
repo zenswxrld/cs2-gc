@@ -44,8 +44,10 @@ APPROVED_PALETTES = {('gloves/paints/specialist_forest_brown.vcompmat', 'Toxic')
                      ('gloves/paints/specialist_webs_red.vcompmat', 'Aurora')}
 # The supplied Bronzed palette has two identical muted bronze tints; its other six tints are neutral.
 ACCENT_THRESHOLDS = {'gloves/paints/bloodhound_metallic.vcompmat': .20,
-                     'gloves/paints/slick_stitched_green_grey.vcompmat': .20}
-ACCENT_HUE_RANGES = {'gloves/paints/slick_stitched_green_grey.vcompmat': (75,180)}
+                     'gloves/paints/slick_stitched_green_grey.vcompmat': .20,
+                     'gloves/paints/slick_black.vcompmat': .14}
+ACCENT_HUE_RANGES = {'gloves/paints/slick_stitched_green_grey.vcompmat': (75,180),
+                    'gloves/paints/slick_black.vcompmat': (160,250)}
 GLOVE_TITLES = {'slick_stitched_green_grey': 'Racing'}
 
 

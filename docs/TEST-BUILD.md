@@ -11,6 +11,7 @@ Close CS2 and its helper. Back up your inventory, active config and **cs2_gc_fin
 - Gold Brick recolours now keep the donor's related metallic palette together. Toxic uses related lime/olive tones rather than splitting neighbouring gold shades into purple and green. Source relative hue offsets, maximum RGB values and alpha stay intact; original textures, roughness, reflection and wear properties are untouched. This changes the existing recolour material under its same saved paint-kit ID. Native appearance still needs testing; the report alone does not prove texture mapping on a knife.
 - Bronzed gloves recognise their two muted bronze tint channels (1 and6) as accents. Other six neutral channels remain structural. Lime should now affect the bronze regions rather than leaving them unchanged. Saturation is capped at the original to preserve the muted metal look.
 - Racing variants now target the muted green/teal source colours and preserve brown accents on original-panel versions. Names use “Racing Sunset”, “Racing Cobalt”, etc., dropping the misleading original “Green”. Supplied palette check changes channels1/5 rather than the previous7/8. Other panel styles retain their explicit neutral-panel material changes.
+- Lunar Weave variants target muted blue/teal source colours; Ash now desaturates those areas while preserving brown leather on original-panel versions. Supplied palette check targets channels2/4/5/6.
 - Neutral-only recolours (including the supplied Nocts palette) stop entering Gauntlet drops. They previously advertised different colours while looking unchanged. All known saved definitions/materials are retained so owned items continue to render; no inventory reset.
 - Includes24b: softer charcoal Black Panels, raised darkest inverted tones, and clean base+theme display names for all variants. Internal names/IDs remain separate; different colour variants can share a display name.
 - Includes24a: original case display/layout for Gauntlet and Black Market Armory pages, but purchases grant a finished glove/knife directly with one charge and no case/key. Existing inventory cases still open normally.
@@ -19,7 +20,7 @@ Close CS2 and its helper. Back up your inventory, active config and **cs2_gc_fin
 ## Test
 
 1. Reinspect Gold Brick Toxic after preparation, including in a bot match: related lime/olive tones should replace the previously mostly-purple result. Compare wear, seed and material sheen.
-2. Inspect Racing Sunset/Cobalt: green/teal areas should change while brown details stay on original-panel versions. Compare Bronzed Lime and charcoal panel variants in inspect and in-game. Check texture/stitching detail remains visible.
+2. Inspect Racing Sunset/Cobalt: green/teal areas should change while brown details stay on original-panel versions. Compare Lunar Weave Ash, Bronzed Lime and charcoal panel variants in inspect and in-game. Check texture/stitching detail remains visible.
 3. Confirm old Nocts variants still render but do not appear in new Gauntlet rolls. Restart and verify saved items/loadout.
 4. Confirm all panel suffixes are gone, with inventory IDs/wear/seed intact.
 5. Buy Gauntlet/Black Market from Armory: original case page, one finished reward, one star deduction, no new case/key. Old inventory cases should still open.

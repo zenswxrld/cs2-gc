@@ -1,3 +1,7 @@
+# Additional24c check: Lunar Weave
+
+User Lunar Weave Ash screenshot remains blue/teal. slick_black supplied palette has muted blue/teal channels2/4/5/6 below.35; finish-specific threshold.14 with hue160–250 targets exactly those four, leaving brown/red source colours. Ash caps saturation.10. Textures/wear/roughness unchanged. Fixture and supplied-palette checks pass; native appearance unverified.
+
 # Helper/material update24c: findings from supplied palettes
 
 User supplied knife85/glove72 palette reports. Gold Brick has four related gold source tones; previous rank-based Toxic assigns its neighbouring shades unrelated lime/purple hues. recolor_gold_brick now rotates the related palette to the theme primary hue, preserving circular hue differences/value/alpha and capping saturation. Applied only to am_gold_brick recolours (existing rk identities); official gold base and other knife algorithms unchanged. Supplied Toxic output hues now82–87.8 degrees, values1/1/.937/.733. This fixes the palette relationship, not a verified model UV/material rendering issue. Need live test before claiming appearance fixed.

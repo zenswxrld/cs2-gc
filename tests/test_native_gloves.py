@@ -46,6 +46,17 @@ def glove_files():
 
 
 class NativeGloves(unittest.TestCase):
+    def test_lunar_weave_muted_blues_become_ash_while_brown_stays(self):
+        colors=[[.23,.18,.18,0],[.28,.35,.39,0],[.33,.30,.29,0],[.28,.30,.35,0],
+                [.26,.33,.31,0],[.245,.27,.29,0],[.64,.56,.41,0],[.42,.29,.20,0]]
+        path='gloves/paints/slick_black.vcompmat'
+        result=gloves.recolor_accents(colors,'Ash',accent_saturation=gloves.ACCENT_THRESHOLDS[path],
+                                      accent_hue_range=gloves.ACCENT_HUE_RANGES[path])
+        self.assertEqual([i+1 for i,(a,b) in enumerate(zip(colors,result)) if a!=b],[2,4,5,6])
+        for index in (1,3,4,5):
+            self.assertLessEqual(colorsys.rgb_to_hsv(*result[index][:3])[1],.100001)
+            self.assertEqual(max(colors[index][:3]),max(result[index][:3]))
+
     def test_racing_targets_muted_green_and_teal_rather_than_brown_accents(self):
         colors=[[.18,.22,.15,0],[.29,.27,.25,0],[.49,.45,.35,0],
                 [.26,.33,.31,0],[.64,.56,.41,0],[.42,.29,.2,0]]

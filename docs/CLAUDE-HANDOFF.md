@@ -1,3 +1,15 @@
+# Build26k (Claude): Custom Skins Test Case (phase 1 of custom weapon collections)
+
+User: custom skins "same as armory collections, lets make them those instead of cases. but we will need test
+cases first". New tools/native_skins.py: grant-only crate_cs2gc_custom_skins_test (base 4003, Black Market
+icon) with the official knife-only finishes (Doppler/Gamma phases, marbleized, Marble Fade, Tiger Tooth,
+Slaughter, Damascus, Crimson Web, Fade, Case Hardened, Blued, Bright Water, Freehand, Ultraviolet) on AK-47,
+M4A4, M4A1-S, AWP, Deagle, USP-S, Glock, FAMAS, Galil, P250 wherever that pair is not official, plus 12
+fade/doppler rk_ recolours per gun (existing kits, no new materials). RollMatchDrops now skips every
+crate_cs2gc_*_test. grant_custom_skins_test_cases.cmd adds 20. DLL tag claude-20261021-26k. Rendering on guns
+unverified (knife-only kits may carry knife-tuned pattern scale/legacy-model flags). Phase 2 after the user's
+check: custom item_sets + tiered loot lists as Armory collection rows (catalogue), priced like collections.
+
 # Helper26j (Claude): Dead Hand custom gloves removed
 
 User: "forget the dead hand custom gloves, remove them completely". DEAD_HAND_RECOLOURS = False: no Dead Hand

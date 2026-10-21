@@ -11,7 +11,7 @@ struct GameplayConfig
     std::uint32_t armory_collection_slots{3};
     std::uint32_t armory_charm_slots{2};
     std::uint32_t free_case_keys{1}, skip_key_selection{1};
-    std::uint32_t knife_finishes{1}, glove_finishes{1}, glove_panel_variants{1}, black_market_price{100};
+    std::uint32_t knife_finishes{1}, glove_finishes{1}, custom_skins_test{1}, glove_panel_variants{1}, black_market_price{100};
     std::uint32_t viewmodel_range_percent{250}, viewmodel_fov_min{40}, viewmodel_fov_max{90}; // wider viewmodel limits // knife recolours + Black Market Case (helper-generated) // keep one never-consumed key for every case type owned
     std::uint32_t armory_sticker_slots{2};
     std::uint32_t armory_case_slots{2};

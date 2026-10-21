@@ -11,7 +11,7 @@ from grant_test_items import add_items
 from inventory_item import as_dict, collect, parse
 
 CASES = {'gauntlet': 'crate_cs2gc_gauntlet', 'black_market': 'crate_cs2gc_black_market',
-         'dead_hand_test': 'crate_cs2gc_dead_hand_test'}
+         'dead_hand_test': 'crate_cs2gc_dead_hand_test', 'custom_skins_test': 'crate_cs2gc_custom_skins_test'}
 
 
 def case_items(schema_text, counts):
@@ -33,16 +33,18 @@ def main():
     parser.add_argument('--gauntlet', type=int, default=20)
     parser.add_argument('--black-market', type=int, default=0)
     parser.add_argument('--dead-hand-test', type=int, default=0)
+    parser.add_argument('--custom-skins-test', type=int, default=0)
     args = parser.parse_args()
-    if not all(0 <= n <= 500 for n in (args.gauntlet, args.black_market, args.dead_hand_test)):
+    if not all(0 <= n <= 500 for n in (args.gauntlet, args.black_market, args.dead_hand_test, args.custom_skins_test)):
         parser.exit(1, 'Counts must be between 0 and 500\n')
     try:
         additions = case_items(args.schema.read_text(encoding='utf-8-sig'),
                                {CASES['gauntlet']: args.gauntlet, CASES['black_market']: args.black_market,
-                                CASES['dead_hand_test']: args.dead_hand_test})
+                                CASES['dead_hand_test']: args.dead_hand_test,
+                                CASES['custom_skins_test']: args.custom_skins_test})
         count, backup = add_items(args.inventory, additions)
         print(f'Added {count} cases ({args.gauntlet} Gauntlet, {args.black_market} Black Market, '
-              f'{args.dead_hand_test} Dead Hand Test). '
+              f'{args.dead_hand_test} Dead Hand Test, {args.custom_skins_test} Custom Skins Test). '
               'Stars, passes and rank preserved.' if count else
               'Inventory checked: care-package copies of next_id now match (repairs a 26c grant).')
         if backup: print(f'Backup: {backup.name}')

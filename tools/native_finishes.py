@@ -602,6 +602,16 @@ def prepare(proxy_directory, config, items_game_text):
         if test_items:
             extra.append(native_gloves.test_case_spec(test_items))
             reels[native_gloves.TEST_CASE_NAME] = reel_sample(items_game_text, gold, entries, test_items, defs=glove_defs)
+    skins = []
+    if config.get('custom_skins_test', 1):
+        import native_skins
+        skins = native_skins.test_items(items_game_text, set(kits),
+                                        [name for _, name, _, _ in entries if name.startswith('rk_')])
+        if skins:
+            extra.append(native_skins.test_case_spec(skins))
+            if template is not None and ICON.is_file():
+                files['panorama/images/econ/weapon_cases/' + native_skins.TEST_CASE_NAME + '_png.vtex_c'] = \
+                    make_vtex(template, ICON.read_bytes())
     patched, details = patch_items_game(items_game_text, entries, case, extra_cases=extra)
     atomic_write(proxy / REEL_FILE, json.dumps(reels, sort_keys=True) + '\n')
     atomic_write(manifest_path, json.dumps(dict(owner=OWNER, files=len(files), **details), indent=2) + '\n')
@@ -619,7 +629,7 @@ def prepare(proxy_directory, config, items_game_text):
     fallback = source.read(FALLBACK_ICON)
     icons = []
     if fallback is not None:
-        for entry in case + glove_case:
+        for entry in case + glove_case + skins:
             match = re.fullmatch(r'\[([^\]]+)\](\w+)', entry)
             if not match: continue
             for wear in WEARS:

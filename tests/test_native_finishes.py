@@ -91,6 +91,8 @@ def vpk_files():
     template = kv3.write_resource(1, [['RED2', b'red'], ['DATA', struct.pack('<HH4fHHHBBIII', 1, 4, 0, 0, 0, 0, 512, 384,
                                                                                     1, 28, 1, 0, 8, 0)]])
     files['panorama/images/econ/weapon_cases/crate_operation_ii_png.vtex_c'] = template + b'\0' * 64
+    files['panorama/images/econ/weapon_cases/default_rare_item_png.vtex_c'] = b'RARE-ICON'
+    files['panorama/images/econ/default_generated/weapon_knife_karambit_aa_fade_light_png.vtex_c'] = b'real'
     return files
 
 
@@ -143,6 +145,13 @@ class NativeFinishes(unittest.TestCase):
             icon = (mod / ('panorama/images/' + finishes.CASE_IMAGE + '_png.vtex_c')).read_bytes()
             size = struct.unpack_from('<I', icon, 0)[0]
             self.assertEqual(len(icon) - size, 256 * 192 * 4)
+            # Pairs without a shipped picture get the Rare Special Item icon, stored once in the VPK; shipped ones keep theirs.
+            source = finishes.Source(vpk=mod / 'pak01_dir.vpk')
+            self.assertEqual(source.read(finishes.ICON_DIR + 'weapon_bayonet_rk_aa_fade_crimson_light_png.vtex_c'), b'RARE-ICON')
+            self.assertEqual(source.read(finishes.ICON_DIR + 'weapon_knife_karambit_am_aqua_flecks_heavy_png.vtex_c'), b'RARE-ICON')
+            self.assertFalse(source.exists(finishes.ICON_DIR + 'weapon_knife_karambit_aa_fade_light_png.vtex_c'))
+            self.assertLess((mod / 'pak01_000.vpk').stat().st_size, 400000)
+            self.assertFalse(list(mod.glob('panorama/images/econ/default_generated/*')))  # never written loose
             sample = json.loads((proxy / finishes.REEL_FILE).read_text())
             self.assertTrue(sample and all(pair[0] in (500, 507) for pair in sample))
             ids = json.loads((proxy / 'cs2_gc_finish_ids.json').read_text())

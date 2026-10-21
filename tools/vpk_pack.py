@@ -34,13 +34,17 @@ def build(files):
     """files: [(relative/posix/path, bytes)] -> (directory VPK bytes, archive 000 bytes)."""
     tree = {}
     archive = bytearray()
+    stored = {}  # identical contents share one copy in the archive (thousands of fallback icons)
     for path, content in files:
         directory, _, name = path.rpartition('/')
         stem, dot, extension = name.rpartition('.')
         if not dot: stem, extension = name, ''
+        key = hashlib.sha256(content).digest()
+        if key not in stored:
+            stored[key] = len(archive)
+            archive.extend(content)
         tree.setdefault(extension or ' ', {}).setdefault(directory or ' ', []).append(
-            (stem, zlib.crc32(content) & 0xffffffff, len(archive), len(content)))
-        archive.extend(content)
+            (stem, zlib.crc32(content) & 0xffffffff, stored[key], len(content)))
     tree_bytes = bytearray()
     for extension in sorted(tree):
         tree_bytes += extension.encode() + b'\0'
@@ -72,8 +76,9 @@ def _write(path, content):
     temporary.replace(path)
 
 
-def pack(folder):
-    """Write folder/pak01_dir.vpk and pak01_000.vpk from the folder's files. Returns True when they changed."""
+def pack(folder, extra=()):
+    """Write folder/pak01_dir.vpk and pak01_000.vpk from the folder's files (plus `extra` (path, bytes) entries that
+    are only stored in the VPK). Returns True when they changed."""
     folder = Path(folder)
     directory_path, archive_path = folder / 'pak01_dir.vpk', folder / 'pak01_000.vpk'
     proxy = folder.parent / 'bin' / 'win64'
@@ -83,7 +88,7 @@ def pack(folder):
             if path.exists():
                 path.unlink(); removed = True
         return removed
-    files = _files(folder)
+    files = sorted(_files(folder) + list(extra))
     if not files:
         return False
     directory, archive = build(files)

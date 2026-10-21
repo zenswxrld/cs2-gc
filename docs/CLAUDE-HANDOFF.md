@@ -500,3 +500,7 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   popup_capability_decodable: for crate_cs2gc_black_market only, aItemsInLootlist is filled from a 60-knife sample
   (cs2_gc_black_market_reel.json, written by native_finishes) and the stock scroll runs; the stop tile shows the
   granted item as usual.
+- 17w: Black Market Case pairs with no shipped `default_generated/<weapon>_<kit>_<light|medium|heavy>_png.vtex_c`
+  get the stock `weapon_cases/default_rare_item_png.vtex_c` (user's choice) - added only to the cs2_gc_finishes VPK
+  (vpk_pack.pack(extra=...), identical contents stored once), never written loose. Real pictures stay for shipped
+  pairs. Base-name fallback for extra finish titles (17v showed "Skeleton Knife | Ember").

@@ -56,6 +56,10 @@ KNIFE_BASES = {
 }
 # Finishes never sold on knives that the user asked for by name; the abstract anodized ones are added below.
 EXTRA_FINISHES = ('am_aqua_flecks', 'am_gold_brick', 'am_m4a1s_bluesmoke')
+EXTRA_TITLES = {'am_aqua_flecks': 'Twilight Galaxy', 'am_gold_brick': 'Gold Brick', 'am_m4a1s_bluesmoke': 'Blue Phosphor'}
+ICON_DIR = 'panorama/images/econ/default_generated/'
+FALLBACK_ICON = 'panorama/images/econ/weapon_cases/default_rare_item_png.vtex_c'
+WEARS = ('light', 'medium', 'heavy')
 EXTRA_THEMES = 6  # recolours per extra finish (knife bases get every theme)
 RECOLOUR_KNIVES = 4  # knives each knife-base recolour appears on in the case
 EXTRA_RECOLOUR_KNIVES = 4
@@ -156,6 +160,11 @@ class Source:
                     small = tree[position:position + preload]; position += preload
                     path = ('' if folder == ' ' else folder + '/') + name + ('' if extension == ' ' else '.' + extension)
                     self.index[path.lower()] = (small, archive, offset, length)
+
+    def exists(self, path):
+        if self.folder is not None: return (Path(self.folder) / path).is_file()
+        if self.index is None: self._load_index()
+        return path.lower() in self.index
 
     def read(self, path):
         if self.folder is not None:
@@ -288,7 +297,8 @@ def plan(source_text, gold_pools_text, titles, finish_source, known_ids=None):
         vcompmat, vmat = made
         files[COMPMAT_DIR + name + '.vcompmat_c'] = vcompmat
         files[VMAT_DIR + name + '.vmat_c'] = vmat
-        title = '%s %s' % (KNIFE_BASES.get(base) or titles.get(base, base), theme)
+        base_title = KNIFE_BASES.get(base) or titles.get(base) or EXTRA_TITLES.get(base) or base.split('_', 1)[-1].replace('_', ' ').title()
+        title = '%s %s' % (base_title, theme)
         values = {k: v for k, v in kits[base][1].items() if k not in ('name', 'description_string', 'description_tag',
                                                                        'composite_material_path') and isinstance(v, str)}
         if name in known_ids:
@@ -492,8 +502,19 @@ def prepare(proxy_directory, config, items_game_text):
             temporary.write_bytes(content); temporary.replace(target)
     for stale in [p for p in mod.rglob('*') if p.is_file() and p.suffix not in ('.vpk', '.json') and p not in wanted]:
         stale.unlink()
+    # Knife+finish pairs the game never shipped have no pre-rendered inventory picture; give them the stock
+    # "Rare Special Item" icon (one shared copy inside the VPK) instead of a blank tile.
+    fallback = source.read(FALLBACK_ICON)
+    icons = []
+    if fallback is not None:
+        for entry in case:
+            match = re.fullmatch(r'\[([^\]]+)\](weapon_\w+)', entry)
+            if not match: continue
+            for wear in WEARS:
+                path = '%s%s_%s_%s_png.vtex_c' % (ICON_DIR, match.group(2), match.group(1), wear)
+                if not source.exists(path): icons.append((path, fallback))
     from vpk_pack import pack
-    changed = pack(mod)
+    changed = pack(mod, icons)
     if mounted != current:
         backup = info.with_name(info.name + '.' + FOLDER + '_backup')
         if not backup.exists():
@@ -501,3 +522,35 @@ def prepare(proxy_directory, config, items_game_text):
         atomic_write(info, mounted); changed = True
     return patched, ('%d recolours, %d knives in the %s%s' % (len(entries), len(case), CASE_TITLE,
                      '; RESTART CS2 ONCE' if changed else ''))
+
+
+def read_vtex(data):
+    """BGRA8888 vtex_c -> (width, height, mip 0 BGRA bytes). Mips are stored smallest first, each optionally LZ4."""
+    resource_size = struct.unpack_from('<I', data, 0)[0]
+    _, blocks = kv3.read_resource(data[:resource_size])
+    header = dict(blocks)['DATA']
+    (version, flags, _, _, _, _, width, height, depth, fmt, mips, _, extra_offset, extra_count) = \
+        struct.unpack_from('<HH4fHHHBBIII', header, 0)
+    if version != 1 or fmt != 28 or depth != 1: raise ValueError('Unsupported icon texture format %d' % fmt)
+    compressed = None
+    position = 32 + extra_offset  # extra_offset counts from its own field (offset 32)
+    for index in range(extra_count):
+        kind, offset, size = struct.unpack_from('<III', header, position + index * 12)
+        if kind == 4:  # COMPRESSED_MIP_SIZE
+            start = position + index * 12 + 4 + offset
+            method, mips_offset, count = struct.unpack_from('<III', header, start)
+            sizes_at = start + 4 + mips_offset
+            compressed = (method, list(struct.unpack_from('<%di' % count, header, sizes_at)))
+    def size_of(level): return max(1, width >> level) * max(1, height >> level) * 4
+    position = resource_size
+    for level in range(mips - 1, -1, -1):
+        raw = size_of(level)
+        stored = raw if compressed is None else min(raw, compressed[1][level])
+        if level == 0:
+            chunk = data[position:position + stored]
+            if stored < raw:
+                if compressed[0] != 1: raise ValueError('Unsupported icon mip compression')
+                chunk = kv3.lz4_block_decompress(chunk, raw)
+            return width, height, chunk
+        position += stored
+    raise ValueError('Icon texture has no mips')

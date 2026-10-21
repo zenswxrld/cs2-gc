@@ -258,6 +258,31 @@ class NativeGloves(unittest.TestCase):
                     for k, v in gloves._tints(kv3.read_kv3(dict(blocks)['DATA'])[1]).items()}
         self.assertEqual(tints(owned), tints(original))  # same colours as the original panels
 
+    def test_printed_dead_hand_gloves_get_matching_colours_and_skipped_ones_keep_owned_items(self):
+        self.assertEqual(gloves.harmonious_themes(355), ['Crimson', 'Ember', 'Amber', 'Magenta', 'Rose', 'Ash',
+                                                         'Sunset', 'Inferno'])
+        schema = SCHEMA_GLOVES.replace('"5030" {', '"5031" { "name" "slick_gloves" "prefab" "hands_paintable" }\n\t\t"5030" {').replace(
+            '"1001" {', '"1399" { "name" "glove_driver_fixture_red" "description_tag" "#PaintKit_fixture_Tag" '
+                        '"composite_material_path" "%s" }\n\t\t"1001" {' % DEAD_HAND)
+        gold = GOLD_GLOVES.replace('"5030:10037" "1"', '"5030:10037" "1" "5031:1399" "1"')
+        files = glove_files(); files.update(dead_hand_files())
+        source = finishes.Source(folder=None); source.read = files.get; source.exists = lambda name: name in files
+        prefix = '[rg_glove_driver_fixture_red_'
+        try:
+            gloves.DEAD_HAND_PRINT_HUES['glove_driver_fixture_red'] = 190
+            _, _, case, _ = gloves.plan(schema, gold, {}, source, {}, [])
+            self.assertEqual(sorted(i[len(prefix):-len(']slick_gloves')] for i in case if i.startswith(prefix)),
+                             sorted(t.lower() for t in gloves.harmonious_themes(190)))
+            del gloves.DEAD_HAND_PRINT_HUES['glove_driver_fixture_red']
+            gloves.DEAD_HAND_SKIP.add('glove_driver_fixture_red')
+            owned = {'rg_glove_driver_fixture_red_lime': 39001}
+            _, entries, case, _ = gloves.plan(schema, gold, {}, source, owned, [])
+            self.assertFalse([i for i in case if i.startswith(prefix)])
+            self.assertIn(('39001', 'rg_glove_driver_fixture_red_lime'), [(k, n) for k, n, _, _ in entries])
+        finally:
+            gloves.DEAD_HAND_PRINT_HUES.pop('glove_driver_fixture_red', None)
+            gloves.DEAD_HAND_SKIP.discard('glove_driver_fixture_red')
+
     def test_dead_hand_finish_with_only_wear_edge_accents_is_not_offered(self):
         files = glove_files(); files.update(dead_hand_files())
         _, blocks = kv3.read_resource(files[DEAD_HAND_VMAT + '_c'])

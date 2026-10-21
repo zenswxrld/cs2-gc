@@ -1,3 +1,15 @@
+# Helper26h (Claude): Dead Hand recolours only in colours that match the printed parts
+
+User: "just do the ones that work ... use colors that work well with whats already there ... same with all
+dead hand gloves" (examples: Lime Polycam Violet, Creme Pinstripe Aurora clash with the printed parts).
+Every Dead Hand glove now offers only harmonious_themes(hue): single themes within 60 degrees of the glove's
+main hue (plus neutral Ash) and duo themes with both hues within 60. Hue = DEAD_HAND_PRINT_HUES (printed
+colour read from screenshots: crane/velvet/pinstripe red, flower/seigaiha teal, Ultra Violent/Plum Quill
+purple, Sunburst orange) else the saturation-weighted mean hue of the finish's clear visible accents
+(dead_hand_main_hue). DEAD_HAND_SKIP (Big Swell, Blaze) gets no recolours. Owned recolours in colours no
+longer offered keep their ids/materials (retained, not in any case). DEAD_HAND_FREE (empty) re-enables all
+colours for a finish. Classic gloves unchanged.
+
 # Helper26g (Claude): wear-edge-only Dead Hand accents are not recolours
 
 User: Pillow Punchers Teal (glove_specialist_quilted_white) looks unchanged — its only accents are

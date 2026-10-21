@@ -235,6 +235,13 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
                     $.Schedule(0.2, _LocalRotationRefresh);
                 });
             }
+            // Line the button's left edge up with the tiles (it sat at the far left of the page).
+            const refresh = bar.FindChildInLayoutFile('cs2gc-refresh-armory');
+            const tiles = m_elContentPanel.FindChildInLayoutFile('id-xpshop-row-1');
+            if (refresh && tiles && tiles.IsValid() && tiles.GetPositionWithinWindow && bar.GetPositionWithinWindow) {
+                const gap = (tiles.GetPositionWithinWindow().x - bar.GetPositionWithinWindow().x) / (bar.actualuiscale_x || 1);
+                if (tiles.actuallayoutwidth > 0 && gap > 0) refresh.style.marginLeft = Math.round(gap) + 'px';
+            }
             // Line the right edge up with the Credits Balance block (always shown; the pass button hides at 5 passes).
             const anchor = root.FindChildInLayoutFile('id-xpshop-balance');
             if (anchor && anchor.IsValid() && bar.GetPositionWithinWindow && anchor.GetPositionWithinWindow) {

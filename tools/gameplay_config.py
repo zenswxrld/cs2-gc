@@ -42,7 +42,7 @@ DEFAULTS = {
     'terminal_helper_enabled': 1,
     'armory_rotation_enabled': 1, 'armory_rotation_seconds': 900, 'armory_rotation_slots': 6,
     'armory_rotation_enforce': 0,
-    'armory_howl_enabled': 1, 'armory_howl_star_price': 40,
+    'armory_howl_enabled': 1, 'armory_howl_star_price': 250,
     'premier_enabled': 1, 'premier_placement_wins': 10, 'premier_start_rating': 1000,
     'premier_scoreboard': 1, 'premier_bot_badges': 1, 'bot_fake_ping': 1, 'bot_random_names': 1,
     'level_drops_enabled': 1, 'level_drop_count': 3,
@@ -83,6 +83,7 @@ def parse(text):
         raise ValueError('pity_soft_at must be less than pity_hard_at')
     if result['armory_pity_soft_at'] >= result['armory_pity_hard_at']:
         raise ValueError('armory_pity_soft_at must be less than armory_pity_hard_at')
+    result['armory_howl_star_price'] = max(250, result['armory_howl_star_price'])
     return result
 
 

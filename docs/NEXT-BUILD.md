@@ -1,3 +1,3 @@
-# Current test build: 21
+# Current test build:22
 
-Removes temporary unowned reward-preview econ objects implicated by the build19 crash. Uses native catalogue previews and validates saved selection descriptors. Popup opens only in Inventory with no loaded map. Saved queues and native XP/Premier screens are preserved. Includes build20 changes. See TEST-BUILD.md.
+Pending rewards clear native faux-item claimed flags; balance-hint/ack handling updated; decorated bot names cleaned; repeat mission launch verifies fresh local settings; Howl250 with old config migration. Saved offers retained. Mission rewards/achievements/Career remain next. See TEST-BUILD.md.

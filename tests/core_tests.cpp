@@ -3489,23 +3489,23 @@ void HowlAndArmoryRotation()
     })");
     Check(schema && schema->SkinRarity(7, 309) == 7, "Howl keeps its real Contraband rarity");
     GameplayConfig config; config.armory_rotation_slots = 1;
-    Armory armory(*schema, 11, 100);
+    Armory armory(*schema, 11, 500);
     const auto howl = armory.HowlOffer(config);
-    Check(howl && howl->points == 40 && armory.RotationAt(0, config).redeemIds == std::vector<std::uint32_t>{howl->redeemId} &&
+    Check(howl && howl->points == 250 && armory.RotationAt(0, config).redeemIds == std::vector<std::uint32_t>{howl->redeemId} &&
           armory.RotationAt(0, config).endsAt == 900 && armory.RotationAt(899, config).endsAt == 900 &&
           armory.RotationAt(900, config).redeemIds.front() != howl->redeemId &&
           armory.RotationAt(1800, config).redeemIds.front() == howl->redeemId,
           "Howl rotates in and out on 15-minute boundaries and returns");
     auto strict = config; strict.armory_rotation_enforce = 1;  // the default trusts the page's rotation
-    Inventory saved; saved.SetGameplay(strict); saved.SetArmoryCredits(100);
+    Inventory saved; saved.SetGameplay(strict); saved.SetArmoryCredits(500);
     LiveInventory inventory(saved);
-    RedeemRequest request; request.campaignId = 11; request.redeemId = howl->redeemId; request.expectedCost = 40;
+    RedeemRequest request; request.campaignId = 11; request.redeemId = howl->redeemId; request.expectedCost = 250;
     const auto before = inventory.Items().ToText();
     Check(armory.Redeem(request, inventory, [] { return 0ull; }, {}, 900).status == Armory::Status::NotInRotation &&
-          inventory.Items().ToText() == before && armory.Balance() == 100, "expired Howl offer cannot spend stars");
+          inventory.Items().ToText() == before && armory.Balance() == 500, "expired Howl offer cannot spend stars");
     const auto bought = armory.Redeem(request, inventory, [] { return 0ull; }, {}, 0);
     Check(bought.status == Armory::Status::Ok && bought.item.paintKitIndex == 309 && bought.item.rarity == 7 &&
-          !bought.item.statTrak && bought.item.ownerCertificate && bought.item.wear <= .4f && armory.Balance() == 60 && inventory.Items().ArmoryCredits() == 60u,
+          !bought.item.statTrak && bought.item.ownerCertificate && bought.item.wear <= .4f && armory.Balance() == 250 && inventory.Items().ArmoryCredits() == 250u,
           "active Howl offer grants the existing skin and spends the configured stars");
     config.armory_howl_enabled = 0;
     Check(!armory.HowlOffer(config) && armory.RotationAt(0, config).redeemIds.size() == 1, "Howl can be disabled");
@@ -4070,7 +4070,7 @@ void NativeCarePackages()
               "reconnect restores choice descriptors without recreating the crashing unowned econ previews");
     }
     const auto &offer=endpointInventory->Items().CarePackages().front();
-    PbWriter request;request.Varint(1,offer.generation);request.Varint(2,3);
+    PbWriter request;request.Varint(1,offer.generation);request.Varint(2,0);
     for(unsigned i=0;i<3;++i)request.Varint(3,choiceTokens[i]);
     std::vector<std::uint8_t> body;WriteProtobufFrame(9219,{},request.bytes(),body);
     endpoint.SendMessage(9219|ProtobufMask,body.data(),body.size());

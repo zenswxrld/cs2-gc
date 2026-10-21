@@ -1,3 +1,19 @@
+# Build 22: pending reward tiles, claim compatibility, decorated names, repeat launch and Howl250
+
+User’s build21 screenshots show all faux preview tiles marked claimed and claim timing out. Pinned primary itemtile_store.js SetClaimed sets `item-claimed` for every faux ID. Clear claimed/expired flags immediately after Init only for local pending choices; keep native stock state elsewhere. Native claim field2 is an optional client balance hint, not grant authority: accept zero/default through3, while generation/three unique exact descriptors remain required. Publish new PersonalStore before owned-item creates to ensure inventory callbacks see the acknowledgement. Added non-personal reject diagnostics. No fresh9219 wire capture yet, so the exact original timeout cause remains unconfirmed; request latest GC log if it persists.
+
+Scoreboard API returns decorated HTML. Strip known formatting tags, decode standard/numeric entities and escape once into the existing label. This fixes the literal span markup screenshot while preserving the no-blank fallback.
+
+After first successful mission launch, user saw loading/dedicated-server failure on retry after console disconnect. Recreate solo session, stop stale searches, and wait up to3seconds for actual listen/map/mode/type/flags before native StartMatchmaking. Reject unsupported modes/maps and party launches without breaking an existing party. Needs live retry validation.
+
+Howl default250; both config parsers normalize old values below250, and generated catalogue replaces stale removed_items prices. Existing inventory/stars unaffected.
+
+Confirmed by user: souvenir direct grants/stickers, Aphrodite125 display, first mission bot launch and key selling. Not confirmed: reward claim completion, scoreboard fix and repeated mission launch. Native store Home embeds the care panel independently of the Inventory-only automatic popup.
+
+Next request: actual mission completion XP/star bonuses, then achievements/Career. Not yet implemented; do not promise AWP progress from equipped-weapon GSI snapshots. Need reliable event attribution and current mission-template data. All existing XP/Premier systems remain.
+
+---
+
 # Build 21: remove crashing reward-preview econ objects
 
 Includes build 20. User reports end-of-match crash in build 19. Supplied log ends after first account-zero preview create (def 4186) at ~817106 ms; minidump records access violation reading 0x30 in client.dll +0x83f065. Strong timing evidence, not a symbolized causal stack. Never commit the supplied logs/dump.

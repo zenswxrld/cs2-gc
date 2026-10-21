@@ -1,6 +1,6 @@
-# CS2-GC test build 21 — 21 October 2026
+# CS2-GC test build 22 — 21 October 2026
 
-Build tag: `codex-20261021-21`. Includes all build 20 changes plus the reward-preview crash fix.
+Build tag: `codex-20261021-22`. Includes the build21 crash mitigation and the follow-up fixes below.
 This is a test update; the native UI additions below require a run in build 25966348.
 
 ## Install
@@ -21,7 +21,7 @@ This is a test update; the native UI additions below require a run in build 2596
 - **No key clutter:** `free_case_keys=1` now opens local cases through the native keyless path, with no generated keys. Existing keys remain usable and sell for 5 stars. `free_case_keys=0` retains normal required/consumed keys. Terminal behaviour is preserved.
 - **BOT tag:** the existing native name label now receives the bot name directly, retaining its font and layout. This replaces build 19’s invisible replacement label; an unavailable name restores the stock formatter; human/demo/queued-match names retain stock formatting. Other surfaces such as the victory cards/kill feed remain separate work.
 - **Mission launch:** clicking a recurring mission now creates a local listen-server bot match in the mission’s mode and specified map (or a random map from its required group). Deathmatch retains FFA flags; competitive retains its native flags. Unsupported map/mode data shows a message and does not start matchmaking. Practice assists/infinite warmup are disabled. This changes launching only: mission progress, weapon-specific tracking and completion rewards are still pending. Use the required weapon in-game. `offline_mission_launch=0` restores the stock mission button.
-- **Limited prices:** Heat Treated, XM1014 Solitude and M4A1-S Solitude are 25 stars each; AK-47 Aphrodite is 125. Previously generated 25-star Aphrodite rows are corrected on preparation. Custom Howl and custom-case pricing remain configurable.
+- **Limited prices:** Heat Treated, XM1014 Solitude and M4A1-S Solitude are 25 stars each; AK-47 Aphrodite is 125. Previously generated 25-star Aphrodite rows are corrected on preparation. Howl now costs 250 stars by default; existing configs below 250 are raised to 250 and stale generated rows are rebuilt. Higher custom Howl prices and custom-case prices remain configurable.
 - **Home promotion:** hides the RUSH promotion and retains the mission card.
 
 ## Test checklist
@@ -61,3 +61,15 @@ The supplied build 19 log ends immediately after creating the first account-zero
 This build removes all four preview econ objects from live notifications AND reconnect/welcome messages, and removes their destroy notifications on claim. Saved offers are encoded as local selection descriptors; the popup resolves def/paint via the actual InventoryAPI.GetFauxItemIDFromDefAndPaintIndex API. Duplicate rewards retain distinct selectable slots. The backend validates descriptors against the saved generation and exact offers before granting exactly three once. Existing saved queues are converted on publication without changing offers or inventory IDs.
 
 Inventory-only gating additionally checks that GetMapBSPName is empty; stock XP/Premier end-match integration is unchanged. The custom Drops tab remains suppressed. Main-menu and popup native patches pass syntax checks; regression tests cover no preview econ creates at match end/reconnect, selection and inventory/map gating. The native selection transport and crash resolution still require in-game testing.
+
+## Build 22 follow-up
+
+- Pending local catalogue previews explicitly clear ItemTileStore’s automatic faux-item `item-claimed`/expired flags after native tile initialization. Native selection remains exactly three.
+- Claim balance is treated as an optional client hint (including zero/default), with the saved generation and exactly three distinct matching offers remaining authoritative. Store metadata is updated before owned-item creates so inventory callbacks see the completed claim. Rejection reasons are logged without personal identifiers. The original timeout’s exact wire data is not yet available: this is a compatibility/acknowledgement fix requiring a live retest, not a confirmed diagnosis.
+- Bot names strip native decorated span/font markup, decode entities, then escape text once. Human/demo/online fallback is retained.
+- Repeat mission launches stop the previous search, recreate the solo session and wait for verified listen-server settings before starting. Settings that do not settle within three seconds fail locally. Parties are asked to leave before starting a solo bot mission. Mission completion/progress bonuses are still pending.
+- User confirmed direct souvenir grants/stickers, Aphrodite’s125-star display, initial mission launch and5-star key sales. Reward selection and repeat mission launch remain unconfirmed. The store also embeds its stock care-package panel; the added automatic popup remains Inventory-only after map unload.
+
+Retest: select exactly three offers (none initially marked claimed), claim and check three owned items/no timeout; restart and check no regrant. Confirm scoreboard names show names without markup. Launch a mission twice, disconnecting between launches. Check Howl250 in the native page. Preserve saved inventory and pending queues.
+
+Mission XP/star completion rewards, achievements and Career are requested next; they are not included in this build. Reliable weapon-specific event attribution and current mission-template data are needed before counting those objectives. Existing match XP/stars are unchanged.

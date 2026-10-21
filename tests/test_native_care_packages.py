@@ -23,6 +23,7 @@ class NativeCarePackages(unittest.TestCase):
     function _UpdateTime() { weekly++; }
     function OnInventoryUpdated() { updated++; }
     function _CreateItemPanel(itemId, index, bFirstTime, claimedItemId = '') {
+        ItemTileStore.Init(elGhostItem, oItemData);
         elGhostItem.Data().itemid = itemId;
     }
     function _OnGhostItemActivate(itemId) {
@@ -51,6 +52,33 @@ const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:(def,paint)=>{seen=[def,pa
 const _LocalCarePackage=()=>true;
 """+care.PREVIEW+"""
 assert.deepEqual(seen,[13,10]);assert.equal(itemId,'faux');assert.equal(choiceToken,'3008590589965');
+"""
+        self.run_js(script)
+
+    def test_native_faux_claimed_flag_is_cleared_only_for_pending_local_rewards(self):
+        source="""    function GetPersonalStore() {return store;}
+    function OnRedeem() {}
+    function _UpdateTime() {}
+    function OnInventoryUpdated() {}
+    function _CreateItemPanel(itemId, index, bFirstTime, claimedItemId = '') {
+        const oItemData={id:itemId,isDropItem:true};
+        ItemTileStore.Init(elGhostItem, oItemData);
+        elGhostItem.Data().itemid = itemId;
+    }
+    function _OnGhostItemActivate(itemId) {
+        if (!InventoryAPI.IsFauxItemID(itemId)) {}
+    }
+"""
+        script="""const assert=require('assert');let store={items:['3000000000007']};const data={},classes={};
+const elGhostItem={Data:()=>data,SetHasClass:(key,value)=>classes[key]=value};
+const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:()=> 'faux',IsFauxItemID:()=>true};
+// Native ItemTileStore.SetClaimed treats every faux preview as already claimed.
+const ItemTileStore={Init:()=>{classes['item-claimed']=true;classes['item-claimslot-expired']=true;}};
+"""+care.patch(source)+"""
+_CreateItemPanel('3000000000007',0,false);
+assert.equal(classes['item-claimed'],false);assert.equal(classes['item-claimslot-expired'],false);
+assert.equal(data.itemid,'3000000000007');
+store={items:['123']};_CreateItemPanel('123',0,false);assert.equal(classes['item-claimed'],true);
 """
         self.run_js(script)
 

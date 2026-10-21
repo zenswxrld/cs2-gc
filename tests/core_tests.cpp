@@ -3745,7 +3745,7 @@ void WeeklyPoolAndItemSales()
     InventoryItem crate; crate.defIndex = 60;
     Check(ItemSaleValue(*schema, config, crate) == 1, "containers use percentage with minimum one star");
     InventoryItem knife = skin; knife.defIndex = 8;
-    Check(ItemSaleValue(*schema, config, knife) == 150, "knife sale price matches OfflineCS");
+    Check(ItemSaleValue(*schema, config, knife) == 72, "knife and glove sale price default (72)");
     skin.storedIn = 8;
     Check(ItemSaleValue(*schema, config, skin) == 0, "stored items cannot be sold separately");
     skin.storedIn = 0;

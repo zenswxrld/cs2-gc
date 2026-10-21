@@ -63,7 +63,7 @@ def catalogue(source, config):
     if config.get('knife_finishes', 1) and 'crate_cs2gc_black_market' in items:
         # The knife-only Black Market Case rotates through the big limited-edition tile.
         # Never cheaper than selling the knife it gives (that would be a free star loop).
-        price = max(config.get('black_market_price', 100), config.get('sell_knife_glove', 150) + 50)
+        price = max(config.get('black_market_price', 100), config.get('sell_knife_glove', 72) + 1)
         add('crate_cs2gc_black_market', 'limited', price, {'flags': '2'})
 
     def loot(name, slot, price):
@@ -86,7 +86,7 @@ def catalogue(source, config):
     for name in lists:
         if name.startswith('keychain_pack_') and name.endswith('_lootlist'): loot(name, 'charm', 3)
         if name.startswith('sticker_pack_') and name.endswith('_lootlist'): loot(name, 'sticker', 1)
-    for name in sorted(cases): add(name, 'case', 2, {'flags': '2'})
+    for name in sorted(cases): add(name, 'case', config.get('armory_case_price', 5), {'flags': '2'})
     if config['terminals_enabled']:
         for name in sorted(terminals): add(name, 'terminal', config['armory_terminal_price'])
     wanted = set(COMMUNITY_CAPSULES)

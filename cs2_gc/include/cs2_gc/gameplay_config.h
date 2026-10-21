@@ -19,7 +19,7 @@ struct GameplayConfig
     std::uint32_t armory_agent_slots{1};
     std::uint32_t armory_agent_price{50};
     std::uint32_t armory_terminal_slots{1};
-    std::uint32_t armory_terminal_price{2};
+    std::uint32_t armory_terminal_price{10}, armory_case_price{5};
     std::uint32_t match_weekly_pool_only{1};
     std::uint32_t item_sales_enabled{1};
     std::uint32_t sell_consumer{1};
@@ -28,7 +28,7 @@ struct GameplayConfig
     std::uint32_t sell_restricted{10};
     std::uint32_t sell_classified{25};
     std::uint32_t sell_covert{50};
-    std::uint32_t sell_knife_glove{150};
+    std::uint32_t sell_knife_glove{72};
     std::uint32_t sell_sticker_percent{50};
     std::uint32_t sell_music_kit{10};
     std::uint32_t sell_container_percent{30};

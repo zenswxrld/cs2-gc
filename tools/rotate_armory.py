@@ -280,6 +280,17 @@ PREPARE = '''        // Resolve each tile from its own native row, without inher
             }
             if (!entry.callout && entry.lootlist && entry.lootlist.length === 1)
                 entry.callout = InventoryAPI.GetItemName(entry.lootlist[0]);
+            if (slot === 'capsule' && entry.lootlist && entry.lootlist.length === 1) {
+                // Buying a capsule gives one of its stickers, so show its stickers like a sticker collection.
+                const stickers = _GetLootListForReward(entry.lootlist[0]).filter(id => id && id !== '0' && id !== entry.lootlist[0]);
+                if (stickers.length > 1) {
+                    entry.lootlist = stickers;
+                    entry.entry_type = 'lootlist'; entry.lootlist_item_type = 'sticker';
+                    entry.tile_width = m_stickerTileWidth; entry.tile_height = m_stickerTileWidth;
+                    entry.on_item_activate = _OpenFullScreenInspectItem;
+                    delete entry.suffix_loc_string;
+                }
+            }
         });
 '''
 

@@ -17,6 +17,7 @@
 //
 // It only activates when the game was launched with -insecure; otherwise every call goes to
 // the real library untouched and nothing is written. Windows x64 only.
+#include "viewmodel_range.h"
 #include "cs2_gc/client_fingerprint.h"
 #include "cs2_gc/econ_item.h"
 #include "cs2_gc/gc_endpoint.h"
@@ -821,6 +822,12 @@ State &Init()
             }
             else s.log->Write("gameplay: no cs2_gc_gameplay.cfg; using documented defaults");
             s.autoRewards = loaded->Gameplay().rewards_auto_start != 0;
+            {
+                const auto &gameplay = loaded->Gameplay();
+                Logger *rangeLog = s.log;
+                StartViewmodelRange({gameplay.viewmodel_range_percent, gameplay.viewmodel_fov_min, gameplay.viewmodel_fov_max},
+                                    [rangeLog](const std::string &message) { rangeLog->Write(message); });
+            }
             if (loaded->Gameplay().premier_enabled)
                 s.coordinator->EnableLocalPremier({loaded->Gameplay().premier_start_rating, 0,
                                                    loaded->Gameplay().premier_placement_wins});

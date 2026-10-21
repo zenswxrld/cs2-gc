@@ -508,3 +508,11 @@ command (no default RCON exposure). Still open: random bot names did not apply (
 - 18a: 12 four-colour GRADIENT_THEMES (colour i -> hue i) for FADE_BASES (fades, marble fade, doppler/gamma phases, marbleized, tiger tooth); appended after older recolours, ids saved.
 - 18b: single-hue themes on FADE_BASES sweep 80 degrees along the finish's colour order (user: fades looked one flat colour).
 - 18c: prices: black_market_price 100 (floor sell_knife_glove+1), sell_knife_glove 72, armory_terminal_price 10, new armory_case_price 5. Capsule tiles open as sticker lootlists (the capsule's own stickers) like sticker collections.
+- 18d: viewmodel range (OfflineCS viewmodel_range). cs2_gc/proxy/viewmodel_range.cpp: background thread waits for
+  client.dll, follows the static CConVarRef objects (client rva 0x25328c0/d0/e0 = viewmodel_offset_x/y/z,
+  0x256aad0 = viewmodel_fov, read from the user's client.dll registration code: each call builds a setup with
+  SetMin(0x76a610)/SetMax(0x76a600) then RegisterConVar via ICvar vtable +0x130 writing ConVarData* to obj+8),
+  checks ConVarData {name, default*, min*, max*} (hl2sdk-cs2 layout) against the exact name and the limits from
+  that code (x 1/-2/2.5, y 1/-2/2, z -1/-2/2, fov 60/60/68) and only then widens: offsets x viewmodel_range_percent
+  (default 250), fov viewmodel_fov_min..max (40..90). Any mismatch logs "left unchanged". cl_bob was requested but
+  no cl_bob convar exists anywhere in this client.dll (removed in CS2), so nothing to restore. Not verified live.

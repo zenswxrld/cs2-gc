@@ -39,7 +39,8 @@ def main():
                                {CASES['gauntlet']: args.gauntlet, CASES['black_market']: args.black_market})
         count, backup = add_items(args.inventory, additions)
         print(f'Added {count} cases ({args.gauntlet} Gauntlet, {args.black_market} Black Market). '
-              'Stars, passes and rank preserved.')
+              'Stars, passes and rank preserved.' if count else
+              'Inventory checked: care-package copies of next_id now match (repairs a 26c grant).')
         if backup: print(f'Backup: {backup.name}')
     except (OSError, ValueError, KeyError) as error:
         parser.exit(1, f'Could not add cases: {error}\n')

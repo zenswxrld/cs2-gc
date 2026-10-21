@@ -1,3 +1,12 @@
+# Helper26d (Claude): test grants broke inventories with care packages — fixed
+
+User ran grant_gauntlet_cases.cmd (26c) and the GC started with an empty inventory. Cause: Inventory::FromText
+requires every care_packages/<generation> preview block to repeat the profile's next_id exactly; the grant
+(grant_test_items.add_items, also Codex's grant_test_items.py) only bumped the top-level next_id, so the whole file
+was refused ("invalid, starting empty and not saving over it"). Nothing was overwritten. add_items now updates
+every care-package next_id copy too; verified with the real core loader (invalid before, valid after).
+repair_inventory.cmd (grant_custom_cases.py --gauntlet 0) re-syncs an already-granted file, keeping the cases.
+
 # Helper26c (Claude): Dead Hand recolours in the Gauntlet Case
 
 User request: Dead Hand gloves recoloured with the same care as the classic gloves; originals stay in the Dead

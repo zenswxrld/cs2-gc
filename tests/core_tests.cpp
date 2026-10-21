@@ -4158,6 +4158,30 @@ void CustomSkinFamilies()
         if (item) seen.insert(item->paintKitIndex);
     }
     Check(seen.size()==2,"every colour of the family can drop");
+    Check(schema->LoadSkinFamilies(R"("skin_families" {} "collection_drops" {})"),"empty drop manifest loads");
+    Check(schema->DropCollections().empty(),"ordinary families do not add custom reward pools");
+    Check(!schema->LoadSkinFamilies(R"("skin_families" {} "collection_drops" { "set_cs2gc_case_missing" "1" })"),
+          "missing drop collections are refused without replacing the active map");
+    auto dropText=std::string(R"("items_game" {
+      "rarities" { "common" { "value" "1" } "rare" { "value" "3" } }
+      "items" { "7" { "name" "weapon_test" "item_rarity" "common" } }
+      "paint_kits" { "30" { "name" "low" } "31" { "name" "family" } "32" { "name" "colour" } }
+      "paint_kits_rarity" { "low" "common" "family" "rare" "colour" "rare" }
+      "client_loot_lists" { "set_cs2gc_case_eclipse" { "pool_common" "1" "pool_rare" "1" }
+        "pool_common" { "[low]weapon_test" "1" } "pool_rare" { "[family]weapon_test" "1" } }
+    })");
+    auto dropSchema=Schema::Load(dropText);
+    Check(dropSchema && dropSchema->LoadSkinFamilies(R"("skin_families" { "family" { "colour" "1" } }
+        "collection_drops" { "set_cs2gc_case_eclipse" "1" })"),"drop-only collection registers with colours");
+    GameplayConfig config;config.match_case_percent=0;config.match_drop_count=3;
+    config.custom_collection_drop_percent=100;config.match_skin_min_rarity=3;
+    auto rewards=RollMatchDrops(*dropSchema,random,config);
+    Check(rewards && rewards->size()==3,"drop-only collections work without an official reward pool");
+    for (const auto &item : *rewards)
+        Check(item.defIndex==7 && item.paintKitIndex==32 && item.rarity==3 && !item.statTrak,
+              "custom rewards respect minimum rarity, resolve colour, and never grant StatTrak");
+    config.custom_cases=0;
+    Check(!RollMatchDrops(*dropSchema,random,config),"disabling custom content removes its reward pools");
     InventoryItem other; other.paintKitIndex=33; ApplySkinFamily(*schema,other,random);
     Check(other.paintKitIndex==33,"finishes outside a family are untouched");
 }

@@ -321,6 +321,50 @@ PREPARE = '''        // Resolve each tile from its own native row, without inher
 '''
 
 
+COLLECTION_TILE_MODEL = '''    function _LocalCollectionTileModel(elTile, ShopEntry) {
+        const name = String(ShopEntry.item_name || '').replace('lootlist:', '');
+        if (!name.startsWith('set_cs2gc_') || !m_localRotation.previews[name] || !ShopEntry.lootlist?.length)
+            return false;
+        const itemId = ShopEntry.lootlist[0]; // generated preview order: chase first
+        const defName = InventoryAPI.GetItemDefinitionName(itemId);
+        const cameraData = XpShopWeaponCameraSettings.CameraSettings.find(({type}) => type === defName);
+        const camera = 'camera_weapon_' + (cameraData !== undefined ? cameraData.camera : '0');
+        const single = elTile.FindChildInLayoutFile('id-xpshop-tile-single-image');
+        const carousel = elTile.FindChildInLayoutFile('id-xpshop-tile-carousel');
+        const holder = $.CreatePanel('Panel', single.GetParent(), 'cs2gc-collection-model');
+        holder.style.width = '100%'; holder.style.height = '72%';
+        holder.style.verticalAlign = 'center'; holder.style.horizontalAlign = 'center';
+        holder.style.marginTop = '16px'; holder.hittest = false; holder.hittestchildren = false;
+        const model = MakeMapItemPreviewPanel(holder, camera, 'ui/xpshop_item', ShopEntry);
+        model.style.width = '100%'; model.style.height = '100%'; model.style.margin = '0px';
+        model.hittest = false; model.hittestchildren = false;
+        model.SetActiveItem(0); model.SetItemItemId(itemId, ''); model.SetRenderInterval(10);
+        single.visible = false; carousel.visible = false;
+        return true;
+    }
+'''
+
+
+def patch_collection_tile_models(source):
+    anchor = "            if (ShopEntry.lootlist?.length === 1) {"
+    function = '    function _MakeShopTile(ShopEntry) {'
+    if source.count(function) != 1 or '_LocalCollectionTileModel' in source:
+        raise ValueError('Changed custom collection tile model anchors')
+    start = source.index(function)
+    end = source.find('\n    function ', start + len(function))
+    if end < 0: end = len(source)
+    body = source[start:end]
+    if body.count(anchor) != 1:
+        raise ValueError('Changed custom collection tile model anchors')
+    source = source[:start] + COLLECTION_TILE_MODEL + source[start:]
+    start += len(COLLECTION_TILE_MODEL)
+    end += len(COLLECTION_TILE_MODEL)
+    return source[:start] + source[start:end].replace(anchor, '''            if (_LocalCollectionTileModel(elTile, ShopEntry)) {
+                // One native 3D chase model replaces missing generated inventory icons.
+            }
+            else if (ShopEntry.lootlist?.length === 1) {''', 1) + source[end:]
+
+
 def patch_previews(source):
     carousel = '''                    let elLimitedCarousel = $.CreatePanel('Carousel', elTile, '');
                     elLimitedCarousel.BLoadLayoutSnippet('limited-item-carousel');
@@ -413,6 +457,8 @@ def patch(source, config, categories=None, agents=None, previews=None):
         }
         else if (!count) {
             itemsList.push(rewardId);''', 1)
+    if previews:
+        source = patch_collection_tile_models(source)
     source = source.replace(END, END + '''
         m_localRotationItems = aShopItemsData;
         if (m_localRotationTick) $.CancelScheduled(m_localRotationTick);

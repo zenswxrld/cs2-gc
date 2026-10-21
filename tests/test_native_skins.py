@@ -12,6 +12,48 @@ SCHEMA = '''"items_game" { "items" { "7" { "name" "weapon_ak47" } "4" { "name" "
 
 
 class CustomSkins(unittest.TestCase):
+    def test_curated_collections_mix_chase_donors_keep_variants_and_exclude_official_duplicates(self):
+        import native_finishes as finishes
+        guns=sorted(set(skins.FILLER_GUNS))
+        kits={name:(str(i),{'name':name,'style':'5'}) for i,name in enumerate(skins.GUN_PATTERN_DONORS)}
+        kits.update({base:(str(100+i),{'name':base,'style':'5'}) for i,(_,base,_) in enumerate(skins.COLLECTION_DESIGNS.values())})
+        kits.update({'hy_pattern%d'%i:(str(200+i),{'name':'hy_pattern%d'%i,'style':'2'}) for i in range(30)})
+        titles={name:name for name in kits}
+        schema='"items_game" { "items" { %s } "client_loot_lists" { "official" { "[hy_pattern0]weapon_nova" "1" } } }'%(
+            ' '.join('"%d" { "name" "%s" }'%(i,g) for i,g in enumerate(guns)))
+        families={}; original=finishes.make_finish
+        def make(source,base,path,name,theme,report=None):
+            if report is not None:
+                report[base]={'original_colors':[[.2,.3,.4,1]]*4,'themes':{theme:[[.8,.2,.3,1]]*4}}
+            return b'compmat:'+name.encode(),b'vmat'
+        finishes.make_finish=make
+        try:
+            result=skins.custom_cases(schema,kits,titles,lambda n,v:'paints/'+n+'.vcompmat',None,families,set())
+        finally:finishes.make_finish=original
+        new,files,lists,names,items,icons=result
+        self.assertEqual(len(names),12)
+        self.assertEqual(len(items),12*16)
+        lookup={n:v for n,_,v in new}
+        chases=[i for i in items if i.startswith('[ccf_') and '_chase_' in i]
+        self.assertEqual(len(chases),12)
+        self.assertEqual(len({i.split(']')[1] for i in chases}),5)
+        knife_bases=set(finishes.KNIFE_BASES)
+        self.assertEqual(sum(base not in knife_bases for _,base,_ in skins.COLLECTION_DESIGNS.values()),9)
+        for name in names:
+            from inventory_item import collect,parse
+            parsed=collect(parse('"items_game" { "client_loot_lists" { '+lists+' } }'))['client_loot_lists']
+            self.assertEqual([len(parsed[name+'_'+tier]) for tier in ('ancient','legendary','mythical','rare','uncommon')],[1,2,3,4,6])
+        active=[i[1:].split(']')[0] for i in items]
+        self.assertTrue(all(len(families[n])==4 for n in active if n.startswith('ccf_')))
+        self.assertNotIn('[cga_hy_pattern0_uncommon]weapon_nova',items)
+        # Each unchanged weapon/material pair is unique across all twelve collections.
+        plain=[(lookup[n]['composite_material_path'],entry.split(']')[1]) for entry,n in zip(items,active) if n.startswith('cga_')]
+        self.assertEqual(len(plain),len(set(plain)))
+        self.assertEqual(len(skins.DROP_ONLY_COLLECTIONS.intersection(names)),2)
+        text=skins.family_text(families,skins.DROP_ONLY_COLLECTIONS)
+        self.assertIn('"collection_drops"',text)
+        self.assertIn('"set_cs2gc_case_eclipse"',text)
+
     def test_test_case_has_knife_finishes_and_recolours_on_guns_but_no_official_pairs(self):
         recolours = ['rk_aa_fade_ocean_%d' % i for i in range(20)] + ['rk_am_zebra_lime']
         items = skins.test_items(SCHEMA, {'aa_fade', 'am_doppler_phase1', 'hy_webs'}, recolours)
@@ -121,7 +163,7 @@ class CustomSkins(unittest.TestCase):
         original = finishes.make_finish
         finishes.make_finish = lambda source, kit, path, name, theme: (b'compmat:' + name.encode(), b'vmat')
         try:
-            new, files, lists, specs, items, icons = skins.custom_cases(
+            new, files, lists, specs, items, icons = skins.legacy_custom_cases(
                 schema, kits, titles, lambda n, v: 'weapons/paints/legacy/%s.vcompmat' % n, None, families,
                 {'cgf_doppler_ancient'})
         finally:

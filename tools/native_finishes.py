@@ -668,7 +668,8 @@ def prepare(proxy_directory, config, items_game_text):
                 entries.append((kit_id, name, title, values))
             known.update({name: int(kit_id) for kit_id, name, _, _ in entries})
             atomic_write(ids_path, json.dumps(known, indent=1, sort_keys=True) + '\n')
-            atomic_write(proxy / native_skins.FAMILIES_FILE, native_skins.family_text(families))
+            drop_collections = native_skins.DROP_ONLY_COLLECTIONS.intersection(icons)
+            atomic_write(proxy / native_skins.FAMILIES_FILE, native_skins.family_text(families, drop_collections))
             previews = collection_previews(case_lists, icons, known)
             # Loot lists only: CS2 refuses the whole schema for an item_set whose name is not a #CSGO_ token
             # (26m: CEconItemSystem::ParseItemSchemaFile assertion), and overriding the language file breaks text.

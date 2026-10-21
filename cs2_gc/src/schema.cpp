@@ -419,7 +419,27 @@ bool Schema::LoadSkinFamilies(std::string_view text)
         if (variants.empty())
             families.erase(*key);
     }
+    std::vector<std::string> dropCollections;
+    if (const auto *drops = parsed->Find("collection_drops"))
+    {
+        if (!drops->block || drops->children.size() > 8) return false;
+        for (const auto &collection : drops->children)
+        {
+            if (collection.block || collection.value != "1" || !collection.key.starts_with("set_cs2gc_case_") ||
+                LootTiers(collection.key).empty() ||
+                std::find(dropCollections.begin(),dropCollections.end(),collection.key)!=dropCollections.end()) return false;
+            for (const auto &tier : LootTiers(collection.key))
+                for (const auto &entry : tier.items)
+                {
+                    const auto loot = ResolveLootItem(entry);
+                    if (!loot || loot->kind != LootKind::Skin || IsKnife(loot->weaponDefIndex) || IsGlove(loot->weaponDefIndex))
+                        return false;
+                }
+            dropCollections.push_back(collection.key);
+        }
+    }
     m_skinFamilies = std::move(families);
+    m_dropCollections = std::move(dropCollections);
     return true;
 }
 

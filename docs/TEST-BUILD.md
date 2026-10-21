@@ -1,3 +1,42 @@
+# Test build27 — custom collection previews and variety
+
+DLL tag: `codex-20261022-27`. Target CS2 build25966348.
+
+Close CS2 and the helper. Back up your inventory, active config and **cs2_gc_finish_ids.json**.
+Extract ALL files into game/bin/win64 (including collection_icons), preserving your real Steam DLL,
+inventory and finish-ID map. Run cs2_gc_debug.exe. Python3 is still required.
+Only an example config is shipped; your active config stays yours. The launcher regenerates the owned packs.
+
+Changes:
+- Custom Armory collection tiles use one native live 3D chase weapon, keeping the stock click target, title and price.
+- Twelve gun collections keep the stock 1 red / 2 pink / 3 purple / 4 blue / 6 industrial layout.
+  Chase patterns now include nine gun patterns and three knife-family patterns, across five top weapons.
+- Colour families remain one named entry that rolls a colour variant. Pink/purple and two blue slots also get recolours.
+- Unchanged official weapon/material pairs and repeated unchanged custom pairs are excluded, including material aliases.
+- Ten collections rotate in Armory. Eclipse and Monsoon are drop-only: by default 15% of weapon reward slots,
+  respecting match_skin_min_rarity. Existing case/weapon split stays unchanged. Configure custom_collection_drop_percent=0 to disable.
+- No new custom gun cases. Previous kit/material definitions remain generated for owned skins.
+- Existing Dead Hand recolour removal remains in effect.
+
+Test these:
+1. Launch and confirm tag27 and a successful preparation log; open Armory and rotate several times.
+2. Custom collection tiles: one visible 3D chase, readable title/price, correct click destination, no gold question mark.
+   Check performance and framing on different resolutions; stock tiles should still render normally.
+3. Inspect each collection and redeem several times: 16 entries, varied base patterns, colours change within each named family.
+   Compare preview with the redeemed item in inventory and in-game. New donor/weapon combinations need visual verification.
+4. Eclipse/Monsoon must never appear for purchase. Earn weapon rewards; optionally temporarily use
+   match_case_percent=0 and custom_collection_drop_percent=100 to test the two pools quickly. Restore your settings afterward.
+   Rewards must respect the configured minimum rarity and have no StatTrak.
+5. Check older owned custom skins still render and survive restart. Check normal cases, souvenir purchases and selling.
+
+Still pending: custom collection trade-up membership and the inventory reward-claim timeout are not fixed by this build.
+No end-of-match drop popup was added. Automated checks do not prove native rendering or claim delivery.
+
+See CUSTOM-COLLECTIONS.md for the intended chase/availability list. Missing source materials fall back to verified donors;
+a collection with too few usable entries is omitted rather than sold incomplete.
+
+---
+
 # Build26e (Claude) — Dead Hand Test Case
 
 New steam_api64.dll / cs2_gc_debug.exe (log line "test build: claude-20261021-26e"). Extract everything into

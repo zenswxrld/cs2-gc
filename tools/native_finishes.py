@@ -74,6 +74,7 @@ WEARS = ('light', 'medium', 'heavy')
 EXTRA_THEMES = 6  # recolours per extra finish (knife bases get every theme)
 RECOLOUR_KNIVES = 4  # knives each knife-base recolour appears on in the case
 EXTRA_RECOLOUR_KNIVES = 4
+PALETTE_REPORT = 'cs2_gc_knife_palettes.json'
 WEAPON_WORDS = ('ak47', 'ak_', 'awp', 'm4a1', 'm4a4', 'deagle', 'scar20', 'g3sg1', 'p250', 'p90', 'mp9', 'mp7', 'mac10',
                 'ump', 'famas', 'galil', 'aug_', 'sg553', 'sg556', 'ssg08', 'nova', 'xm1014', 'mag7', 'sawedoff', 'negev',
                 'm249', 'glock', 'usp', 'p2000', 'fiveseven', 'tec9', 'cz75', 'elite', 'bizon', 'revolver', 'knife', 'glove',
@@ -211,7 +212,7 @@ def _with_block(data, name, content):
     return kv3.write_resource(version, blocks)
 
 
-def make_finish(source, kit, kit_path, new_name, theme):
+def make_finish(source, kit, kit_path, new_name, theme, report=None):
     """(vcompmat bytes, vmat bytes) for a recolour of `kit`, or None when it is not a four-colour finish."""
     compmat = source.read(kit_path + '_c')
     if compmat is None: return None
@@ -232,6 +233,11 @@ def make_finish(source, kit, kit_path, new_name, theme):
     current = [[item.value for item in colors['g_vColor%d' % i].value] for i in range(4)]
     if any(len(color) != 4 for color in current): return None
     new_colors = recolor(current, theme, fade=kit in FADE_BASES)
+    if report is not None:
+        entry = report.setdefault(kit, {'source_compmat': kit_path, 'source_material': specific.value,
+            'shader': m_root.get('m_shaderName').value if m_root.get('m_shaderName') else '',
+            'original_colors': current, 'themes': {}})
+        entry['themes'][theme] = new_colors
     if max(brightness(c) for c in new_colors) < 110 / 255: return None  # dark patterns need a bright colour to show
     for i in range(4):
         for item, value in zip(colors['g_vColor%d' % i].value, new_colors[i]): item.value = value
@@ -285,7 +291,7 @@ def kit_path(name, values):
     return values.get('composite_material_path') or 'weapons/paints/legacy/' + name + '.vcompmat'
 
 
-def plan(source_text, gold_pools_text, titles, finish_source, known_ids=None):
+def plan(source_text, gold_pools_text, titles, finish_source, known_ids=None, report=None):
     """Everything to generate, deterministic for the same game files.
 
     Returns (files {path: bytes}, kit entries [(name, base, title, values)], case entries ["[kit]weapon"], tokens)."""
@@ -312,7 +318,7 @@ def plan(source_text, gold_pools_text, titles, finish_source, known_ids=None):
     def add(base, theme, knives_for):
         nonlocal next_id
         name = 'rk_%s_%s' % (base, theme.lower())
-        made = make_finish(finish_source, base, kit_path(base, kits[base][1]), name, theme)
+        made = make_finish(finish_source, base, kit_path(base, kits[base][1]), name, theme, report=report)
         if not made: return
         vcompmat, vmat = made
         files[COMPMAT_DIR + name + '.vcompmat_c'] = vcompmat
@@ -524,7 +530,9 @@ def prepare(proxy_directory, config, items_game_text):
     except ValueError:
         known = {}
     titles = titles_from(english, kits)
-    files, entries, case, tokens = plan(items_game_text, gold, titles, source, known)
+    knife_palettes = {}
+    files, entries, case, tokens = plan(items_game_text, gold, titles, source, known, report=knife_palettes)
+    atomic_write(proxy / PALETTE_REPORT, json.dumps(knife_palettes, sort_keys=True, indent=1) + '\n')
     glove_entries, glove_case, glove_defs = [], [], {}
     if config.get('glove_finishes', 1):
         import native_gloves

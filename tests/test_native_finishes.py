@@ -122,6 +122,27 @@ class NativeFinishes(unittest.TestCase):
         self.assertIsNotNone(made)
         self.assertEqual(report['am_gold_brick']['policy'],'related-metal-tones-v1')
 
+    def test_hardened_retains_metal_and_two_distinct_accents(self):
+        colors = [[.945,.902,.867,1], [.757,.733,.698,.8],
+                  [.753,.694,.631,.5], [.106,.106,.114,0]]
+        for theme in list(finishes.THEMES) + list(finishes.DUO_THEMES) + list(finishes.GRADIENT_THEMES):
+            result = finishes.recolor_hardened(colors, theme)
+            self.assertEqual(result[0], colors[0])
+            self.assertEqual(result[3], colors[3])
+            for actual, original in zip(result, colors):
+                self.assertAlmostEqual(max(actual[:3]), max(original[:3]))
+                self.assertEqual(actual[3], original[3])
+        crimson = finishes.recolor_hardened(colors, 'Crimson')
+        hues = [colorsys.rgb_to_hsv(*c[:3])[0] * 360 for c in crimson]
+        self.assertAlmostEqual(hues[1], 355)
+        self.assertAlmostEqual(hues[2], 300)
+        source = finishes.Source(folder=None)
+        source.read = vpk_files().get
+        report = {}
+        self.assertIsNotNone(finishes.make_finish(source, 'aq_oiled',
+            'weapons/paints/legacy/aa_fade.vcompmat', 'rk_aq_oiled_crimson', 'Crimson', report=report))
+        self.assertEqual(report['aq_oiled']['policy'], 'hardened-metal-accents-v1')
+
     def test_teal_fade_stays_teal_instead_of_sweeping_into_green(self):
         source = finishes.Source(folder=None)
         source.read = vpk_files().get

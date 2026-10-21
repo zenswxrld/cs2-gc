@@ -138,6 +138,22 @@ def recolor_gold_brick(colors, theme):
     return output
 
 
+def recolor_hardened(colors, theme):
+    """Retain aq_oiled's light/dark metal channels and vary its two midtone accents."""
+    output = [list(color) for color in colors]
+    accents = recolor(colors, theme, keep_value=True)
+    for index in (1, 2):
+        h, s, _ = colorsys.rgb_to_hsv(*accents[index][:3])
+        if theme in THEMES:
+            base, _, spread = THEMES[theme]
+            # Related heat-treated tones, rather than four nearly identical tints.
+            separation = 0 if not spread else 20 if theme == 'Teal' else 55
+            h = (base - (separation if index == 2 else 0)) % 360 / 360
+        value = max(colors[index][:3])
+        output[index] = [*colorsys.hsv_to_rgb(h, min(s, .65), value), colors[index][3]]
+    return output
+
+
 def _vector_params(root):
     params = root.get('m_vectorParams')
     if params is None or not isinstance(params.value, list): return None
@@ -249,14 +265,16 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None):
     if colors is None: return None
     current = [[item.value for item in colors['g_vColor%d' % i].value] for i in range(4)]
     if any(len(color) != 4 for color in current): return None
-    new_colors = (recolor_gold_brick(current, theme) if kit == 'am_gold_brick' else
+    new_colors = (recolor_hardened(current, theme) if kit == 'aq_oiled' else
+                  recolor_gold_brick(current, theme) if kit == 'am_gold_brick' else
                   # Teal needs related blue-green tones: the wide fade sweep reaches
                   # green at one end. Keep this knife-only exception out of glove tinting.
                   recolor(current, theme, fade=kit in FADE_BASES and theme != 'Teal'))
     if report is not None:
         entry = report.setdefault(kit, {'source_compmat': kit_path, 'source_material': specific.value,
             'shader': m_root.get('m_shaderName').value if m_root.get('m_shaderName') else '',
-            'original_colors': current, 'policy': 'related-metal-tones-v1' if kit == 'am_gold_brick' else 'ranked-theme-v1',
+            'original_colors': current, 'policy': ('hardened-metal-accents-v1' if kit == 'aq_oiled' else
+                'related-metal-tones-v1' if kit == 'am_gold_brick' else 'ranked-theme-v1'),
             'themes': {}})
         entry['themes'][theme] = new_colors
     if max(brightness(c) for c in new_colors) < 110 / 255: return None  # dark patterns need a bright colour to show

@@ -20,6 +20,17 @@ KNIFE_FINISHES = ('am_doppler_phase1', 'am_doppler_phase2', 'am_doppler_phase3',
                   'am_gamma_doppler_phase4', 'am_marble_fade', 'an_tiger_orange', 'am_zebra', 'aq_damascus',
                   'hy_webs', 'aa_fade', 'aq_oiled', 'aq_blued', 'hy_ocean_knife', 'am_marked_up', 'so_purple')
 RECOLOURS_PER_WEAPON = 12
+# Batch 2 (user: "test another batch now we know these work"): every other gun, plus the three finishes the user
+# asked for by name on knives (Twilight Galaxy, Gold Brick, Blue Phosphor) on all guns.
+TEST2_CASE_NAME = 'crate_cs2gc_custom_skins2_test'  # *_test: never a match drop
+TEST2_CASE_TITLE = 'Custom Skins Test Case 2'
+WEAPONS2 = ('weapon_aug', 'weapon_sg556', 'weapon_ssg08', 'weapon_scar20', 'weapon_g3sg1', 'weapon_mp9',
+            'weapon_mac10', 'weapon_mp7', 'weapon_mp5sd', 'weapon_ump45', 'weapon_p90', 'weapon_bizon',
+            'weapon_fiveseven', 'weapon_tec9', 'weapon_cz75a', 'weapon_elite', 'weapon_hkp2000', 'weapon_revolver',
+            'weapon_nova', 'weapon_xm1014', 'weapon_mag7', 'weapon_sawedoff', 'weapon_negev', 'weapon_m249')
+EXTRA_FINISHES = ('am_aqua_flecks', 'am_gold_brick', 'am_m4a1s_bluesmoke')
+RECOLOURS2_PER_WEAPON = 8
+EXTRA_RECOLOURS_PER_WEAPON = 4
 
 
 def test_items(source_text, kit_names, recolours):
@@ -36,6 +47,32 @@ def test_items(source_text, kit_names, recolours):
         random.Random(weapon).shuffle(picks)
         items += ['[%s]%s' % (kit, weapon) for kit in sorted(picks[:RECOLOURS_PER_WEAPON])]
     return sorted(set(items))
+
+
+def test2_items(source_text, kit_names, recolours):
+    """Batch 2: knife finishes on the remaining guns, the named extras on every gun, and a few recolours."""
+    official = set(re.findall(r'"\[([^\]]+)\](weapon_[a-z0-9_]+)"', source_text))
+    present = lambda w: re.search(r'"name"\s+"%s"' % w, source_text)
+    fades = sorted(n for n in recolours if re.match(r'rk_(aa_fade|am_marble_fade|am_doppler|am_gamma_doppler)', n))
+    extras = sorted(n for n in recolours if re.match(r'rk_(%s)_' % '|'.join(EXTRA_FINISHES), n))
+    items = []
+    for weapon in [w for w in WEAPONS2 if present(w)]:
+        items += ['[%s]%s' % (k, weapon) for k in KNIFE_FINISHES if k in kit_names and (k, weapon) not in official]
+        picks = fades[:]
+        random.Random(weapon + '2').shuffle(picks)
+        items += ['[%s]%s' % (k, weapon) for k in picks[:RECOLOURS2_PER_WEAPON]]
+    for weapon in [w for w in WEAPONS + WEAPONS2 if present(w)]:
+        items += ['[%s]%s' % (k, weapon) for k in EXTRA_FINISHES if k in kit_names and (k, weapon) not in official]
+        picks = extras[:]
+        random.Random(weapon + 'x').shuffle(picks)
+        items += ['[%s]%s' % (k, weapon) for k in picks[:EXTRA_RECOLOURS_PER_WEAPON]]
+    return sorted(set(items))
+
+
+def test2_case_spec(items):
+    return dict(name=TEST2_CASE_NAME, title=TEST2_CASE_TITLE, base=CASE_BASE, items=items,
+                description='Test case 2: knife finishes on the rest of the guns, and Twilight Galaxy, Gold Brick '
+                            'and Blue Phosphor on every gun. Only given by grant_custom_skins_test2_cases.cmd.')
 
 
 def test_case_spec(items):

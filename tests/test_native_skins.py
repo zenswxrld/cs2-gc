@@ -24,6 +24,16 @@ class CustomSkins(unittest.TestCase):
         self.assertEqual(items, skins.test_items(SCHEMA, {'aa_fade', 'am_doppler_phase1', 'hy_webs'}, recolours))
         self.assertEqual(skins.test_case_spec(items)['name'], 'crate_cs2gc_custom_skins_test')
 
+    def test_batch_two_covers_other_guns_and_named_extras_on_every_gun(self):
+        schema = SCHEMA.replace('"4" { "name" "weapon_glock" }', '"4" { "name" "weapon_glock" } "8" { "name" "weapon_aug" }')
+        recolours = ['rk_aa_fade_ocean', 'rk_am_gold_brick_lava', 'rk_am_gold_brick_toxic']
+        items = skins.test2_items(schema, {'aa_fade', 'am_gold_brick'}, recolours)
+        self.assertIn('[aa_fade]weapon_aug', items)
+        self.assertNotIn('[aa_fade]weapon_ak47', items)  # batch-one guns only get the extras here
+        self.assertTrue({'[am_gold_brick]weapon_ak47', '[am_gold_brick]weapon_aug'} <= set(items))
+        self.assertIn('[rk_am_gold_brick_lava]weapon_glock', items)
+        self.assertTrue(skins.test2_case_spec(items)['name'].endswith('_test'))  # never a match drop
+
 
 if __name__ == '__main__':
     unittest.main()

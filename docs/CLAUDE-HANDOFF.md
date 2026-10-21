@@ -1,3 +1,12 @@
+# Helper26l (Claude): Custom Skins Test Case 2
+
+User: batch 1 "all honestly work. really well". Batch 2: crate_cs2gc_custom_skins2_test (grant
+grant_custom_skins_test2_cases.cmd) with the knife finishes on the other 24 guns plus 8 fade/doppler
+recolours each, and Twilight Galaxy / Gold Brick / Blue Phosphor (am_aqua_flecks, am_gold_brick,
+am_m4a1s_bluesmoke) on all guns where unofficial, plus 4 of their recolours per gun (~760 items). Same DLL 26k.
+Next (user approved): colour families (one collection entry per finish family per gun, GC rolls a variant on
+grant) and 2-3 custom Armory collections priced like collections.
+
 # Build26k (Claude): Custom Skins Test Case (phase 1 of custom weapon collections)
 
 User: custom skins "same as armory collections, lets make them those instead of cases. but we will need test

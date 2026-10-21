@@ -612,6 +612,14 @@ def prepare(proxy_directory, config, items_game_text):
             if template is not None and ICON.is_file():
                 files['panorama/images/econ/weapon_cases/' + native_skins.TEST_CASE_NAME + '_png.vtex_c'] = \
                     make_vtex(template, ICON.read_bytes())
+        skins2 = native_skins.test2_items(items_game_text, set(kits),
+                                          [name for _, name, _, _ in entries if name.startswith('rk_')])
+        if skins2:
+            extra.append(native_skins.test2_case_spec(skins2))
+            if template is not None and ICON.is_file():
+                files['panorama/images/econ/weapon_cases/' + native_skins.TEST2_CASE_NAME + '_png.vtex_c'] = \
+                    make_vtex(template, ICON.read_bytes())
+            skins += skins2
     patched, details = patch_items_game(items_game_text, entries, case, extra_cases=extra)
     atomic_write(proxy / REEL_FILE, json.dumps(reels, sort_keys=True) + '\n')
     atomic_write(manifest_path, json.dumps(dict(owner=OWNER, files=len(files), **details), indent=2) + '\n')

@@ -49,6 +49,10 @@ ACCENT_THRESHOLDS = {'gloves/paints/bloodhound_metallic.vcompmat': .20,
 ACCENT_HUE_RANGES = {'gloves/paints/slick_stitched_green_grey.vcompmat': (75,180),
                     'gloves/paints/slick_black.vcompmat': (160,250)}
 GLOVE_TITLES = {'slick_stitched_green_grey': 'Racing'}
+# Finishes whose pattern lives in their neutral tints: the panel variants flatten those tints and erase the
+# pattern (user report: Hand Wraps | Spruce DDPAT Midnight came out plain white; handwrap_camo_grey's camo is
+# seven near-grey green tints, one accent). No new panel variants; owned ones render as the original panels.
+NO_PANEL_VARIANTS = {'gloves/paints/handwrap_camo_grey.vcompmat'}
 # Dead Hand (volatile_02) composites: a LOOSE_VARIABLES container 'paint' names the finish's own material
 # (csgo_customglove_preview.vfx) and COPY_MATCHING_KEYS copies its parameters into the shared, all-white
 # glove_compositor template. That finish material holds the colours: eight tint-ID region colours plus
@@ -57,6 +61,8 @@ GLOVE_TITLES = {'slick_stitched_green_grey': 'Racing'}
 DEAD_HAND_SHADERS = ('csgo_customglove_preview.vfx', 'csgo_customglove.vfx')
 DEAD_HAND_COLOURS = re.compile(r'^g_v(?:Id[1-8]Color|(?:Surface|Substrate|Burnishing|DamageBevel)ColorTint[1-4])$')
 DEAD_HAND_IDS = ['g_vId%dColor' % i for i in range(1, 9)]
+DEAD_HAND_FAMILY_DEGREES = 25
+DEAD_HAND_FAMILY_SATURATION = .18
 
 
 def _is_accent(color, threshold=.35, hue_range=None):
@@ -176,7 +182,23 @@ def dead_hand_colours(m_root):
         name, value = entry.get('m_name'), entry.get('m_value')
         if name and value and DEAD_HAND_COLOURS.match(name.value) and isinstance(value.value, list) and len(value.value) == 4:
             found[name.value] = value
-    return found if all(name in found for name in DEAD_HAND_IDS) else None
+    return found or None
+
+
+def dead_hand_accents(colours):
+    """Indices to recolour: the clear accents (as for classic gloves) plus muted shades of the same colours.
+
+    Dead Hand finishes spread one colour over several tint-ID regions and wear layers, many of them muted
+    (Plum Quill's purple ostrich sits at saturation ~.3, so recolouring only the strong purples left it purple).
+    A muted colour joins only when it is close in hue to a clear accent; greys, whites and unrelated muted
+    colours (cream, tan) are kept."""
+    hsv = [colorsys.rgb_to_hsv(*c[:3]) for c in colours]
+    strong = {i for i, c in enumerate(colours) if _is_accent(c)}
+    hues = [hsv[i][0] * 360 for i in strong]
+    near = lambda h: any(min(abs(h - x) % 360, 360 - abs(h - x) % 360) <= DEAD_HAND_FAMILY_DEGREES for x in hues)
+    family = {i for i, (h, s, v) in enumerate(hsv)
+              if i not in strong and v > .12 and s >= DEAD_HAND_FAMILY_SATURATION and near(h * 360)}
+    return strong | family
 
 
 def make_dead_hand_finish(source, compmat_path, new_name, theme, report=None, inspection=None):
@@ -206,16 +228,24 @@ def make_dead_hand_finish(source, compmat_path, new_name, theme, report=None, in
             dead_hand_material=paint.value, dead_hand_shader=shader.value if shader else '',
             dead_hand_colours={name: [v.value for v in node.value] for name, node in sorted((colours or {}).items())})
     if shader is None or shader.value not in DEAD_HAND_SHADERS or colours is None: return None
-    names = DEAD_HAND_IDS + sorted(name for name in colours if name not in DEAD_HAND_IDS)
+    names = [n for n in DEAD_HAND_IDS if n in colours] + sorted(n for n in colours if n not in DEAD_HAND_IDS)
     current = [[item.value for item in colours[name].value] for name in names]
-    try:
-        new = recolor_accents(current, theme)
-    except ValueError:
-        return None
-    accents = [names[i] for i, c in enumerate(current) if _is_accent(c)]
+    if any(len(c) != 4 or any(not math.isfinite(v) or v < 0 or v > 1 for v in c) for c in current): return None
+    accents = dead_hand_accents(current)
+    themed = finishes.recolor(current, theme, keep_value=True)
+    new = []
+    for index, (original, target) in enumerate(zip(current, themed)):
+        color = list(original)
+        if index in accents:
+            _, saturation, value = colorsys.rgb_to_hsv(*original[:3])
+            hue, target_saturation, _ = colorsys.rgb_to_hsv(*target[:3])
+            color[:3] = colorsys.hsv_to_rgb(hue, min(saturation, target_saturation), value)
+        new.append(color)
+    accents = [names[i] for i in sorted(accents)]
     if report is not None:
         report[compmat_path] = {'original_colours': dict(zip(names, current)), 'accent_vectors': accents,
                                 'accent_channels': accents, 'policy': 'dead-hand-accent-only-v1',
+                                'family_rule': [DEAD_HAND_FAMILY_DEGREES, DEAD_HAND_FAMILY_SATURATION],
                                 'material': paint.value}
     if inspection is not None:
         inspection[compmat_path]['status'] = 'supported Dead Hand finish material'
@@ -240,8 +270,8 @@ def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels=
     guid, root = kv3.read_kv3(data)
     specific = finishes._specific_material(root)
     if inspection is not None:
-        inspection[compmat_path] = {'status':'unsupported composite layout',
-            'root_fields':[key for key,_ in root.value] if root.type == kv3.OBJECT else []}
+        inspection.setdefault(compmat_path, {}).update({'status':'unsupported composite layout',
+            'root_fields':[key for key,_ in root.value] if root.type == kv3.OBJECT else []})
         if '/volatile_02/' in compmat_path:
             inspection[compmat_path]['composite_document'] = diagnostic_node(root)
             inspection[compmat_path]['report_version'] = 2
@@ -339,6 +369,8 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
                     name = 'rg_%s_%s%s' % (base, theme.lower(), suffix)
                     # Retain known variants in the schema if disabled later, but stop offering them as drops.
                     if panels != 'original' and not panel_variants and name not in known_ids: continue
+                    no_panels = panels != 'original' and compmat in NO_PANEL_VARIANTS
+                    if no_panels and name not in known_ids: continue
                     try:
                         made = None
                         if '/volatile_02/' in compmat:
@@ -350,7 +382,8 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
                         dead_hand = palette_report.get(compmat, {}).get('policy') == 'dead-hand-accent-only-v1'
                         if made is None and not dead_hand:
                             made = make_glove_finish(source, compmat, name, theme, fade=base in GLOVE_FADES,
-                                                     panels=panels, report=palette_report, inspection=inspection)
+                                                     panels='original' if no_panels else panels,
+                                                     report=palette_report, inspection=inspection)
                     except (ValueError, NotImplementedError) as error:
                         if not values.get('composite_material_path'): raise
                         if inspection is not None:
@@ -366,7 +399,7 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
                     title = '%s %s' % (base_title, theme)
                     entries.append((kit_id(name), name, title,
                                     {'composite_material_path': COMPMAT_DIR + name + '.vcompmat'}))
-                    if has_accents and (panel_variants or panels == 'original'): case.append('[%s]%s' % (name, glove))
+                    if has_accents and not no_panels and (panel_variants or panels == 'original'): case.append('[%s]%s' % (name, glove))
     return files, entries, sorted(set(case)), {name: int(key) for name, key in gloves.items()}
 
 

@@ -1,3 +1,21 @@
+# Helper26f (Claude): Dead Hand muted shades, two missed Dead Hand gloves, camo hand-wrap panels
+
+From the user's cs2_gc_glove_palettes.json / cs2_gc_glove_materials.json (26e):
+- 20 of 22 Dead Hand finishes were recoloured. glove_driver_dragon_scale_red and
+  glove_driver_embroidered_flowers_teal use the same 'paint' + COPY_MATCHING_KEYS layout but were dropped:
+  dead_hand_colours required all eight g_vId*Color, and make_glove_finish's fallback then overwrote the
+  inspection entry (now merged with setdefault/update). Any recognised colour vector is enough now.
+- Plum Quill (glove_driver_ostrich_purple) stayed purple because its ostrich purples are muted (Id3 242/.30,
+  Id5 254/.32, Burnishing4 259/.32, bevel 271/.26). dead_hand_accents adds muted shades (sat>=.18, value>.12)
+  within 25 degrees of a clear accent hue; creams/tans/greys of other hues stay. Recolour per channel uses the
+  same recolor() targets as before, so previously-changed channels get identical values.
+- Big Swell's blue leather and the brocade panels are texture colour (white tints): not changeable.
+- handwrap_camo_grey: one accent (ch5), camo in seven near-grey green tints; White Panels erased it
+  (user: "definitely broken"). NO_PANEL_VARIANTS stops new panel variants for it; owned variant ids still get
+  definitions but render with the original-panel colours.
+- glove_driver_knit_argyle_green and glove_specialist_graffiti_black have no accents: no recolours (unchanged).
+Wear: normal random float/seed per item; bright clean ones are low-float rolls.
+
 # Build26e (Claude): grant-only Dead Hand Test Case; first Dead Hand screenshots
 
 New crate_cs2gc_dead_hand_test ("Dead Hand Test Case", base 4017, Gauntlet icon): exactly the Gauntlet entries

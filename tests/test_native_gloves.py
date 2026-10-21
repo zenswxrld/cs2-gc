@@ -239,6 +239,32 @@ class NativeGloves(unittest.TestCase):
             reels = json.loads((proxy / finishes.REEL_FILE).read_text())
             self.assertTrue(reels[gloves.TEST_CASE_NAME] and all(p[0] == 5031 for p in reels[gloves.TEST_CASE_NAME]))
 
+    def test_camo_hand_wraps_get_no_new_panel_variants_and_owned_ones_render_as_original(self):
+        schema = SCHEMA_GLOVES.replace('sporty_purple', 'handwrap_camo_grey')
+        files = glove_files()
+        files['gloves/paints/handwrap_camo_grey.vcompmat_c'] = files['gloves/paints/sporty_purple.vcompmat_c']
+        source = finishes.Source(folder=None); source.read = files.get; source.exists = lambda path: path in files
+        made, entries, case, _ = gloves.plan(schema, GOLD_GLOVES, {}, source, {}, [])
+        self.assertTrue(case and not any('_panels_' in item for item in case))
+        self.assertFalse(any('_panels_' in name for _, name, _, _ in entries))
+        original = sorted(name for _, name, _, _ in entries)[0]
+        owned = original + '_panels_white'
+        made, entries, case, _ = gloves.plan(schema, GOLD_GLOVES, {}, source, {owned: 39000}, [])
+        self.assertIn(('39000', owned), [(kit, name) for kit, name, _, _ in entries])  # still renders for its owner
+        self.assertNotIn('[%s]sporty_gloves' % owned, case)
+        def tints(name):
+            _, blocks = kv3.read_resource(made[gloves.VMAT_DIR + name + '.vmat_c'])
+            return {k: [round(x.value, 5) for x in v.value]
+                    for k, v in gloves._tints(kv3.read_kv3(dict(blocks)['DATA'])[1]).items()}
+        self.assertEqual(tints(owned), tints(original))  # same colours as the original panels
+
+    def test_dead_hand_muted_shades_of_an_accent_follow_it_but_cream_and_grey_stay(self):
+        # Plum Quill: strong purple accents, muted purples (~.3) on the ostrich, plus cream and white.
+        colours = [[.20, .08, .33, .7], [.16, .05, .38, 1], [.47, .41, .58, .5], [.43, .35, .52, .6],
+                   [1, 1, 1, 1], [.87, .80, .72, 0], [.5, .5, .5, 1]]
+        picked = gloves.dead_hand_accents(colours)
+        self.assertEqual(picked, {0, 1, 2, 3})
+
     def test_gauntlet_case_has_glove_recolours_and_the_unreleased_finishes(self):
         with tempfile.TemporaryDirectory() as folder:
             game = Path(folder) / 'game'

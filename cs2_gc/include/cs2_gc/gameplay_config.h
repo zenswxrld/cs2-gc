@@ -49,6 +49,7 @@ struct GameplayConfig
     std::uint32_t kill_xp{5}, headshot_xp{3}, mvp_xp{25}, match_complete_xp{600};
     std::uint32_t match_drops_enabled{1}, match_drop_count{3}, match_case_percent{50}, match_skin_min_rarity{3};
     std::uint32_t mixed_stattrak_tradeups{1};
+    std::uint32_t souvenir_tradeups{1};
     std::uint32_t pity_enabled{1}, pity_soft_at{10}, pity_hard_at{100};
     std::uint32_t case_gold_per_10000{26}, terminal_top_per_10000{64};
     std::uint32_t terminals_enabled{1}, terminal_default_offers{5}, terminal_lifetime_days{7};

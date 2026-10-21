@@ -65,6 +65,8 @@ const char *TradeUpErrorText(TradeUpError error)
     case TradeUpError::MixedStatTrak: return "mixed StatTrak and normal skins";
     case TradeUpError::NoCollection: return "skin has no collection in items_game.txt";
     case TradeUpError::NoOutcome: return "collection has no supported next-rarity outcome";
+    case TradeUpError::MixedSouvenir: return "Souvenir contracts require only Souvenir weapons without StatTrak";
+    case TradeUpError::SouvenirDisabled: return "local Souvenir contracts are disabled";
     }
     return "unknown error";
 }
@@ -92,11 +94,12 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
 
     std::uint32_t rarity = 0;
     std::uint32_t statTrakCount = 0;
+    std::uint32_t souvenirCount = 0;
     float totalWear = 0.0f;
     std::map<std::string, std::uint32_t> supplied; // collection -> how many of the ten it supplies
     for (const InventoryItem *item : inputs)
     {
-        if (item->paintKitIndex == 0 || item->souvenir)
+        if (item->paintKitIndex == 0)
             return fail(TradeUpError::NotASkin);
         const auto skinRarity = schema.SkinRarity(item->defIndex, item->paintKitIndex);
         if (!skinRarity)
@@ -106,6 +109,7 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
         else if (*skinRarity != rarity)
             return fail(TradeUpError::MixedRarity);
         statTrakCount += item->statTrak;
+        souvenirCount += item->souvenir;
         const auto collections = schema.CollectionsOf(item->defIndex, item->paintKitIndex);
         if (collections.empty())
             return fail(TradeUpError::NoCollection);
@@ -116,6 +120,12 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
         return fail(TradeUpError::WrongCount);
     if (rarity > Covert)
         return fail(TradeUpError::TopRarity);
+    if (souvenirCount)
+    {
+        if (!inventory.Gameplay().souvenir_tradeups) return fail(TradeUpError::SouvenirDisabled);
+        if (souvenirCount != itemIds.size() || statTrakCount) return fail(TradeUpError::MixedSouvenir);
+        if (rarity == Covert) return fail(TradeUpError::NoOutcome);
+    }
     // Exact input fraction, with no random draw at the 0% and 100% endpoints.
     if (!inventory.Gameplay().mixed_stattrak_tradeups && statTrakCount && statTrakCount != itemIds.size())
         return fail(TradeUpError::MixedStatTrak);
@@ -127,12 +137,13 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     {
         std::uint32_t weight;
         std::vector<SkinRef> skins;
+        std::string collection;
     };
     std::vector<Pool> pools;
     std::uint64_t totalWeight = 0;
     for (const auto &[collection, count] : supplied)
     {
-        Pool pool{count, {}};
+        Pool pool{count, {}, collection};
         if (rarity == Covert)
             pool.skins = schema.GoldOutcomes(collection, false);
         else
@@ -194,6 +205,19 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     item.statTrak = outputStatTrak;
     item.statTrakFromContract = outputStatTrak;
     item.unusual = rarity == Covert;
+    if (souvenirCount)
+    {
+        std::vector<const InventoryItem *> donors;
+        for (const auto *input : inputs)
+            if (schema.CollectionsOf(input->defIndex,input->paintKitIndex).front() == chosen->collection)
+                donors.push_back(input);
+        const auto *donor = donors[Below(random,donors.size())];
+        item.souvenir = true;
+        item.tournamentEvent = donor->tournamentEvent;
+        item.tournamentTeam0 = donor->tournamentTeam0;
+        item.tournamentTeam1 = donor->tournamentTeam1;
+        item.tournamentPlayer = donor->tournamentPlayer;
+    }
     item.seed = static_cast<std::uint32_t>(Below(random, 1000)) + 1;
     const float average = totalWear / static_cast<float>(itemIds.size());
     item.wear = outcome.paintKitIndex ? std::clamp(minted->wearMin + average * (minted->wearMax - minted->wearMin), 0.0f, 1.0f) : 0.0f;

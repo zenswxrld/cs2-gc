@@ -1,3 +1,3 @@
-# Current test build:24c
+# Current test build:25
 
-Related metallic tones for Gold Brick recolours; muted Bronzed and Lunar Weave accents; targeted Racing green/teal recolours and clean Racing names; neutral-only Gauntlet themes excluded from drops while preserving known owned definitions. Includes charcoal panels, clean variant display names and original custom-case Armory presentation with direct rewards. Same build24 DLL. See TEST-BUILD.md.
+Souvenir-only local contracts, native Souvenir output/provenance, normal collection/wear rules and safe refusal of unsupported mixes/outcomes. Config souvenir_tradeups=1. All26 suites pass; both Windows builds compile. Native UI test pending. See TEST-BUILD.md and FEATURES.md. Store claims still need latest failed-claim GC log.

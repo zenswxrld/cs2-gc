@@ -21,6 +21,8 @@ enum class TradeUpError
     MixedStatTrak,   // retained error value; mixed variants are now accepted locally
     NoCollection,    // a skin the schema places in no collection
     NoOutcome,       // none of the collections has a skin of the next rarity
+    MixedSouvenir,   // souvenir contracts require souvenir-only inputs, never StatTrak
+    SouvenirDisabled,
 };
 
 const char *TradeUpErrorText(TradeUpError error);
@@ -40,6 +42,8 @@ struct TradeUpResult
 // of StatTrak inputs; a gold StatTrak roll uses eligible knife pools (gloves cannot be StatTrak).
 // Collections are the schema's `item_sets`, so CS2 Armory collections
 // count as much as the older ones. Atomic: everything is checked and rolled before anything changes.
+// Local souvenir-only contracts retain Souvenir quality and a provenance donor from the winning
+// collection. Input stickers/charms do not transfer. Souvenir knives/gloves are never created.
 TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vector<std::uint64_t> &itemIds,
                       const RandomSource &random);
 

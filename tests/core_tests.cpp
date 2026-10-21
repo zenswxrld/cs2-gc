@@ -3918,16 +3918,19 @@ void SouvenirPackagesAndHandwraps()
     Check(shop.RotationAt(0,config).redeemIds != shop.RotationAt(900,config).redeemIds,
           "souvenir packages rotate independently");
     auto offer = shop.Redeem({11,Crc32("crate_test2025_promo_de_test"),15,5},live,[]{return 0ull;});
-    Check(offer.status == Armory::Status::Ok && offer.item.defIndex == 60 &&
-          offer.item.tournamentEvent == 25 && shop.Balance() == 10, "Armory grants a closed souvenir package for its cost");
-    const auto packageId = offer.item.id;
+    Check(offer.status == Armory::Status::Ok && offer.item.defIndex == 7 && offer.item.souvenir &&
+          offer.item.tournamentEvent == 25 && shop.Balance() == 10 && live.Items().Items().size() == 1,
+          "Armory grants exactly one souvenir weapon directly for its cost, without a package");
+    Check(offer.item.stickers.size() == 4 && offer.item.stickers.back().kit == 5 &&
+          live.Items().CasePity() == 44, "direct souvenir purchase keeps decals and does not affect case pity");
+    const auto packageId = live.AddItem({0,60}).id;
     const auto result = live.Open(*schema,CustomItemIdBase+packageId,0,[]{return 0ull;});
     Check(result && result->item.souvenir && !result->item.statTrak && !result->item.unusual &&
           result->item.paintKitIndex == 10 && result->item.wear >= .1f && result->item.wear <= .2f &&
           result->item.stickers.size() == 4 && result->item.stickers.back().kit == 5 &&
           result->item.tournamentTeam0 == 10 && result->item.tournamentTeam1 == 20 &&
           live.Items().CasePity() == 44 && !live.Items().Find(packageId),
-          "keyless souvenir open consumes once, preserves pity, and adds event/two-team/map gold stickers");
+          "previously owned souvenir packages still open keylessly with correct decals");
     const auto wire = DecodeItem(BuildEconItem(result->item,42,CustomItemIdBase+result->item.id,1));
     Check(wire.ok && wire.quality == QualityTournament && wire.floatBits.at(137)==25 && wire.floatBits.at(139)==10 &&
           wire.floatBits.at(140)==20 && !wire.floatBits.contains(AttributeKillEater),

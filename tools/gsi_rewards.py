@@ -31,6 +31,7 @@ from skip_key_select import prepare as prepare_key_select
 from native_endmatch_stock import prepare as prepare_stock_results
 from native_care_packages import prepare as prepare_care_packages
 from native_mainmenu import prepare as prepare_mainmenu
+from native_mission_launch import prepare as prepare_missions
 from native_knife_reel import prepare as prepare_knife_reel
 from native_resources import ensure_first_game_path
 from rewards_runtime import InstanceLock, ParentProcess, serve_until_parent_exits
@@ -292,7 +293,7 @@ def run_with_parent(args, parent):
             print('Native container confirmation setup skipped: ' + str(error), flush=True)
         for name, prepare in [('Native item sales', prepare_item_sales), ('Native match results', prepare_endmatch),
                               ('Native key picker skip', prepare_key_select),
-                              ('Native stock XP/rating panels', prepare_stock_results), ('Main-menu promotion', prepare_mainmenu), ('Care packages', prepare_care_packages),
+                              ('Native stock XP/rating panels', prepare_stock_results), ('Main-menu promotion', prepare_mainmenu), ('Care packages', prepare_care_packages), ('Bot mission launch', prepare_missions),
                               ('Native Black Market reel', prepare_knife_reel)]:
             try:
                 print(name + ': ' + prepare(args.proxy_dir, rewards.config), flush=True)

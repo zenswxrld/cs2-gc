@@ -17,6 +17,7 @@ from skip_key_select import prepare as key_select
 from native_endmatch_stock import prepare as stock_results
 from native_care_packages import prepare as care_packages
 from native_mainmenu import prepare as mainmenu
+from native_mission_launch import prepare as missions
 from native_knife_reel import prepare as knife_reel
 from native_resources import ensure_first_game_path
 from vpk_signatures import update as signatures
@@ -28,7 +29,7 @@ def prepare(directory):
     for name, action in [('Armory', armory), ('Scoreboard', scoreboard), ('Store', store),
                          ('Opening confirmation', confirmation), ('Item sales', sales),
                          ('Match results', results), ('Terminal offers', offers), ('Key picker', key_select),
-                         ('Stock XP/rating panels', stock_results), ('Main-menu promotion', mainmenu), ('Care packages', care_packages), ('Black Market reel', knife_reel)]:
+                         ('Stock XP/rating panels', stock_results), ('Main-menu promotion', mainmenu), ('Care packages', care_packages), ('Bot mission launch', missions), ('Black Market reel', knife_reel)]:
         print(name + ': ' + action(directory, config), flush=True)
     try: print('Bot names: ' + bot_names(directory, config, reshuffle=True), flush=True)
     except (OSError, ValueError, KeyError) as error: print('Bot names skipped (bots keep their normal names): ' + str(error), flush=True)

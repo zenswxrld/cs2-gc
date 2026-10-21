@@ -21,7 +21,7 @@ struct GameplayConfig
     std::uint32_t armory_agent_price{50};
     std::uint32_t reward_rare_case_per_10000{100}; // combined Black Market/Gauntlet chance within case offers
     std::uint32_t care_packages_enabled{1}; // four reserved offers, claim exactly three
-    std::uint32_t bot_hide_tag{1}, hide_mainmenu_promo{1};
+    std::uint32_t bot_hide_tag{1}, hide_mainmenu_promo{1}, offline_mission_launch{1};
     std::uint32_t armory_souvenir_slots{1}, armory_souvenir_price{5};
     std::uint32_t armory_terminal_slots{1};
     std::uint32_t armory_terminal_price{10}, armory_case_price{5};

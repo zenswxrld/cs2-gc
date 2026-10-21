@@ -1,3 +1,17 @@
+# Build 20: mission launching, direct souvenir purchases, limited prices and scoreboard names
+
+Based on main after PR #11. Build tag `codex-20261021-20`.
+
+- User confirmed hand-wrap sales and souvenir package opening in build 19. Requested direct souvenir weapon grants instead; `RollSouvenir` is shared by Armory and old package opening, preserving tournament attributes/decals and atomic credit deduction. Armory inspect shows weapon contents and filters highlight charms.
+- Limited prices: lists 01/02/03 = 25 stars, 04 (Aphrodite) = 125; preparation corrects stale generated catalogue rows. Howl/custom cases retain existing configurable prices.
+- Blank scoreboard bot names in build 19 were a UI label regression: stop creating a sibling label. Write escaped names into the existing native name label and restore its formatter if name data is missing or the row becomes human/demo/online. Killfeed untouched; user reports names already work there.
+- `native_mission_launch.py` replaces only PlayMission in the inspected mission_tile script. Uses actual GameTypesAPI config to derive type and mapgroup maps, creates `server: listen` practice settings, enables a valid bot difficulty and disables practice assists/infinite warmup. Preserves mission deathmatch/competitive flags. Unsupported data fails locally rather than falling through to official matchmaking. Installed through both prelaunch and rewards-helper preparation; `offline_mission_launch=1` defaults on.
+- Evidence: inspected client mission_tile and pinned SteamTracking/GameTracking-CS2 mainmenu_play.js at 5ab573fa8afb5b8db98869d79ed79399fca6e747 (listen-server settings and bot difficulty APIs). No invented engine offsets or console commands.
+- Launching does NOT implement mission progress/completion rewards or auto-equip a mission weapon. Those remain pending; ordinary match XP/stars still use the existing bridge.
+- Validation: 26 automated suites; JavaScript syntax against inspected sources; all 148 direct souvenir grants/save; Windows cross-builds. Mission UI launch/Armory preview/scoreboard names still need live-client testing.
+
+---
+
 # Current handoff: Codex build 19 (21 October 2026)
 
 Based on `92bc6da` (Claude's custom glove/Gauntlet implementation); changes live on `codex/souvenir-armory-and-glove-quality`. Current installation/checklist: TEST-BUILD.md. User confirmed custom glove colours, realistic bot names and stock XP/Premier end-match screens. User superseded the custom drops tab with native care packages: four offers, choose three after a match/back in menus; one additional package per profile level.

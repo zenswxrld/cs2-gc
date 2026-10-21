@@ -142,6 +142,12 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
             rolledCollection = name;
         }
     }
+    else if (goods->rotationSlot == "souvenir")
+    {
+        const auto definition = m_schema.ItemDefIndex(goods->itemName);
+        const auto *crate = definition ? m_schema.FindCrate(*definition) : nullptr;
+        if (crate) item = RollSouvenir(m_schema, *crate, random, odds);
+    }
     else if (goods->rotationSlot == "capsule")
     {
         // Capsules are opened on purchase: grant one sticker from the capsule's own loot list, as opening it would.

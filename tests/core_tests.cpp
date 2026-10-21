@@ -2997,6 +2997,53 @@ void TradeUps()
     Check(std::abs(traded.item.wear - (0.1f + 0.4f * 0.7f)) < 1e-5f && traded.item.seed >= 1 && traded.item.seed <= 1000,
           "the average wear is mapped into the new finish's range");
 
+    {
+        Inventory souvenirs;
+        std::vector<std::uint64_t> souvenirIds;
+        for (unsigned i=0;i<10;++i)
+        {
+            auto input=skin(i<6?10:11,.4f);
+            input.souvenir=true; input.tournamentEvent=i<6?25:24;
+            input.tournamentTeam0=10; input.tournamentTeam1=20; input.tournamentPlayer=123;
+            input.stickers.push_back({0,300});
+            souvenirIds.push_back(souvenirs.Add(input));
+        }
+        const auto before=souvenirs.ToText();
+        auto disabled=ParseGameplayConfig("souvenir_tradeups=0\n");
+        Check(disabled.has_value(),"souvenir trade-up option parses");
+        souvenirs.SetGameplay(*disabled);
+        Check(TradeUp(souvenirs,*schema,souvenirIds,[]{return 0ull;}).error==TradeUpError::SouvenirDisabled &&
+                  souvenirs.ToText()==before,"disabled souvenir contracts preserve every input");
+        souvenirs.SetGameplay(GameplayConfig{});
+        const auto output=TradeUp(souvenirs,*schema,souvenirIds,[]{return 0ull;});
+        Check(output.error==TradeUpError::None && output.item.souvenir && !output.item.statTrak &&
+                  !output.item.unusual && output.item.paintKitIndex==12 && output.item.rarity==4 &&
+                  output.item.tournamentEvent==25 && output.item.tournamentTeam0==10 &&
+                  output.item.tournamentTeam1==20 && output.item.tournamentPlayer==123 &&
+                  output.item.stickers.empty() && output.consumed.size()==10 && souvenirs.Items().size()==1,
+              "souvenir contract uses the winning collection and its provenance without copying applied stickers");
+        Check(std::abs(output.item.wear-(.1f+.4f*.7f))<1e-5f,"souvenir wear uses normal contract mapping");
+        const auto wire=DecodeItem(BuildEconItem(output.item,42,CustomItemIdBase+output.item.id,1));
+        Check(wire.ok && wire.quality==QualityTournament && wire.floatBits.at(137)==25 &&
+                  !wire.floatBits.contains(AttributeKillEater),"contract serializes native Souvenir quality");
+        const auto saved=Inventory::FromText(souvenirs.ToText());
+        Check(saved && saved->Items()[0].souvenir && saved->Items()[0].tournamentEvent==25,
+              "souvenir contract output persists");
+        for (const bool badTracked : {false,true})
+        {
+            Inventory mixed;std::vector<std::uint64_t> mixedIds;
+            for (unsigned i=0;i<10;++i)
+            {
+                auto input=skin(10,.1f);input.souvenir=badTracked || i!=9;
+                input.statTrak=badTracked && i==9;
+                mixedIds.push_back(mixed.Add(input));
+            }
+            const auto unchanged=mixed.ToText();
+            Check(TradeUp(mixed,*schema,mixedIds,[]{return 0ull;}).error==TradeUpError::MixedSouvenir &&
+                      mixed.ToText()==unchanged,"mixed quality or invalid Souvenir StatTrak refuses atomically");
+        }
+    }
+
     // StatTrak probability follows the fraction of tracked inputs.
     Inventory st;
     auto stIds = fill(st, 10, 10, 0.1f, true);
@@ -3994,8 +4041,8 @@ void SouvenirPackagesAndHandwraps()
     std::vector<std::uint64_t> inputs;
     for (unsigned i=0; i<10; ++i) inputs.push_back(restored->Add(result->item));
     const auto before=restored->Items().size();
-    Check(TradeUp(*restored,*schema,inputs,[]{return 0ull;}).error == TradeUpError::NotASkin &&
-          restored->Items().size()==before,"souvenir weapons cannot be consumed by trade-ups");
+    Check(TradeUp(*restored,*schema,inputs,[]{return 0ull;}).error == TradeUpError::NoOutcome &&
+          restored->Items().size()==before,"souvenir collection without a higher-tier outcome is not consumed");
     InventoryItem wraps; wraps.defIndex=5032; wraps.paintKitIndex=10; wraps.statTrak=true;
     wraps.statTrakFromContract=true; wraps.unusual=true; wraps.wear=.15f; wraps.seed=17;
     const auto wrapId=restored->Add(wraps);

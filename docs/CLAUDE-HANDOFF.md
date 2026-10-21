@@ -1,3 +1,17 @@
+# Build25: souvenir-only local contracts and feature notes
+
+Backend TradeUp no longer rejects every souvenir as NotASkin. Config souvenir_tradeups=1 in both parsers. All-souvenir same-rarity ten-input contracts use existing collection weighting/wear mapping and retain Souvenir quality plus one provenance donor selected only from the winning collection. Applied stickers/charms do not transfer, and no new gold decal set is minted. Mixed normal/Souvenir, invalid Souvenir StatTrak and disabled mode refuse atomically; Covert souvenirs never generate souvenir gold items. Unsupported higher-tier outcomes refuse without consuming inputs. Normal/mixed StatTrak behavior retained.
+
+Existing inspected recipe normal input quality already includes tournament (stock unique,tournament; shared unique,strange,tournament), so no new Panorama patch/command path was introduced. Native UI selection/submission still untested. Build tag25, both Windows debug/release cross-builds compile, all26 suites pass. Core tests include native econ quality/event attributes, provenance from weighted winning collection, wear, persistence, disabled/mixed refusal and no-outcome preservation.
+
+FEATURES.md records calculated pools using supplied material coverage: Black Market20 models/1005 finishes/4980 pairs; Gauntlet8 models/2084 finishes/2084 pairs (2080 recolours plus4 shipped unused). No wear/seed/StatTrak multiplication. Pool count reconstructed from current generator, actual runtime can omit unavailable material resources.
+
+User explicitly requested noting Butterfly The Fuschia Is Now Ash nearly-silver contrast issue as a feature task. It is pending, no knife colour algorithm change in25. Earlier Gold Brick green screenshot after24c demonstrates colour change but not all donor texture mapping/sheens validated. Many glove finishes user-approved; avoid blanket resets.
+
+Care-package claim timeout remains unresolved. Latest supplied logs are older, do not guess more transport changes without current cs2_gc_log.txt after a failed claim. No new reward claim code in25. Economy/pity/killfeed/mission rewards/Career and release packaging remain in FEATURES.md.
+
+---
+
 # Additional24c check: Lunar Weave
 
 User Lunar Weave Ash screenshot remains blue/teal. slick_black supplied palette has muted blue/teal channels2/4/5/6 below.35; finish-specific threshold.14 with hue160–250 targets exactly those four, leaving brown/red source colours. Ash caps saturation.10. Textures/wear/roughness unchanged. Fixture and supplied-palette checks pass; native appearance unverified.

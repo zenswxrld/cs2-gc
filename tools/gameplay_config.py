@@ -36,7 +36,7 @@ DEFAULTS = {
     'xp_enabled': 1, 'stars_enabled': 1, 'armory_xp_per_star': 400,
     'kill_xp': 5, 'headshot_xp': 3, 'mvp_xp': 25, 'match_complete_xp': 600,
     'match_drops_enabled': 1, 'match_drop_count': 3, 'match_case_percent': 50, 'match_skin_min_rarity': 3,
-    'mixed_stattrak_tradeups': 1, 'pity_enabled': 1, 'pity_soft_at': 10, 'pity_hard_at': 100,
+    'mixed_stattrak_tradeups': 1, 'souvenir_tradeups': 1, 'pity_enabled': 1, 'pity_soft_at': 10, 'pity_hard_at': 100,
     'case_gold_per_10000': 26, 'terminal_top_per_10000': 64,
     'terminals_enabled': 1, 'terminal_default_offers': 5, 'terminal_lifetime_days': 7,
     'terminal_helper_enabled': 1,

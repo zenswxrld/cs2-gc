@@ -3,7 +3,7 @@ DEFAULTS = {
     'end_match_screens': 1, 'end_match_duration': 20, 'match_end_delay': 45,
     'armory_collection_slots': 3,
     'armory_charm_slots': 2,
-    'free_case_keys': 1, 'skip_key_selection': 1, 'knife_finishes': 1, 'glove_finishes': 1, 'black_market_price': 100,
+    'free_case_keys': 1, 'skip_key_selection': 1, 'knife_finishes': 1, 'glove_finishes': 1, 'glove_panel_variants': 1, 'black_market_price': 100,
     'viewmodel_range_percent': 250, 'viewmodel_fov_min': 40, 'viewmodel_fov_max': 90,
     'armory_sticker_slots': 2,
     'armory_case_slots': 2,

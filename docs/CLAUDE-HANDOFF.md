@@ -1,3 +1,19 @@
+# Build23: accent-only glove recolours and neutral-panel variants
+
+User requested gloves first. Existing native_gloves.make_glove_finish called finishes.recolor on ALL eight g_vColorTint vectors; it coloured neutral/structural masks too, matching the flat Magenta screenshot. New recolor_accents classifies actual source palette values: chromatic channels (HSV saturation>=.35 and value>.12) receive theme hue with unchanged value/alpha and capped original saturation. Original variants preserve every other channel, including ambiguous muted colours. White/Black/Inverted Panels operate only on neutral/near-black channels, retaining the same accent colours. This is a conservative palette heuristic, not texture segmentation or a per-finish anatomical mask map. Actual client appearance remains unverified.
+
+Latest user screenshot approves Specialist Gloves Forest DDPAT Toxic as-is. APPROVED_PALETTES explicitly preserves the legacy eight-tint result only for specialist_forest_brown/Toxic original panels; regression compares every serialized vector. Do not apply the blanket accent policy to this approved finish. Its panel variants and other themes still use the new policy. Report lists preserved_legacy_themes per source.
+
+Existing rg_base_theme names/IDs remain. New _panels_white/_panels_black/_panels_inverted variants are in Gauntlet. Config glove_panel_variants=1 defaults on in both parsers;0 stops variant drops but retains known variants in the schema for owned items. Existing shipped unreleased finishes and unsupported newer composite gloves are unchanged. Finish preparation writes cs2_gc_glove_palettes.json (source tint vectors/accent-channel indices, no account data). The current original game VPK is read-only; only the shared owned finish pack is regenerated. Keep the saved finish-ID map.
+
+Tests exercise structural/alpha/value preservation, saturation caps, panel-only changes, neutral-only fail-safe, finite vectors, actual prepare/VPK output, stable IDs/repeated generation and variant-off known-schema retention. These tests use fixtures; no actual glove render is available here. If a finish remains wrong, use the client-generated palette report and exact item screenshot rather than guessing channel numbers.
+
+Care-package user screenshots after build22 show correct selectable tiles and three selected rewards, but claim still times out. Do NOT mark payout fixed. Await latest cs2_gc_log.txt from that attempt; no new protocol changes in build23. Never restore account-zero preview econ objects.
+
+User-confirmed: mission launch, scoreboard names (killfeed BOT prefix remains), direct souvenirs/stickers, key and handwrap sales, Aphrodite125 display. Next queued requests after gloves: rarity-appropriate charm resale (blue charm buy3/sell9 is wrong), wear-adjusted skin resale, all deterministic buy/sell-loop audit, collection/souvenir pity, requested local souvenir trade-ups (currently deliberately blocked), original official LTD prices (re-verify earlier blanket25 fallback). Then mission completion XP/stars, achievements/Career. Keep these separate from the glove change.
+
+---
+
 # Build 22: pending reward tiles, claim compatibility, decorated names, repeat launch and Howl250
 
 User’s build21 screenshots show all faux preview tiles marked claimed and claim timing out. Pinned primary itemtile_store.js SetClaimed sets `item-claimed` for every faux ID. Clear claimed/expired flags immediately after Init only for local pending choices; keep native stock state elsewhere. Native claim field2 is an optional client balance hint, not grant authority: accept zero/default through3, while generation/three unique exact descriptors remain required. Publish new PersonalStore before owned-item creates to ensure inventory callbacks see the acknowledgement. Added non-personal reject diagnostics. No fresh9219 wire capture yet, so the exact original timeout cause remains unconfirmed; request latest GC log if it persists.

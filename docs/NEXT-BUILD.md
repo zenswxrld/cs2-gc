@@ -1,3 +1,3 @@
-# Current test build:22
+# Current test build:23
 
-Pending rewards clear native faux-item claimed flags; balance-hint/ack handling updated; decorated bot names cleaned; repeat mission launch verifies fresh local settings; Howl250 with old config migration. Saved offers retained. Mission rewards/achievements/Career remain next. See TEST-BUILD.md.
+Glove accent-only palette recolours plus named White/Black/Inverted Panels variants. IDs retained; glove_panel_variants toggles new variant drops while retaining known definitions. See TEST-BUILD.md for installation/live checks. Care-package payout remains unresolved; latest failed-claim GC log needed.

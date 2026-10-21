@@ -35,10 +35,11 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
         if (row) {row.GetParent().style.marginTop = '36px'; row.GetParent().style.height = '94%';}
         $.Msg('cs2_gc Armory: single 4/3/4 page mounted');
     }
-    function _LocalCataloguePage(entries, active) {
+    function _LocalCataloguePage(entries, active, cycle) {
         const offers = entries.filter(e => active.indexOf(e.item_name) !== -1);
-        // The limited feature remains on the landing page while other offers page.
-        const featured = offers.filter(e => m_localRotation.categories[e.item_name] === 'limited').slice(0, 1);
+        // One limited item takes the big tile; with several active ones it rotates instead of always the first by name.
+        const limited = offers.filter(e => m_localRotation.categories[e.item_name] === 'limited');
+        const featured = limited.length ? [limited[(cycle || 0) % limited.length]] : [];
         const groups = {};
         offers.filter(e => featured.indexOf(e) === -1).forEach(e => {
             const row = e.ui_order || '3'; (groups[row] || (groups[row] = [])).push(e);
@@ -172,7 +173,7 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
             const start = ((cycle % entries.length) * count) % entries.length;
             for (let i = 0; i < count; ++i) active.push(entries[(start + i) % entries.length].item_name);
         }
-        const view = _LocalCataloguePage(entries, active);
+        const view = _LocalCataloguePage(entries, active, cycle);
         entries.forEach(entry => {
             const show = view.indexOf(entry.item_name) !== -1;
             const tile = m_elContentPanel.FindChildInLayoutFile(entry.item_name);

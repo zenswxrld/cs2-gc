@@ -370,5 +370,21 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
     return files, entries, sorted(set(case)), {name: int(key) for name, key in gloves.items()}
 
 
+TEST_CASE_NAME = 'crate_cs2gc_dead_hand_test'
+TEST_CASE_TITLE = 'Dead Hand Test Case'
+
+
+def dead_hand_test_items(case):
+    """Gauntlet entries that are Dead Hand recolours: every Dead Hand paint kit name starts with glove_, no
+    classic one does. For the grant-only test case (never in the Armory or Store)."""
+    return [item for item in case if item.startswith('[rg_glove_')]
+
+
+def test_case_spec(items):
+    return dict(name=TEST_CASE_NAME, title=TEST_CASE_TITLE, base=CASE_BASE, items=items,
+                description='Test case: only the Dead Hand glove recolours from the Gauntlet Case. '
+                            'Only given by grant_dead_hand_test_cases.cmd.')
+
+
 def case_spec(items):
     return dict(name=CASE_NAME, title=CASE_TITLE, description=CASE_DESCRIPTION, base=CASE_BASE, items=items)

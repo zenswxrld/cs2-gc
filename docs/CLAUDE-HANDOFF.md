@@ -1,3 +1,23 @@
+# Build26e (Claude): grant-only Dead Hand Test Case; first Dead Hand screenshots
+
+New crate_cs2gc_dead_hand_test ("Dead Hand Test Case", base 4017, Gauntlet icon): exactly the Gauntlet entries
+that are Dead Hand recolours (kit names rg_glove_*). Only from grant_dead_hand_test_cases.cmd
+(grant_custom_cases.py --dead-hand-test N); not in Armory/Store; RollMatchDrops skips it (core test fails
+without the skip). DLL tag claude-20261021-26e (same source as 26 plus that one line).
+
+User screenshots after 26c:
+- Driver Gloves | Brocade Crane Glacier: leather changed to blue-violet, tan palm and the red/gold brocade panel
+  unchanged (brocade colours are in its surface colour texture, as expected). Plausible, not yet judged by user.
+- Driver Gloves | Plum Quill Ash: still purple ostrich + brown, i.e. Ash did nothing visible. The purple is most
+  likely the ostrich surface colour texture with a white tint, so g_vId/tint vectors cannot grey it. Need the
+  user's cs2_gc_glove_materials.json / cs2_gc_glove_palettes.json for glove_driver_ostrich_purple before
+  deciding; do not guess (multiplying a purple texture cannot make grey).
+- Hand Wraps | Spruce DDPAT Midnight (classic, handwrap_camo_grey): user says "definitely broken" — wraps almost
+  white, camo gone, only the stripe purple. Almost certainly a White Panels variant (clean names hide which):
+  the camo is carried by neutral tints and the white panel mapping (.82+.10*sqrt(v)) flattens it. Needs the
+  palette report for handwrap_camo_grey; candidate fix is no panel variants for finishes whose pattern lives in
+  neutral channels, keeping owned ids. Not changed yet (avoid blanket changes to approved gloves).
+
 # Helper26d (Claude): test grants broke inventories with care packages — fixed
 
 User ran grant_gauntlet_cases.cmd (26c) and the GC started with an empty inventory. Cause: Inventory::FromText

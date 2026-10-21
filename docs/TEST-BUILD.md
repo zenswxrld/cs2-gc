@@ -1,3 +1,10 @@
+# Build26e (Claude) — Dead Hand Test Case
+
+New steam_api64.dll / cs2_gc_debug.exe (log line "test build: claude-20261021-26e"). Extract everything into
+game/bin/win64, start CS2 once, close it, then run grant_dead_hand_test_cases.cmd: 20 "Dead Hand Test Case"s that
+contain ONLY the new Dead Hand glove recolours. The test case is never sold or dropped. Send
+cs2_gc_glove_materials.json and cs2_gc_glove_palettes.json with any screenshots of wrong gloves.
+
 # Helper update26c (Claude) — Dead Hand recolours
 
 Same DLLtag26. Extract all files into game/bin/win64 and launch twice. The Gauntlet Case now also has recolours of

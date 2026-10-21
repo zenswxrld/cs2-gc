@@ -276,6 +276,7 @@ std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, c
     for (const auto &crate : schema.Crates())
         if (crate.kind == CrateKind::Case && crate.keyDefIndex && !schema.LootTiers(crate.lootListName).empty())
         {
+            if (crate.name == "crate_cs2gc_dead_hand_test") continue; // grant-only test case, never a drop
             if (crate.name == "crate_cs2gc_black_market" || crate.name == "crate_cs2gc_gauntlet") {
                 if ((crate.name == "crate_cs2gc_black_market" && config.knife_finishes) ||
                     (crate.name == "crate_cs2gc_gauntlet" && config.knife_finishes && config.glove_finishes))

@@ -182,6 +182,7 @@ class NativeGloves(unittest.TestCase):
         self.assertEqual(len(dead), gloves.THEMES_PER_GLOVE)  # every theme, original panels only
         self.assertTrue(all(item.endswith(']slick_gloves') for item in dead))
         self.assertNotIn('[glove_driver_fixture_red]slick_gloves', case)  # the original stays in its terminal
+        self.assertEqual(gloves.dead_hand_test_items(case), dead)  # grant-only test case: Dead Hand recolours only
         self.assertEqual(inspection[DEAD_HAND]['status'], 'supported Dead Hand finish material')
         self.assertEqual(report[DEAD_HAND]['accent_vectors'],
                          ['g_vId1Color', 'g_vId2Color', 'g_vId4Color', 'g_vId5Color', 'g_vId8Color', 'g_vSurfaceColorTint1'])
@@ -213,6 +214,31 @@ class NativeGloves(unittest.TestCase):
         self.assertEqual(new.get('m_textureParams').value[0].get('m_pValue').value, 'items/tintid.vtex')
         self.assertAlmostEqual(new.get('m_floatParams').value[0].get('m_flValue').value, .667, 5)
 
+    def test_dead_hand_test_case_is_generated_with_only_dead_hand_recolours(self):
+        schema = SCHEMA_GLOVES.replace('"5030" {', '"5031" { "name" "slick_gloves" "prefab" "hands_paintable" }\n\t\t"5030" {').replace(
+            '"1001" {', '"1399" { "name" "glove_driver_fixture_red" "description_tag" "#PaintKit_fixture_Tag" '
+                        '"composite_material_path" "%s" }\n\t\t"1001" {' % DEAD_HAND)
+        gold = GOLD_GLOVES.replace('"5030:10037" "1"', '"5030:10037" "1" "5031:1399" "1"')
+        files = glove_files(); files.update(dead_hand_files())
+        with tempfile.TemporaryDirectory() as folder:
+            game = Path(folder) / 'game'
+            proxy = game / 'bin/win64'; proxy.mkdir(parents=True)
+            info = game / 'csgo/gameinfo.gi'; info.parent.mkdir()
+            native_tradeups.atomic_write(info, GAMEINFO)
+            (proxy / 'gold_pools.txt').write_text(gold)
+            directory, archive = vpk_pack.build(sorted(files.items()))
+            (game / 'csgo/pak01_dir.vpk').write_bytes(directory)
+            (game / 'csgo/pak01_000.vpk').write_bytes(archive)
+            patched, _ = finishes.prepare(proxy, {'knife_finishes': 1}, schema)
+            sections = collect(parse(patched))
+            test = dict(sections['client_loot_lists'][gloves.TEST_CASE_NAME + '_ancient'])
+            gauntlet = dict(sections['client_loot_lists'][gloves.CASE_NAME + '_ancient'])
+            self.assertEqual(len(test), gloves.THEMES_PER_GLOVE)
+            self.assertTrue(set(test) < set(gauntlet))
+            self.assertTrue(all(k.startswith('[rg_glove_driver_fixture_red_') for k in test))
+            reels = json.loads((proxy / finishes.REEL_FILE).read_text())
+            self.assertTrue(reels[gloves.TEST_CASE_NAME] and all(p[0] == 5031 for p in reels[gloves.TEST_CASE_NAME]))
+
     def test_gauntlet_case_has_glove_recolours_and_the_unreleased_finishes(self):
         with tempfile.TemporaryDirectory() as folder:
             game = Path(folder) / 'game'
@@ -225,6 +251,7 @@ class NativeGloves(unittest.TestCase):
             (game / 'csgo/pak01_000.vpk').write_bytes(archive)
             patched, status = finishes.prepare(proxy, {'knife_finishes': 1}, SCHEMA_GLOVES)
             self.assertIn('Gauntlet Case', status)
+            self.assertNotIn(gloves.TEST_CASE_NAME, patched)  # no Dead Hand recolours, no test case
             sections = collect(parse(patched))
             case = [as_dict(v) for v in sections['items'].values() if as_dict(v).get('name') == gloves.CASE_NAME][0]
             self.assertEqual(case['item_name'], 'Gauntlet Case')

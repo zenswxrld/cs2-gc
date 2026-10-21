@@ -43,6 +43,17 @@ DUO_THEMES = {
     'Aurora': (148, 272, 0.70), 'Sunset': (18, 316, 0.78), 'Glacier': (190, 214, 0.55),
     'Toxic': (82, 272, 0.72), 'Inferno': (355, 40, 0.80), 'Midnight': (226, 316, 0.74),
 }
+# Four-colour gradients for fades and marbles: colour i of the finish takes hue i, so the fade keeps its sweep.
+GRADIENT_THEMES = {
+    'Ocean': ((190, 205, 175, 225), 0.75), 'Lava': ((0, 18, 35, 350), 0.85), 'Candy': ((330, 300, 190, 350), 0.65),
+    'Galaxy': ((270, 230, 300, 200), 0.75), 'Forest': ((95, 130, 60, 150), 0.65), 'Sunrise': ((45, 20, 340, 280), 0.75),
+    'Vapor': ((300, 190, 330, 170), 0.60), 'Frost': ((200, 190, 220, 180), 0.35), 'Royal': ((280, 45, 260, 50), 0.70),
+    'Toxin': ((100, 70, 280, 130), 0.80), 'Coral': ((10, 340, 190, 20), 0.70), 'Rainbow': ((0, 60, 180, 280), 0.80),
+}
+FADE_BASES = ('aa_fade', 'aa_fade_grassland', 'aa_fade_metallic', 'am_marble_fade', 'am_doppler_phase1', 'am_doppler_phase2',
+              'am_doppler_phase3', 'am_doppler_phase4', 'am_gamma_doppler_phase1', 'am_gamma_doppler_phase2',
+              'am_gamma_doppler_phase3', 'am_gamma_doppler_phase4', 'am_ruby_marbleized', 'am_sapphire_marbleized',
+              'am_emerald_marbleized', 'am_blackpearl_marbleized', 'an_tiger_orange')
 # Official knife finishes made of colours, named so the recolours of different phases stay distinct.
 KNIFE_BASES = {
     'am_blackpearl_marbleized': 'Pearl Marble', 'am_doppler_phase1': 'Doppler', 'am_doppler_phase2': 'Doppler Swirl',
@@ -82,7 +93,10 @@ def recolor(colors, theme):
     for rank, index in enumerate(order):
         r, g, b, a = colors[index]
         value = max(r, g, b)
-        if theme in DUO_THEMES:
+        if theme in GRADIENT_THEMES:
+            hues, saturation = GRADIENT_THEMES[theme]
+            hue = hues[index]
+        elif theme in DUO_THEMES:
             hue_a, hue_b, saturation = DUO_THEMES[theme]
             hue = hue_a if rank in (0, 3) else hue_b
         else:
@@ -317,6 +331,10 @@ def plan(source_text, gold_pools_text, titles, finish_source, known_ids=None):
         picks = themes[:]
         random.Random(base).shuffle(picks)
         for theme in picks[:EXTRA_THEMES]: add(base, theme, EXTRA_RECOLOUR_KNIVES)
+    # Added in 18a: gradient colours for the fades and marbles (ids are saved, so order no longer moves old ones).
+    for base in FADE_BASES:
+        if base in kits:
+            for theme in GRADIENT_THEMES: add(base, theme, RECOLOUR_KNIVES)
     # Added in 17t after the first set (so earlier ids never move): every colour for the finishes asked for by name.
     for base in [name for name in EXTRA_FINISHES if name in extras]:
         picks = themes[:]

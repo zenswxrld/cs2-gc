@@ -28,21 +28,28 @@ HELPER = """    // cs2_gc: the knife-only Black Market Case rolls real knives (s
     function _LocalKnifeReel(caseId) {
         if (InventoryAPI.GetItemDefinitionName(caseId) !== 'crate_cs2gc_black_market' || !m_localKnifeReel.length)
             return false;
-        $.GetContextPanel().Data().unusualItemImagePath = '';
+        // Like a real case, every reel tile is the gold Rare Special Item; the knife is revealed after the reel.
+        const image = InventoryAPI.GetLootListUnusualItemImage(caseId);
+        $.GetContextPanel().Data().unusualItemImagePath = (image || 'econ/weapon_cases/default_rare_item') + '.png';
+        $.GetContextPanel().Data().localKnifeReel = true;
         $.GetContextPanel().Data().aItemsInLootlist = m_localKnifeReel.map(pair =>
             ({ id: InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(pair[0], pair[1]), weight: 1 }));
         return true;
     }
 """
 FUNCTION = '    function _ShowUnlockAnimation() {'
+TILE = "        if ((InventoryAPI.GetItemQuality(itemId) === 3) && $.GetContextPanel().Data().unusualItemImagePath) {"
+TILE_INSERT = ("        if (($.GetContextPanel().Data().localKnifeReel || InventoryAPI.GetItemQuality(itemId) === 3) &&"
+               " $.GetContextPanel().Data().unusualItemImagePath) {")
 
 
 def patch(source, reel):
     if '_LocalKnifeReel' in source: raise ValueError('Script is already patched')
-    if source.count(ANCHOR) != 1 or source.count(FUNCTION) != 1 or '_SetUpCaseOpeningScroll()' not in source:
+    if (source.count(ANCHOR) != 1 or source.count(FUNCTION) != 1 or source.count(TILE) != 1
+            or '_SetUpCaseOpeningScroll()' not in source):
         raise ValueError('Installed popup_capability_decodable layout has changed; no patch was written')
     helper = HELPER.replace('__REEL__', json.dumps([[int(a), int(b)] for a, b in reel]))
-    return source.replace(ANCHOR, INSERT, 1).replace(FUNCTION, helper + FUNCTION, 1)
+    return source.replace(ANCHOR, INSERT, 1).replace(FUNCTION, helper + FUNCTION, 1).replace(TILE, TILE_INSERT, 1)
 
 
 def prepare(proxy_directory, config):

@@ -65,6 +65,8 @@ def catalogue(source, config):
         # Never cheaper than selling the knife it gives (that would be a free star loop).
         price = max(config.get('black_market_price', 100), config.get('sell_knife_glove', 72) + 1)
         add('crate_cs2gc_black_market', 'limited', price, {'flags': '2'})
+        if config.get('glove_finishes', 1) and 'crate_cs2gc_gauntlet' in items:
+            add('crate_cs2gc_gauntlet', 'limited', price, {'flags': '2'})  # the glove-only twin, same price
 
     def loot(name, slot, price):
         if name in lists:

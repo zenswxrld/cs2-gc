@@ -153,8 +153,9 @@ class NativeFinishes(unittest.TestCase):
             self.assertFalse(source.exists(finishes.ICON_DIR + 'weapon_knife_karambit_aa_fade_light_png.vtex_c'))
             self.assertLess((mod / 'pak01_000.vpk').stat().st_size, 400000)
             self.assertFalse(list(mod.glob('panorama/images/econ/default_generated/*')))  # never written loose
-            sample = json.loads((proxy / finishes.REEL_FILE).read_text())
+            sample = json.loads((proxy / finishes.REEL_FILE).read_text())[finishes.CASE_NAME]
             self.assertTrue(sample and all(pair[0] in (500, 507) for pair in sample))
+            self.assertNotIn('crate_cs2gc_gauntlet', patched)  # no gloves in this schema: no Gauntlet Case
             ids = json.loads((proxy / 'cs2_gc_finish_ids.json').read_text())
             self.assertEqual(str(ids['rk_aa_fade_crimson']), [k for k, v in sections['paint_kits'].items()
                                                               if as_dict(v)['name'] == 'rk_aa_fade_crimson'][0])

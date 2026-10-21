@@ -516,3 +516,21 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   that code (x 1/-2/2.5, y 1/-2/2, z -1/-2/2, fov 60/60/68) and only then widens: offsets x viewmodel_range_percent
   (default 250), fov viewmodel_fov_min..max (40..90). Any mismatch logs "left unchanged". cl_bob was requested but
   no cl_bob convar exists anywhere in this client.dll (removed in CS2), so nothing to restore. Not verified live.
+- 18e: gloves + Gauntlet Case (user: "separate glove case like offlinecs", "in the LTD rotation"). Classic glove
+  materials (csgo_customglove.vfx) carry eight tints g_vColorTint1..8 (checked on the user's slick_red,
+  sporty_purple, specialist_fade, sporty_blue_white_webbing vmats); the Dead Hand (volatile_02) gloves use the
+  glove_compositor template plus a preview material and have no tints, so they are not recoloured. New
+  tools/native_gloves.py (called from native_finishes.prepare, same VPK folder and items_game override):
+  8 shuffled themes per classic glove kit (+12 gradients on specialist_fade / specialist_marble_fade), kept on
+  the base kit's own glove type, brightness kept exactly (keep_value). Four shipped finishes with no paint kit
+  (gloves/paints/volatile_02/glove_driver_brocade_phoenix_red, _knit_argyle_red, _ostrich_leg_red,
+  glove_specialist_dragon_red - red colourways of Dead Hand gloves, NOT in the Dead Hand collection) get kits
+  ug_<name> pointing at the game's own vcompmat, titles ours. crate_cs2gc_gauntlet cloned from 4017 (Huntsman,
+  key 1307, as OfflineCS), OfflineCS crate_csgogc_gauntlet.png icon, same price as Black Market in the limited
+  slot. Reel file is now {case name: pairs}; the reel patch accepts the old list. GC: a glove from a case's own
+  loot list is unusual (Schema::IsGlove). glove_finishes = 0 removes it. Official glove finishes are not in it
+  (same rule as the knives). Not verified live.
+- Note for Codex (21 Oct): every "CS2 port checks" run on this branch (PR #9) fails in the windows-latest Build
+  step while ubuntu passes; main last passed at 6b19d25. The job log could not be downloaded from this session
+  (log storage host blocked), so the MSVC error is unknown - likely a /W4 /WX warning in cs2_gc_core (src/ only)
+  that GCC -Wall -Wextra does not report. Next queued for Claude: souvenir packages.

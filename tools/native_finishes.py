@@ -121,6 +121,23 @@ def kit_title(base, theme, titles):
     return KNIFE_BASES.get(base) or titles.get(base) or base
 
 
+def recolor_gold_brick(colors, theme):
+    """Keep the donor's related metallic tones together rather than splitting them by brightness rank.
+
+    Gold Brick's supplied palette is four shades of gold, not four separate accent colours.
+    The theme's primary hue replaces gold, retaining relative hue offsets, value and alpha.
+    """
+    hsv = [colorsys.rgb_to_hsv(*color[:3]) for color in colors]
+    anchor = max(range(len(colors)), key=lambda i: (hsv[i][2], hsv[i][1]))
+    hue, saturation = ((DUO_THEMES[theme][0],DUO_THEMES[theme][2]) if theme in DUO_THEMES else THEMES[theme][:2])
+    output = []
+    for color, (h,s,v) in zip(colors,hsv):
+        offset = (h-hsv[anchor][0]+.5)%1-.5
+        rgb = colorsys.hsv_to_rgb((hue/360+offset)%1,min(s,saturation),v)
+        output.append([*rgb,color[3]])
+    return output
+
+
 def _vector_params(root):
     params = root.get('m_vectorParams')
     if params is None or not isinstance(params.value, list): return None
@@ -232,11 +249,13 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None):
     if colors is None: return None
     current = [[item.value for item in colors['g_vColor%d' % i].value] for i in range(4)]
     if any(len(color) != 4 for color in current): return None
-    new_colors = recolor(current, theme, fade=kit in FADE_BASES)
+    new_colors = (recolor_gold_brick(current, theme) if kit == 'am_gold_brick' else
+                  recolor(current, theme, fade=kit in FADE_BASES))
     if report is not None:
         entry = report.setdefault(kit, {'source_compmat': kit_path, 'source_material': specific.value,
             'shader': m_root.get('m_shaderName').value if m_root.get('m_shaderName') else '',
-            'original_colors': current, 'themes': {}})
+            'original_colors': current, 'policy': 'related-metal-tones-v1' if kit == 'am_gold_brick' else 'ranked-theme-v1',
+            'themes': {}})
         entry['themes'][theme] = new_colors
     if max(brightness(c) for c in new_colors) < 110 / 255: return None  # dark patterns need a bright colour to show
     for i in range(4):

@@ -42,9 +42,21 @@ PALETTE_REPORT = 'cs2_gc_glove_palettes.json'
 # Panel variants still use accent-only recolouring; approval does not extend to other themes.
 APPROVED_PALETTES = {('gloves/paints/specialist_forest_brown.vcompmat', 'Toxic'),
                      ('gloves/paints/specialist_webs_red.vcompmat', 'Aurora')}
+# The supplied Bronzed palette has two identical muted bronze tints; its other six tints are neutral.
+ACCENT_THRESHOLDS = {'gloves/paints/bloodhound_metallic.vcompmat': .20,
+                     'gloves/paints/slick_stitched_green_grey.vcompmat': .20,
+                     'gloves/paints/slick_black.vcompmat': .14}
+ACCENT_HUE_RANGES = {'gloves/paints/slick_stitched_green_grey.vcompmat': (75,180),
+                    'gloves/paints/slick_black.vcompmat': (160,250)}
+GLOVE_TITLES = {'slick_stitched_green_grey': 'Racing'}
 
 
-def recolor_accents(colors, theme, fade=False, panels='original'):
+def _is_accent(color, threshold=.35, hue_range=None):
+    hue,saturation,value = colorsys.rgb_to_hsv(*color[:3])
+    return value > .12 and saturation >= threshold and (hue_range is None or hue_range[0] <= hue*360 <= hue_range[1])
+
+
+def recolor_accents(colors, theme, fade=False, panels='original', accent_saturation=.35, accent_hue_range=None):
     """Recolour chromatic accents; preserve structural tones and alpha unless a panel variant is requested.
 
     Read the actual material palette. No channel number is assumed to mean a palm, seam or panel.
@@ -58,7 +70,7 @@ def recolor_accents(colors, theme, fade=False, panels='original'):
     for original, target in zip(colors, themed):
         _, saturation, value = colorsys.rgb_to_hsv(*original[:3])
         color = list(original)
-        if value > .12 and saturation >= .35:
+        if _is_accent(original,accent_saturation,accent_hue_range):
             hue, target_saturation, _ = colorsys.rgb_to_hsv(*target[:3])
             color[:3] = colorsys.hsv_to_rgb(hue, min(saturation, target_saturation), value)
         elif panels != 'original' and (saturation <= .2 or value <= .12):
@@ -122,19 +134,23 @@ def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels=
     current = [[item.value for item in tints[name].value] for name in TINTS]
     if any(len(color) != 4 for color in current): return None
     approved = panels == 'original' and (compmat_path, theme) in APPROVED_PALETTES
+    threshold = ACCENT_THRESHOLDS.get(compmat_path,.35)
+    hue_range = ACCENT_HUE_RANGES.get(compmat_path)
     try:
         new = (finishes.recolor(current, theme, fade=fade, keep_value=True) if approved else
-               recolor_accents(current, theme, fade=fade, panels=panels))
+               recolor_accents(current, theme, fade=fade, panels=panels,accent_saturation=threshold,accent_hue_range=hue_range))
     except ValueError: return None
     if report is not None:
         report[compmat_path] = {
             'original_tints': current,
             'accent_channels': [i+1 for i,c in enumerate(current)
-                if max(c[:3]) > .12 and colorsys.rgb_to_hsv(*c[:3])[1] >= .35],
+                if _is_accent(c,threshold,hue_range)],
+            'accent_saturation_threshold': threshold,
+            'accent_hue_range_degrees': hue_range,
             'policy': 'accent-only-v1',
             'preserved_legacy_themes': sorted(t for path,t in APPROVED_PALETTES if path == compmat_path),
         }
-    if panels != 'original' and new == recolor_accents(current, theme, fade=fade): return None
+    if panels != 'original' and new == recolor_accents(current, theme, fade=fade,accent_saturation=threshold,accent_hue_range=hue_range): return None
     for name, color in zip(TINTS, new):
         for item, value in zip(tints[name].value, color): item.value = value
     vmat_path = VMAT_DIR + new_name + '.vmat'
@@ -151,6 +167,7 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
     known_ids: saved {kit name: id}; used_ids: ids already given out this run (knife recolours)."""
     gloves, official, kits = glove_info(source_text, gold_pools_text)
     files, entries, case = {}, [], []
+    palette_report = report if report is not None else {}
     next_id = max([finishes.FIRST_KIT_ID - 1] + [int(v) for v in known_ids.values()] + [int(v) for v in used_ids]) + 1
 
     def kit_id(name):
@@ -174,7 +191,7 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
             picks = themes[:]
             random.Random(base).shuffle(picks)
             picks = picks[:THEMES_PER_GLOVE] + (list(finishes.GRADIENT_THEMES) if base in GLOVE_FADES else [])
-            base_title = titles.get(base) or base.split('_', 1)[-1].replace('_', ' ').title()
+            base_title = GLOVE_TITLES.get(base) or titles.get(base) or base.split('_', 1)[-1].replace('_', ' ').title()
             for theme in picks:
                 for panels, panel_title in PANEL_STYLES.items():
                     suffix = '' if panels == 'original' else '_panels_' + panels
@@ -182,14 +199,18 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
                     # Retain known variants in the schema if disabled later, but stop offering them as drops.
                     if panels != 'original' and not panel_variants and name not in known_ids: continue
                     made = make_glove_finish(source, compmat, name, theme, fade=base in GLOVE_FADES,
-                                             panels=panels, report=report)
+                                             panels=panels, report=palette_report)
                     if not made: continue
+                    has_accents = bool(palette_report[compmat]['accent_channels'])
+                    # Do not sell differently named themes that cannot colour this source palette.
+                    # Keep every known definition/material so already-owned items still render.
+                    if not has_accents and name not in known_ids: continue
                     files[COMPMAT_DIR + name + '.vcompmat_c'], files[VMAT_DIR + name + '.vmat_c'] = made
                     # Panel style remains in the stable kit identity, not the player-facing name.
                     title = '%s %s' % (base_title, theme)
                     entries.append((kit_id(name), name, title,
                                     {'composite_material_path': COMPMAT_DIR + name + '.vcompmat'}))
-                    if panel_variants or panels == 'original': case.append('[%s]%s' % (name, glove))
+                    if has_accents and (panel_variants or panels == 'original'): case.append('[%s]%s' % (name, glove))
     return files, entries, sorted(set(case)), {name: int(key) for name, key in gloves.items()}
 
 

@@ -46,6 +46,56 @@ def glove_files():
 
 
 class NativeGloves(unittest.TestCase):
+    def test_lunar_weave_muted_blues_become_ash_while_brown_stays(self):
+        colors=[[.23,.18,.18,0],[.28,.35,.39,0],[.33,.30,.29,0],[.28,.30,.35,0],
+                [.26,.33,.31,0],[.245,.27,.29,0],[.64,.56,.41,0],[.42,.29,.20,0]]
+        path='gloves/paints/slick_black.vcompmat'
+        result=gloves.recolor_accents(colors,'Ash',accent_saturation=gloves.ACCENT_THRESHOLDS[path],
+                                      accent_hue_range=gloves.ACCENT_HUE_RANGES[path])
+        self.assertEqual([i+1 for i,(a,b) in enumerate(zip(colors,result)) if a!=b],[2,4,5,6])
+        for index in (1,3,4,5):
+            self.assertLessEqual(colorsys.rgb_to_hsv(*result[index][:3])[1],.100001)
+            self.assertEqual(max(colors[index][:3]),max(result[index][:3]))
+
+    def test_racing_targets_muted_green_and_teal_rather_than_brown_accents(self):
+        colors=[[.18,.22,.15,0],[.29,.27,.25,0],[.49,.45,.35,0],
+                [.26,.33,.31,0],[.64,.56,.41,0],[.42,.29,.2,0]]
+        result=gloves.recolor_accents(colors,'Cobalt',accent_saturation=.2,accent_hue_range=(75,180))
+        self.assertEqual([i for i,(a,b) in enumerate(zip(colors,result)) if a!=b],[0,3])
+        for index in (0,3):
+            self.assertAlmostEqual(max(colors[index][:3]),max(result[index][:3]))
+            self.assertTrue(210 < colorsys.rgb_to_hsv(*result[index][:3])[0]*360 < 245)
+
+    def test_bronzed_muted_accents_are_recoloured_without_tinting_neutrals(self):
+        colors=[[.66,.59,.50,0],[.81,.81,.84,0],[.53,.54,.56,0]]
+        self.assertEqual(gloves.recolor_accents(colors,'Lime'),colors)
+        result=gloves.recolor_accents(colors,'Lime',accent_saturation=.20)
+        self.assertNotEqual(result[0],colors[0])
+        self.assertEqual(result[1:],colors[1:])
+        self.assertAlmostEqual(max(result[0][:3]),max(colors[0][:3]))
+        self.assertAlmostEqual(colorsys.rgb_to_hsv(*result[0][:3])[1],colorsys.rgb_to_hsv(*colors[0][:3])[1])
+
+    def test_no_accent_themes_leave_pool_but_keep_owned_variant_definitions(self):
+        schema=SCHEMA_GLOVES.replace('sporty_purple','sporty_jaguar')
+        files=glove_files()
+        files['gloves/paints/sporty_jaguar.vcompmat_c']=files['gloves/paints/sporty_purple.vcompmat_c']
+        source=finishes.Source(folder=None);source.read=files.get;source.exists=lambda path:path in files
+        _,entries,case,_=gloves.plan(schema,GOLD_GLOVES,{},source,{},[])
+        known={name:int(kit) for kit,name,_,_ in entries}
+        self.assertTrue(any('[rg_sporty_jaguar_' in item for item in case))
+        material_path='gloves/paints/sporty_purple.vmat_c'
+        _,blocks=kv3.read_resource(files[material_path]);guid,root=kv3.read_kv3(dict(blocks)['DATA'])
+        for vector in gloves._tints(root).values():
+            for channel in vector.value[:3]:channel.value=.4
+        files[material_path]=kv3.write_resource(0,[['DATA',kv3.write_kv3(guid,root)]])
+        report={}
+        _,retained,no_drops,_=gloves.plan(schema,GOLD_GLOVES,{},source,known,[],report=report)
+        self.assertFalse(any('[rg_sporty_jaguar_' in item for item in no_drops))
+        self.assertEqual({name:int(kit) for kit,name,_,_ in retained},known)
+        self.assertEqual(report['gloves/paints/sporty_jaguar.vcompmat']['accent_channels'],[])
+        _,new,_,_=gloves.plan(schema,GOLD_GLOVES,{},source,{},[])
+        self.assertFalse(any(name.startswith('rg_sporty_jaguar_') for _,name,_,_ in new))
+
     def test_gauntlet_case_has_glove_recolours_and_the_unreleased_finishes(self):
         with tempfile.TemporaryDirectory() as folder:
             game = Path(folder) / 'game'

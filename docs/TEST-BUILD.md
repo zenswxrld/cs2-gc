@@ -1,51 +1,35 @@
-# CS2-GC test build 24b — charcoal panels and cleaner names
+# CS2-GC test build24c — related knife tones and glove pool corrections
 
-Material/helper update24b; DLL build tag: `codex-20261021-24`. Includes build22 fixes. Client build25966348.
+Helper/material update24c; DLL tag remains `codex-20261021-24`. Client build25966348.
 
 ## Install
 
-1. Fully close CS2 and its helper. Back up your inventory, config and **cs2_gc_finish_ids.json**; keep the finish-ID file in place.
-2. Extract **all** ZIP contents into `game/bin/win64`, preserving steam_api64_real.dll, schema/replays, inventory and finish IDs. Only an example config is included; your active config is not replaced.
-3. Run the updated **cs2_gc_debug.exe**. Python3 remains required. The launcher rebuilds the finish VPK before the game starts; existing custom gloves keep their paint-kit IDs and receive the revised materials.
-4. Confirm preparation completes in cs2_gc_prepare.log and the proxy logs the build tag above. Do not replace native packs while CS2 is running.
+Close CS2 and its helper. Back up your inventory, active config and **cs2_gc_finish_ids.json**, keeping them in place. Extract **all** ZIP files into `game/bin/win64` and run the updated **cs2_gc_debug.exe**. Python3 remains required. Launcher preparation regenerates the owned finish VPK; do not replace packs while the game is running. Only an example config is shipped.
 
-## Changed in this build
+## Changes
 
-- Black Panels now use a lighter charcoal tint range (.12–.20 rather than .025–.10), retaining source tonal ordering. The dark end of Inverted Panels is raised to.12. Textures, masks, wear, roughness and reflections are unchanged. Exact perceived darkness needs in-game checking.
-- All panel variants use clean base+theme display names: White/Black/Inverted Panels suffixes are removed. Internal variant names and saved IDs remain distinct and unchanged. Different colour variants may share a displayed name.
-- Preparation writes **cs2_gc_knife_palettes.json** with actual source material paths, shaders, original colours and themed colours. Gold Brick Toxic has NOT been declared fixed: the Toxic recolour replaces gold with purple/green and may distribute them poorly over a particular knife. Send this report for the next finish-specific check. No knife colour algorithm change in24b.
+- Gold Brick recolours now keep the donor's related metallic palette together. Toxic uses related lime/olive tones rather than splitting neighbouring gold shades into purple and green. Source relative hue offsets, maximum RGB values and alpha stay intact; original textures, roughness, reflection and wear properties are untouched. This changes the existing recolour material under its same saved paint-kit ID. Native appearance still needs testing; the report alone does not prove texture mapping on a knife.
+- Bronzed gloves recognise their two muted bronze tint channels (1 and6) as accents. Other six neutral channels remain structural. Lime should now affect the bronze regions rather than leaving them unchanged. Saturation is capped at the original to preserve the muted metal look.
+- Racing variants now target the muted green/teal source colours and preserve brown accents on original-panel versions. Names use “Racing Sunset”, “Racing Cobalt”, etc., dropping the misleading original “Green”. Supplied palette check changes channels1/5 rather than the previous7/8. Other panel styles retain their explicit neutral-panel material changes.
+- Lunar Weave variants target muted blue/teal source colours; Ash now desaturates those areas while preserving brown leather on original-panel versions. Supplied palette check targets channels2/4/5/6.
+- Neutral-only recolours (including the supplied Nocts palette) stop entering Gauntlet drops. They previously advertised different colours while looking unchanged. All known saved definitions/materials are retained so owned items continue to render; no inventory reset.
+- Includes24b: softer charcoal Black Panels, raised darkest inverted tones, and clean base+theme display names for all variants. Internal names/IDs remain separate; different colour variants can share a display name.
+- Includes24a: original case display/layout for Gauntlet and Black Market Armory pages, but purchases grant a finished glove/knife directly with one charge and no case/key. Existing inventory cases still open normally.
+- Existing Forest DDPAT Toxic and Crimson Web Aurora approved legacy palettes remain. Individual finishes still require refinement; no claim every glove/knife is correct.
 
-- Armory Black Market and Gauntlet purchases immediately roll one knife or glove from the full corresponding custom pool, charge the displayed price once, and grant the finished item with its owner certificate. No case or key is minted. Existing inventory cases and rare case drops still open normally.
-- Their native Armory pages retain the previous case model/layout and case names. Buying still grants the finished glove/knife immediately; the key warning stays hidden. The oversized finish gallery from build24 is removed. Native page rendering still needs testing.
+## Test
 
-- Ordinary glove recolours now target chromatic accent tints instead of tinting every channel. Near-black, grey, white and ambiguous muted channels keep their original colours. Accent brightness/alpha are preserved and saturation is never increased beyond the original.
-- Separate **White Panels**, **Black Panels** and **Inverted Panels** variants recolour the structural neutral tints while keeping the same coloured accents. Small tonal differences are retained. These are named variants in the Gauntlet pool, not a skin-editing menu.
-- **Forest DDPAT Toxic** keeps its exact previous two-tone palette, as approved in your screenshot. Crimson Web Aurora also keeps its current baseline while its requested green web awaits verified material-mask mapping. Existing names/IDs stay unchanged; panel variants use the new accent policy. Other finishes still need individual live checks.
-- Existing `rg_` recolour names and saved paint-kit IDs are retained. Wear, seed and inventory ownership are not changed. The four shipped unreleased glove finishes are unchanged.
-- `glove_panel_variants=1` defaults on. Set0 to stop those variants dropping; previously generated known variants remain in the schema so owned items can still render. `glove_finishes=0` retains the existing full glove-feature disable; knife_finishes must remain enabled for the shared generated finish pack.
-- Preparation writes **cs2_gc_glove_palettes.json** containing original tint vectors and detected accent channels for diagnosis. A neutral-only palette keeps its original hue rather than guessing a tint channel and painting the whole glove.
+1. Reinspect Gold Brick Toxic after preparation, including in a bot match: related lime/olive tones should replace the previously mostly-purple result. Compare wear, seed and material sheen.
+2. Inspect Racing Sunset/Cobalt: green/teal areas should change while brown details stay on original-panel versions. Compare Lunar Weave Ash, Bronzed Lime and charcoal panel variants in inspect and in-game. Check texture/stitching detail remains visible.
+3. Confirm old Nocts variants still render but do not appear in new Gauntlet rolls. Restart and verify saved items/loadout.
+4. Confirm all panel suffixes are gone, with inventory IDs/wear/seed intact.
+5. Buy Gauntlet/Black Market from Armory: original case page, one finished reward, one star deduction, no new case/key. Old inventory cases should still open.
+6. For a remaining issue, send exact finish name, screenshot and the updated **cs2_gc_knife_palettes.json** or **cs2_gc_glove_palettes.json**. Keep inventory and finish-ID map.
 
-This is material-palette classification, not texture segmentation. It preserves shipped textures, masks, stitching, material properties and wear definitions, but an individual tint mask can cover more than one visible region. Newer composite-material gloves remain outside the recolour generator. Exact in-game results are not yet verified.
+## Validation and remaining work
 
-## Test first
+All26 automated suites pass. Fixture tests verify related knife tones, material DATA preservation apart from name/colour edits, muted accents, no-op drop exclusion with saved definition retention, repeat preparation and stable IDs. Changes are Python/material-only; Windows binaries are the previously compiled build24 debug binaries. Actual24c rendering needs user testing.
 
-1. Compare the same Black Panels gloves after launcher preparation: look for clearer seams and surface detail in inspect and a bot match. Check unchanged wear/seed. Confirm all panel variants have cleaner display names.
-2. Buy Black Market and Gauntlet from the Armory: exactly one knife/glove, one star deduction, no case/key. Inspect/equip/restart. Confirm old cases still open.
-3. Confirm Forest DDPAT Toxic still looks the same. Inspect your existing Superconductor Magenta: dark/neutral sections should remain structural, with the coloured accents changed. Equip it in a bot match and check both palms and backs at your existing wear.
-4. Open Gauntlet cases and inspect White/Black/Inverted Panels variants. Compare the same accent theme across panel variants. Test hand wraps, driver, specialist and other glove types too.
-5. Restart and confirm IDs, finishes, wear, seeds and loadout persist. Keep cs2_gc_finish_ids.json.
-6. If a glove still looks flat, unchanged or changes the wrong region, send its exact name, screenshot and cs2_gc_glove_palettes.json. Do not reset the inventory or finish IDs.
+Care-package claiming still times out in the latest user test; latest failed-claim cs2_gc_log.txt is needed. Do not restore unowned econ preview objects implicated in the earlier crash. Stock XP/Premier end-match screens stay; custom Drops tab stays disabled.
 
-## Current status
-
-User-confirmed: hand-wrap/key selling, direct souvenir grants/stickers, Aphrodite125 display, mission launch and scoreboard names. Howl costs250 from build22, including normalization of older lower config values.
-
-**Care-package claiming still times out in the latest user test.** The claimed-banner/selection visuals are repaired, but payout is not confirmed. Existing pending offers remain saved. Keep native catalogue previews; do not restore unowned econ previews, which were implicated in the build19 crash. The current cs2_gc_log.txt from a failed claim is required to trace transport/rejection. Stock XP/Premier end-match screens remain in place; the custom Drops tab stays disabled.
-
-## Next work requested
-
-After glove validation: kill-feed BOT prefix; charm resale by rarity (blue charms must not guarantee profit); weapon resale by wear; audit every fixed buy/sell loop and official LTD prices against original values; check existing collection pity and add souvenir pity; review requested local souvenir trade-ups (currently deliberately excluded). Mission completion XP/stars, achievements and Career remain pending. No claim that these are implemented in build23.
-
-## Validation
-
-All26 automated suites pass, and Windows debug/release cross-builds compile. Glove tests cover accent/neutral preservation, panel variants, original alpha/value, stable IDs, variant-off rendering retention, repeat preparation and VPK generation. Live appearance still needs your test.
+Queued: charm rarity/wear resale and full price-loop/LTD audit; collection/souvenir pity; local souvenir trade-ups; killfeed BOT prefix; mission completion XP/stars, achievements and Career. These are not implemented by24c.

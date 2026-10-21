@@ -66,20 +66,22 @@ class ArmoryRotation(unittest.TestCase):
         self.assertNotIn('lootlist:removed_items', catalog.catalogue(SCHEMA, disabled))
 
     @unittest.skipUnless(shutil.which('node'), 'Node required for native preview fixture')
-    def test_custom_cases_preview_direct_rewards_without_changing_ordinary_cases(self):
+    def test_direct_custom_rewards_keep_case_presentation(self):
         script = """const assert=require('assert');
 const m_localRotation={categories:{crate_cs2gc_gauntlet:'limited',crate_cs2gc_black_market:'limited',ordinary:'case'},
- custom_rewards:{crate_cs2gc_gauntlet:[[5030,12000]],crate_cs2gc_black_market:[[500,12001],[500,12002]]}};
+ custom_rewards:{}};
 const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:(d,p)=>d+':'+p,GetItemName:id=>id};
 const m_tileWidth=200,m_tileHeight=180;
 function _OpenFullScreenInspectItem() {}
 const aShopItemsData=['crate_cs2gc_gauntlet','crate_cs2gc_black_market','ordinary'].map(item_name=>({item_name,entry_type:'crate',lootlist:['case'],suffix_loc_string:'_crate'}));
 """ + rotate_armory.PREPARE + """
-assert.equal(aShopItemsData[0].entry_type,'lootlist');
-assert.deepEqual(aShopItemsData[0].lootlist,['5030:12000']);
-assert.deepEqual(aShopItemsData[1].lootlist,['500:12001','500:12002']);
-assert.equal(aShopItemsData[1].lootlist_item_type,'weapon');
-assert.equal(aShopItemsData[0].suffix_loc_string,undefined);
+assert.equal(aShopItemsData[0].entry_type,'crate');
+assert.deepEqual(aShopItemsData[0].lootlist,['case']);
+assert.deepEqual(aShopItemsData[1].lootlist,['case']);
+assert.equal(aShopItemsData[1].entry_type,'crate');
+assert.equal(aShopItemsData[0].suffix_loc_string,'_crate');
+assert.equal(aShopItemsData[0].callout,'case');
+assert.equal(aShopItemsData[1].callout,'case');
 assert.equal(aShopItemsData[0].local_direct_case,true);
 assert.equal(aShopItemsData[2].entry_type,'crate');
 assert.equal(aShopItemsData[2].local_direct_case,false);

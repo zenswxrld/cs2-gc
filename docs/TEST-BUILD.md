@@ -1,6 +1,6 @@
-# CS2-GC test build 24 — glove accents and panel variants
+# CS2-GC test build 24a — glove accents and panel variants
 
-Build tag: `codex-20261021-24`. Includes build22 fixes. Client build25966348.
+UI hotfix24a; DLL build tag: `codex-20261021-24`. Includes build22 fixes. Client build25966348.
 
 ## Install
 
@@ -12,7 +12,7 @@ Build tag: `codex-20261021-24`. Includes build22 fixes. Client build25966348.
 ## Changed in this build
 
 - Armory Black Market and Gauntlet purchases immediately roll one knife or glove from the full corresponding custom pool, charge the displayed price once, and grant the finished item with its owner certificate. No case or key is minted. Existing inventory cases and rare case drops still open normally.
-- Their native Armory pages preview up to64 sampled finishes and hide the key warning; the purchase can roll any finish in the full pool. Native page rendering still needs testing.
+- Their native Armory pages retain the previous case model/layout and case names. Buying still grants the finished glove/knife immediately; the key warning stays hidden. The oversized finish gallery from build24 is removed. Native page rendering still needs testing.
 
 - Ordinary glove recolours now target chromatic accent tints instead of tinting every channel. Near-black, grey, white and ambiguous muted channels keep their original colours. Accent brightness/alpha are preserved and saturation is never increased beyond the original.
 - Separate **White Panels**, **Black Panels** and **Inverted Panels** variants recolour the structural neutral tints while keeping the same coloured accents. Small tonal differences are retained. These are named variants in the Gauntlet pool, not a skin-editing menu.

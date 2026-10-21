@@ -1,3 +1,9 @@
+# UI hotfix24a: restore case display, keep direct rewards
+
+User explicitly rejected the finish gallery. Removed custom_rewards preview expansion and random-reward callout changes from rotate_armory.py. Black Market/Gauntlet retain the original crate entry type, single case model, names, native contents and layout. local_direct_case is retained only to hide the irrelevant key warning. Backend direct grants from build24 are unchanged. UI-only patch uses the same build24 DLL; native_resources rebuilds the script override on launcher preparation. Test asserts both custom entries remain cases and their original loot lists/suffixes remain intact. Do not reintroduce the finish gallery.
+
+---
+
 # Build24: direct custom Armory rewards
 
 Armory::Redeem recognizes the exact Black Market/Gauntlet item names and rolls their resolved crate loot list before any credit mutation. Requires the correct knife/glove type, marks unusual, retains limited owner certificate and normal random wear/seed/knife StatTrak; glove StatTrak stays excluded by RollLootList. Existing OpenCase and rare-case rewards unchanged. UI uses saved reel descriptors for up to64 preview entries (full pool remains backend authority), native faux IDs, random-reward labels and suppresses the key warning even if previews are unavailable. Current build tag24.

@@ -315,6 +315,9 @@ def patch_previews(source):
     source = source.replace('if (elModel.PanZoomEnabled()) {', 'if (elModel && elModel.PanZoomEnabled()) {')
     source = source.replace("$.Schedule(.25, () => elModel.TransitionToCamera('cam_case_open', 1));",
                             "$.Schedule(.25, () => { if (elModel && elModel.IsValid()) elModel.TransitionToCamera('cam_case_open', 1); });", 1)
+    # The knife-only Black Market Case lists thousands of knives; draw a shuffled sample instead of freezing the page.
+    source = source.replace('let aCrateLootlist = _GetLootListForReward(itemId);',
+                            'let aCrateLootlist = _GetLootListForReward(itemId);\n                        if (aCrateLootlist.length > 96) aCrateLootlist = aCrateLootlist.sort(() => 0.5 - Math.random()).slice(0, 96);', 1)
     # Category controls remain visible while inspecting; switching categories returns to tiles.
     return source
 

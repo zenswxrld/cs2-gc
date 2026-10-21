@@ -180,6 +180,8 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
         auto openingOdds = odds;
         if (crateItem->statTrak || schema.ProducesStatTrak(crate->defIndex)) openingOdds.statTrakPerMille = 1000;
         rolled = RollLootList(schema, crate->lootListName, random, openingOdds);
+        // A knife in a case's own loot list (the knife-only Black Market Case) is a ★ item like any case gold.
+        if (rolled && schema.IsKnife(rolled->defIndex)) rolled->unusual = true;
     }
     if (!rolled)
     {

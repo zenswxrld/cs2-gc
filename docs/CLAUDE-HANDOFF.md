@@ -457,3 +457,26 @@ User's next list after this: career/achievements + collections tab (not in Armor
 difficulty by rank, bot clan tags/chat/skins, music kit StatTrak/MVP, viewmodel settings + in-game give
 command (no default RCON exposure). Still open: random bot names did not apply (need cs2_gc_prepare.log),
 "[BOT]" tag (17i tries `bot_prefix ""`), confirm 17i stock XP/rating panels live.
+
+### Build 17k: knife recolours + knife-only Black Market Case (Claude)
+
+- `tools/native_finishes.py` (called by native_tradeups.prepare before the Armory catalogue, so client and GC
+  both load the result): reads base vcompmat_c/vmat_c from the installed pak01 (one-time directory index),
+  writes `rk_<base>_<theme>` recolours (OfflineCS themes/duo themes, brightness kept, too-dark ones skipped)
+  under `weapons/paints/cs2_gc/` + `materials/.../vmats/cs2_gc/` into the `cs2_gc_finishes` VPK folder (Game
+  search path), adds paint_kits (ids from 30000, copied base fields + composite_material_path) and
+  paint_kits_rarity, names via a copy of the installed `resource/csgo_english.txt` with added tokens, and the
+  case icon `panorama/images/econ/weapon_cases/crate_cs2gc_black_market_png.vtex_c` (uncompressed BGRA8888 from
+  the OfflineCS PNG, shipped as tools/cs2_gc_black_market_case.png).
+- Bases: KNIFE_BASES (official colour knife finishes incl. Gamma Doppler, Freehand, Bright Water) get all 18
+  themes on 4 random knives each; extra finishes (Twilight Galaxy am_aqua_flecks, Gold Brick am_gold_brick,
+  Blue Phosphor am_m4a1s_bluesmoke + abstract am_/aa_/an_ anodized kits without weapon words) go on every knife
+  and get 6 themes on 2 knives each. Official pairs come from data/gold_pools.txt.
+- Case: `crate_cs2gc_black_market`, cloned from Operation Bravo (4003: model, key 1203 - free keys apply), new
+  def id (first free from 4950), new supply series, loot list with one `_ancient` tier = knives only. GC change:
+  a knife rolled from a case loot list is marked unusual (★). Armory: limited row (`black_market_price`,
+  default 100) so it rotates through the big tile; xpshop crate preview draws a random 96 of the contents.
+- Any failure is reported as "knife finishes: skipped: ..." in the Recipes/catalogue line of
+  cs2_gc_prepare.log and never blocks the launch. `knife_finishes = 0` unmounts everything.
+- NOT yet verified live: inventory icons for new combos (CS2 ships pre-rendered default_generated icons), the
+  csgo_english override, the vtex icon, and the recolours rendering. Check these first.

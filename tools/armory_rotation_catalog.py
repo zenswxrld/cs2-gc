@@ -60,6 +60,9 @@ def catalogue(source, config):
         if slot == 'terminal' and not config['terminals_enabled']: continue
         add(name, slot, int(data['points']), data)
     templates = {v['local_rotation_slot']: v for v in goods.values()}
+    if config.get('knife_finishes', 1) and 'crate_cs2gc_black_market' in items:
+        # The knife-only Black Market Case rotates through the big limited-edition tile.
+        add('crate_cs2gc_black_market', 'limited', config.get('black_market_price', 100), {'flags': '2'})
 
     def loot(name, slot, price):
         if name in lists:

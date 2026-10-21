@@ -10,7 +10,8 @@ struct GameplayConfig
 {
     std::uint32_t armory_collection_slots{3};
     std::uint32_t armory_charm_slots{3};
-    std::uint32_t free_case_keys{1}, skip_key_selection{1}; // keep one never-consumed key for every case type owned
+    std::uint32_t free_case_keys{1}, skip_key_selection{1};
+    std::uint32_t knife_finishes{1}, black_market_price{100}; // knife recolours + Black Market Case (helper-generated) // keep one never-consumed key for every case type owned
     std::uint32_t armory_sticker_slots{2};
     std::uint32_t armory_case_slots{2};
     std::uint32_t armory_capsule_slots{2};

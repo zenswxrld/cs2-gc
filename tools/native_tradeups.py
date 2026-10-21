@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import struct
 
 OWNER = 'cs2-gc-native-mixed-v1'
 FOLDER = 'cs2_gc_native'
@@ -178,7 +179,8 @@ def prepare(proxy_directory, enabled=True, config=None):
         return 'unavailable: installed game/csgo/gameinfo.gi not found'
     current_gameinfo = read_text(gameinfo)
     catalogue_enabled = bool(config and config['armory_rotation_enabled'])
-    if not enabled and not catalogue_enabled:
+    finishes_enabled = bool(config and config.get('knife_finishes', 1))
+    if not enabled and not catalogue_enabled and not finishes_enabled:
         if not manifest_path.exists(): return 'disabled'
         manifest = json.loads(read_text(manifest_path))
         if manifest.get('owner') != OWNER: raise ValueError('Native folder is not owned by this feature')
@@ -192,6 +194,13 @@ def prepare(proxy_directory, enabled=True, config=None):
         return 'unavailable: items_game.txt is missing beside the proxy DLL'
     source = read_text(schema)
     patched, details = patch_recipes(source) if enabled else (source, {})
+    if config is not None:
+        # Knife recolours and the Black Market Case: own VPK folder plus entries in this override.
+        from native_finishes import prepare as prepare_finishes
+        try:
+            patched, details['knife_finishes'] = prepare_finishes(proxy_directory, config, patched)
+        except (OSError, ValueError, KeyError, struct.error) as error:
+            details['knife_finishes'] = 'skipped: ' + str(error)  # never blocks recipes or the Armory
     if catalogue_enabled:
         from armory_rotation_catalog import patch_catalogue
         patched, catalogue = patch_catalogue(patched, config)
@@ -226,5 +235,6 @@ def prepare(proxy_directory, enabled=True, config=None):
     # CS2 searches pak01 VPKs before loose files, so ship the override inside a VPK in our own folder.
     from vpk_pack import pack
     changed = pack(mod) or changed
+    knives = ('; knife finishes: ' + details['knife_finishes']) if 'knife_finishes' in details else ''
     return ('prepared; RESTART CS2 ONCE to load native recipes/catalogue' if changed else
-            'installed: native recipes/catalogue; live verification needed')
+            'installed: native recipes/catalogue; live verification needed') + knives

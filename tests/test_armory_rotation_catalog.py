@@ -128,7 +128,8 @@ function panel(id,parent) {
  const p={id,style:{},visible:true,IsValid:()=>true,FindChildInLayoutFile:id=>nodes[id]||null,
   FindChildTraverse:id=>null,GetParent:()=>parent,SetPanelEvent:(event,fn)=>p.activate=fn,
   classes:{},SetHasClass:(c,v)=>{p.classes[c]=v;},BHasClass:c=>!!p.classes[c],
-  order:[],MoveChildAfter:(child,after)=>{p.order.push([child.id,after.id]);}};
+  order:[],kids:[],Children:()=>p.kids,MoveChildAfter:(child,after)=>{p.order.push([child.id,after.id]);}};
+ if(parent&&parent.kids)parent.kids.push(p);
  if(id)nodes[id]=p;return p;
 }
 const root=panel('root'), rows=panel('rows'), passBox=panel('pass-box');

@@ -63,15 +63,7 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
             const room = Math.max(0, (capacity[row] || 4) - featured.filter(e => (e.ui_order || '2') === row).length);
             groups[row].slice(0, room).forEach(e => view.push(e.item_name));
         });
-        // Put the limited tile in the middle of its row, between the other two large tiles.
-        if (featured.length) {
-            const tile = m_elContentPanel.FindChildInLayoutFile(featured[0].item_name);
-            const parent = tile && tile.GetParent ? tile.GetParent() : null;
-            const row = featured[0].ui_order || '2';
-            const first = (groups[row] || []).length ? m_elContentPanel.FindChildInLayoutFile(groups[row][0].item_name) : null;
-            if (parent && first && first.GetParent && first.GetParent() === parent && parent.MoveChildAfter)
-                parent.MoveChildAfter(tile, first);
-        }
+        m_localFeatured = featured.length ? featured[0].item_name : null;
         return view;
     }
     function _LocalPlaceAgentTiles(container, entry) {
@@ -137,6 +129,17 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
         }
     }
     let m_localRotationItems = [];
+    let m_localFeatured = null;
+    function _LocalCentreFeatured() {
+        // After visibility is set: put the limited tile right after the first visible tile of its row (on screen),
+        // so it is always the middle of the three large tiles.
+        if (!m_localFeatured) return;
+        const tile = m_elContentPanel.FindChildInLayoutFile(m_localFeatured);
+        const parent = tile && tile.GetParent ? tile.GetParent() : null;
+        if (!parent || !parent.Children || !parent.MoveChildAfter) return;
+        const others = parent.Children().filter(child => child !== tile && child.visible);
+        if (others.length) parent.MoveChildAfter(tile, others[0]);
+    }
     let m_localRotationTick;
     let m_localRotationCycle = -1;
     let m_localRotationActive = [];
@@ -204,6 +207,7 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
             }
             if (nav) nav.visible = show;
         });
+        _LocalCentreFeatured();
         const remaining = m_localRotation.seconds - now % m_localRotation.seconds;
         m_localRotationActive = active;
         const text = 'Armory refresh: ' + Math.floor(remaining / 60) + ':' + ('0' + remaining % 60).slice(-2);

@@ -686,6 +686,21 @@ Based on `schema-loader` commit `42150481ac7db513a64f4b6704cd3c0a1b8349c0` (PR #
   ({collection: [[weapon, kit id]]}, chase first) and rotate_armory passes it in m_localRotation.previews; the patched
   _GetLootListForReward uses it only when the native count is 0. NOT verified live yet; if the tiles stay empty, check
   that cs2_gc_collection_previews.json exists next to the proxy and that the Armory override was regenerated (restart twice).
+- 26s LIVE (user): previews WORK. The collection page shows all 16 skins in 3D and the chase is correct.
+- NEXT TASK FOR CHATGPT (user's choice): the main Armory tile for a custom collection shows CS2's gold "?" medal.
+  Cause: the tile carousel (_MakeShopTile, the `lootlist.length > 1` branch) creates 2D `ItemImage` panels, and new
+  weapon+kit pairs have no shipped default_generated icon (same root cause as 17w). The emblem itself is fine (top-left).
+  The user wants ONE 3D MODEL on the tile, like the "Received from Armory" screen, not the emblem or a 2D picture.
+  Suggested approach, using only calls already in the user's xpshop.js:
+  in _MakeShopTile, when ShopEntry.item_name starts with 'lootlist:set_cs2gc_' (or m_localRotation.previews has the name),
+  skip the ItemImage carousel and create a model with the existing MakeMapItemPreviewPanel(elTile, camera, 'ui/xpshop_item',
+  ShopEntry). Build the camera as in CreateShopTile ('camera_weapon_' + XpShopWeaponCameraSettings entry for the def name),
+  then elModel.SetActiveItem(0); elModel.SetItemItemId(ShopEntry.lootlist[0], '') (lootlist[0] is the chase, the previews are
+  written chase first), as at xpshop.js ~lines 478-482, and set hittest false so the tile button still opens the page.
+  Risks: the tile is smaller than an inspect tile (sizing/CSS class), render cost (use SetRenderInterval like line 482),
+  and patch_previews already rewrites nearby code, so assert each replace target count == 1 and test it with node like
+  test_custom_collection_previews_fill_an_empty_native_loot_list. Only the custom collections may change; stock tiles stay.
+  Do not claim it works until the user sees it in game.
 - Still to do: trade-ups for custom skins (GC-side collection membership; client item_sets are not possible),
   effect finishes (glitter/pearl) waiting on the user's extract_finish_materials output, custom_collections (40 chase
   collections) default 0 until the user asks.

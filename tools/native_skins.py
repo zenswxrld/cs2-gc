@@ -163,6 +163,16 @@ def _quote(value):
     return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"') + '"'
 
 
+def _collection_lists(name, tiers, order):
+    """Tier lists then the top list, in the stock order (set_arabesque): the client resolves a nested
+    list only once it is defined, so a top list written first shows as empty in the Armory."""
+    lists = ['\t\t%s\n\t\t{\n%s\t\t}' % (_quote('%s_%s' % (name, t)), ''.join('\t\t\t%s\t\t"1"\n' % _quote(i)
+             for i in tiers[t])) for t in reversed(order)]
+    lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote(name), ''.join('\t\t\t%s\t\t"1"\n' % _quote(
+        '%s_%s' % (name, t)) for t in reversed(order))))
+    return '\n'.join(lists)
+
+
 def collections(source_text, kits, recolours, kit_path, titles=None):
     """(new kit entries [(name, title, values)], unused, client_loot_lists text, families text,
     [collection list names], [loot entries], [chase entries]).
@@ -227,11 +237,7 @@ def collections(source_text, kits, recolours, kit_path, titles=None):
                 picked.append('[%s]%s' % (alias, weapon)); taken.add(weapon)
             tiers[tier] = picked
         order = [t for t in ('ancient', 'legendary', 'mythical', 'rare', 'uncommon') if tiers.get(t)]
-        lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote(list_name), ''.join('\t\t\t%s\t\t"1"\n' % _quote(
-            '%s_%s' % (list_name, t)) for t in order)))
-        for t in order:
-            lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote('%s_%s' % (list_name, t)),
-                                                     ''.join('\t\t\t%s\t\t"1"\n' % _quote(i) for i in tiers[t])))
+        lists.append(_collection_lists(list_name, tiers, order))
         names.append(list_name)
         entries += [i for t in order for i in tiers[t]]
         chases.append(tiers[top][0])
@@ -334,11 +340,7 @@ def custom_cases(source_text, kits, titles, kit_path, finish_source, families, m
                 picked.append('[%s]%s' % (alias(kit, tier), weapon)); taken.add(weapon)
             tiers[tier] = picked
         order = [t for t in ('ancient', 'legendary', 'mythical', 'rare', 'uncommon') if tiers.get(t)]
-        lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote(name), ''.join('\t\t\t%s\t\t"1"\n' % _quote(
-            '%s_%s' % (name, t)) for t in order)))
-        for t in order:
-            lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote('%s_%s' % (name, t)),
-                                                     ''.join('\t\t\t%s\t\t"1"\n' % _quote(i) for i in tiers[t])))
+        lists.append(_collection_lists(name, tiers, order))
         entries += [i for t in order for i in tiers[t]]
         specs.append(name)
         icons[name] = icon

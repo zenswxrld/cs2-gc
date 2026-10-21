@@ -130,7 +130,8 @@ class CustomSkins(unittest.TestCase):
         name = specs[0]
         self.assertTrue(name.startswith('set_cs2gc_case_'))  # Armory collections, not crates
         self.assertEqual(skins.CASE_COLLECTIONS[name], 'The Ashfall Collection')
-        self.assertIn('"%s"\n\t\t{\n\t\t\t"%s_ancient"' % (name, name), lists)
+        self.assertIn('"%s"\n\t\t{\n\t\t\t"%s_uncommon"' % (name, name), lists)
+        self.assertLess(lists.index('"%s_ancient"\n' % name), lists.index('"%s"\n' % name))  # tiers before the top list
         header = lambda t: lists.index('"%s_%s"\n\t\t{' % (name, t))
         counts = {t: lists.count('"[', header(t), lists.index('}', header(t)))
                   for t in ('ancient', 'legendary', 'mythical', 'rare', 'uncommon')}

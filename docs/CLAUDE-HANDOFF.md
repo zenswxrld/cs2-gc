@@ -668,7 +668,23 @@ Based on `schema-loader` commit `42150481ac7db513a64f4b6704cd3c0a1b8349c0` (PR #
   packs them as panorama/images/econ/set_icons/<name>_png / _small_png (template set_arabesque), and the catalogue
   rows set ui_set_image = <name>. The old tools/case_icons pictures are removed.
 - The DLL is unchanged from 26q. Crates bought in 26q (crate_cs2gc_case_*) no longer have a definition, so open them first.
-- Not verified live yet: tile layout, emblem rendering, unlock flow.
+- LIVE (user, 21 Oct): the tile and nav emblem render, the callout reads "The Ashfall Collection", and unlocking works
+  (e.g. "Desert Eagle | Marble Fade" from The Brimstone Collection, AK-47 Doppler chase from opened cases).
+- OPEN BUG, for the next person: the tile has NO gun preview and the collection page is EMPTY.
+  Cause (from the user's xpshop.js): _GetLootListForReward('lootlist:set_cs2gc_case_<name>') gets
+  InventoryAPI.GetLootListItemsCount(...) == 0, so lootlist = [rewardId], so the single-image path with a non-item id is used
+  and PlaceTiles returns early. Stock 'lootlist:set_arabesque' has the same nested structure and works.
+  NOT the cause: list order (the stock schema has 562 forward nested refs; 26r now writes the tiers first anyway,
+  matching set_arabesque, which is harmless). The same nested lists DO preview inside a crate (collections test case),
+  so the items and kits are valid on the client. The difference is probably how the native resolves a "lootlist:" reward
+  name (maybe item_sets, which we cannot add: client needs a #CSGO_ localised token, see 26m crash).
+  Suggested fix, same approach as 17v native_knife_reel: patch xpshop.js _GetLootListForReward so that when the count is 0
+  and the name starts with 'lootlist:set_cs2gc_', it fills itemsList from a generated JSON
+  (list name -> [def index + paint kit] -> InventoryAPI.GetFauxItemIDFromDefAndPaintIndex), written by native_finishes
+  next to the collection lists. Do not invent APIs; GetFauxItemIDFromDefAndPaintIndex is already used in xpshop.js.
+- Still to do: trade-ups for custom skins (GC-side collection membership; client item_sets are not possible),
+  effect finishes (glitter/pearl) waiting on the user's extract_finish_materials output, custom_collections (40 chase
+  collections) default 0 until the user asks.
 
 ## User reports and scope
 

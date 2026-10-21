@@ -65,6 +65,9 @@ DEAD_HAND_PRINT_HUES = {'glove_sport_beadwork_diamonds_purple': 265, 'glove_spor
 # Looked wrong in every colour (printed wave and blue leather; printed flames): no recolours (user's call).
 DEAD_HAND_SKIP = {'glove_specialist_wave_blue', 'glove_sport_flames_orange'}
 HARMONY_DEGREES = 60
+# Region colours just under the muted-shade threshold that the user wants changed: Red Racer's tan suede
+# (g_vId4Color, hue 49, saturation .179).
+DEAD_HAND_EXTRA_ACCENTS = {'glove_sport_racer_red': ('g_vId4Color',)}
 # Colours outside a glove's range that the user approved on screen.
 DEAD_HAND_EXTRA_THEMES = {'glove_driver_ostrich_purple': ['Sunset']}
 # Every Dead Hand glove gets colours that match its own (user: "use colors that work well with whats already
@@ -277,6 +280,9 @@ def make_dead_hand_finish(source, compmat_path, new_name, theme, report=None, in
     current = [[item.value for item in colours[name].value] for name in names]
     if any(len(c) != 4 or any(not math.isfinite(v) or v < 0 or v > 1 for v in c) for c in current): return None
     accents = dead_hand_accents(current)
+    base = compmat_path.rsplit('/', 1)[-1].replace('.vcompmat', '')
+    extra = {i for i, n in enumerate(names) if n in DEAD_HAND_EXTRA_ACCENTS.get(base, ())}
+    accents |= extra
     themed = finishes.recolor(current, theme, keep_value=True)
     new = []
     for index, (original, target) in enumerate(zip(current, themed)):
@@ -284,7 +290,9 @@ def make_dead_hand_finish(source, compmat_path, new_name, theme, report=None, in
         if index in accents:
             _, saturation, value = colorsys.rgb_to_hsv(*original[:3])
             hue, target_saturation, _ = colorsys.rgb_to_hsv(*target[:3])
-            color[:3] = colorsys.hsv_to_rgb(hue, min(saturation, target_saturation), value)
+            # Hand-picked pale regions take a visible share of the theme colour instead of their own near-grey.
+            cap = .5 if index in extra else saturation
+            color[:3] = colorsys.hsv_to_rgb(hue, min(cap, target_saturation), value)
         new.append(color)
     accents = [names[i] for i in sorted(accents)]
     if report is not None:

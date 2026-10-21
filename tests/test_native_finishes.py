@@ -102,6 +102,78 @@ def vpk_files():
 
 
 class NativeFinishes(unittest.TestCase):
+    def test_weapon_palette_preserves_neutral_details_and_changes_accents(self):
+        from weapon_palettes import recolour,is_new_colourway,invert_panels
+        original=[[.08,.08,.08,.4],[.8,.2,.12,.6],[.94,.94,.94,.8],[.35,.1,.08,1]]
+        changed=recolour(original,'Vapor','ancient',finishes.THEMES,finishes.DUO_THEMES,finishes.GRADIENT_THEMES)
+        self.assertEqual(changed[0],original[0]);self.assertEqual(changed[2],original[2])
+        self.assertEqual([c[3] for c in changed],[c[3] for c in original])
+        self.assertTrue(is_new_colourway(original,changed))
+        self.assertFalse(is_new_colourway(original,original))
+        near=[[min(1,x+.01) if i<3 else x for i,x in enumerate(c)] for c in original]
+        self.assertFalse(is_new_colourway(original,near))
+        inverse=invert_panels(original,changed)
+        self.assertGreater(max(inverse[0][:3]),.8);self.assertLess(max(inverse[2][:3]),.2)
+        self.assertEqual(inverse[1],changed[1]);self.assertEqual(inverse[3],changed[3])
+        self.assertEqual([c[3] for c in inverse],[c[3] for c in original])
+
+    def test_weapon_material_edits_only_colours_and_owned_material_name(self):
+        from weapon_palettes import is_new_colourway
+        files=vpk_files()
+        class Source:
+            def read(self,path):return files.get(path)
+        report={}
+        made=finishes.make_finish(Source(),'aa_fade','weapons/paints/legacy/aa_fade.vcompmat',
+                                  'test_weapon','Vapor',report=report,weapon_palette='ancient',weapon_inverse=True)
+        self.assertIsNotNone(made)
+        entry=report['aa_fade:ancient']
+        self.assertTrue(is_new_colourway(entry['original_colors'],entry['themes']['Vapor / inverted']))
+        self.assertEqual(entry['policy'],'weapon-accent-gradient-v1')
+        _,blocks=kv3.read_resource(made[1]);guid,root=kv3.read_kv3(dict(blocks)['DATA'])
+        _,oldblocks=kv3.read_resource(files[entry['source_material']+'_c'])
+        olddata=dict(oldblocks)['DATA'];_,oldroot=kv3.read_kv3(olddata)
+        root.get('m_materialName').value=oldroot.get('m_materialName').value
+        for key,node in finishes._vector_params(root).items():
+            for value,old in zip(node.value,finishes._vector_params(oldroot)[key].value):value.value=old.value
+        self.assertEqual(kv3.write_kv3(guid,root),olddata,'textures, roughness, shader and wear inputs stay untouched')
+        # Gun gradients must bypass the legacy Gold Brick knife-only palette handler.
+        self.assertIsNotNone(finishes.make_finish(Source(),'am_gold_brick',
+            'weapons/paints/legacy/aa_fade.vcompmat','gold_gradient','Lava',weapon_palette='ancient'))
+
+
+
+    def test_finish_failure_stops_native_catalogue_preparation(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            game=Path(folder)/'game';proxy=game/'bin/win64';proxy.mkdir(parents=True)
+            info=game/'csgo/gameinfo.gi';info.parent.mkdir();info.write_text(GAMEINFO)
+            (proxy/'items_game.txt').write_text(SCHEMA)
+            target=game/native_tradeups.FOLDER/'scripts/items/items_game.txt'
+            target.parent.mkdir(parents=True);target.write_text('previous complete schema')
+            with patch.object(finishes,'prepare',side_effect=ValueError('unsupported material test')):
+                with self.assertRaisesRegex(ValueError,'launch stopped'):
+                    native_tradeups.prepare(proxy,False,{'knife_finishes':1,'armory_rotation_enabled':True})
+            self.assertEqual(target.read_text(),'previous complete schema')
+            self.assertEqual(info.read_text(),GAMEINFO)
+
+
+    def test_unsupported_donor_compmat_or_material_is_skipped(self):
+        from unittest.mock import patch
+        import copy
+        def older(resource):
+            version, blocks = kv3.read_resource(resource)
+            return kv3.write_resource(version, [[name, struct.pack('<I',0x4b563304)+data[4:] if name=='DATA' else data] for name,data in blocks])
+        original=vpk_files()
+        comp='weapons/paints/legacy/aa_fade.vcompmat_c'
+        mat='materials/models/weapons/customization/paints/vmats/aa_fade.vmat_c'
+        for path in (comp,mat):
+            files=copy.copy(original);files[path]=older(files[path])
+            class Source:
+                def read(self,path):return files.get(path)
+            self.assertIsNone(finishes.make_finish(Source(),'aa_fade',comp[:-2],'test','Teal'))
+            # Another verified donor remains available; one old format never cancels it.
+            self.assertIsNotNone(finishes.make_finish(Source(),'am_zebra','weapons/paints/legacy/am_zebra.vcompmat','other','Teal'))
+
     def test_gold_brick_keeps_related_metal_tones_instead_of_ranked_two_tone(self):
         colors=[[1,.88,.5,1],[.98,.9,.6,.8],[.8,.7,.4,.5],[.7,.55,.15,0]]
         result=finishes.recolor_gold_brick(colors,'Toxic')

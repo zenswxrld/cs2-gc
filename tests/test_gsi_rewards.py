@@ -11,6 +11,28 @@ spec.loader.exec_module(gsi)
 
 
 class BotRewards(unittest.TestCase):
+    def test_running_rewards_helper_never_rebuilds_native_archives(self):
+        from unittest.mock import patch, MagicMock
+        from types import SimpleNamespace
+        import native_bot_names, native_tradeups, vpk_pack, vpk_signatures
+        with tempfile.TemporaryDirectory() as folder:
+            proxy=Path(folder)/'bin/win64';proxy.mkdir(parents=True)
+            archive=Path(folder)/'cs2_gc_bots/pak01_000.vpk'
+            archive.parent.mkdir();archive.write_bytes(b'mounted bot archive')
+            before=archive.stat().st_mtime_ns
+            args=SimpleNamespace(proxy_dir=proxy,cfg_dir=None,port=31923,parent_pid=123,debug_console=False)
+            with patch.object(gsi,'HTTPServer',return_value=MagicMock()), \
+                 patch.object(gsi,'serve_until_parent_exits') as serve, \
+                 patch.object(native_bot_names,'prepare',side_effect=AssertionError('live bot preparation')), \
+                 patch.object(native_tradeups,'prepare',side_effect=AssertionError('live schema preparation')), \
+                 patch.object(vpk_pack,'pack',side_effect=AssertionError('live VPK rewrite')), \
+                 patch.object(vpk_signatures,'update',side_effect=AssertionError('live signature rewrite')):
+                gsi.run_with_parent(args,MagicMock())
+                serve.assert_called_once()
+            self.assertEqual(archive.read_bytes(),b'mounted bot archive')
+            self.assertEqual(archive.stat().st_mtime_ns,before)
+
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

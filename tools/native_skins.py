@@ -244,11 +244,13 @@ def collections(source_text, kits, recolours, kit_path, titles=None):
     return new_kits, '', '\n'.join(lists), families, names, entries, chases
 
 
-def family_text(families):
+def family_text(families, drop_collections=()):
     """cs2_gc_skin_families.txt for the GC: family kit -> its colour kits."""
     return '"skin_families"\n{\n' + ''.join(
         '\t%s\n\t{\n%s\t}\n' % (_quote(name), ''.join('\t\t%s\t"1"\n' % _quote(v) for v in variants))
-        for name, variants in sorted(families.items())) + '}\n'
+        for name, variants in sorted(families.items())) + '}\n' + (
+        '"collection_drops"\n{\n' + ''.join('\t%s\t"1"\n' % _quote(name) for name in sorted(drop_collections)) + '}\n'
+        if drop_collections else '')
 
 
 # Custom weapon collections (user, 22 Oct: first "cases" in the case slot, then "I want it like this not a case,
@@ -264,7 +266,7 @@ CLASSIC_THEMES = 8
 CASE_COLLECTIONS = {CASE_PREFIX + icon: 'The %s Collection' % icon.title() for icon in CASE_ICONS}
 
 
-def custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits):
+def legacy_custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits):
     """(new kit entries, files {path: bytes}, loot lists text, [collection list names], [loot entries], {list: icon}).
 
     Despite the name these are Armory collections (loot lists), like Arabesque.
@@ -345,6 +347,189 @@ def custom_cases(source_text, kits, titles, kit_path, finish_source, families, m
         specs.append(name)
         icons[name] = icon
     return new_kits, files, '\n'.join(lists), specs, entries, icons
+
+
+# Each collection has its own chase donor and palette. Nine donors are gun patterns;
+# three retain the established knife patterns. All use the verified four-colour material path.
+COLLECTION_DESIGNS = {
+    'ashfall': ('weapon_ak47', 'am_ossify', ('Ember','Crimson','Amber','Ash')),
+    'aurora': ('weapon_m4a1_silencer', 'am_gamma_doppler_phase2', ('Teal','Azure','Violet','Aurora')),
+    'brimstone': ('weapon_deagle', 'am_crystallized', ('Crimson','Ember','Amber','Inferno')),
+    'cascade': ('weapon_awp', 'am_bamboo_jungle', ('Teal','Azure','Glacier','Emerald')),
+    'cinder': ('weapon_m4a1', 'aa_flames', ('Ember','Crimson','Amber','Sunset')),
+    'eclipse': ('weapon_awp', 'am_fuschia', ('Violet','Cobalt','Magenta','Midnight')),
+    'halcyon': ('weapon_m4a1_silencer', 'am_geometric_steps', ('Azure','Teal','Glacier','Rose')),
+    'kaleido': ('weapon_ak47', 'am_ddpatdense_peacock', ('Magenta','Violet','Teal','Aurora')),
+    'monsoon': ('weapon_m4a1', 'am_jorm_blue', ('Cobalt','Azure','Teal','Glacier')),
+    'nebula': ('weapon_deagle', 'am_doppler_phase2', ('Violet','Magenta','Cobalt','Midnight')),
+    'solstice': ('weapon_m4a1', 'am_kimono_sunrise', ('Amber','Ember','Rose','Sunset')),
+    'zephyr': ('weapon_ak47', 'aa_fade', ('Lime','Teal','Azure','Emerald')),
+}
+DROP_ONLY_COLLECTIONS = frozenset(CASE_PREFIX + name for name in ('eclipse','monsoon'))
+# Second art pass: gun donors with known four-channel palettes; no Blaze transfers.
+# Six hand-picked gradient/colour palettes per collection. The original colourway
+# and near copies are rejected by weapon_palettes before entering the random range.
+REFINED_DESIGNS = {
+    'ashfall': ('weapon_ak47','am_ossify',('Lava','Sunrise','Coral','Royal','Inferno','Sunset')),
+    'aurora': ('weapon_m4a1_silencer','am_m4a1s_bluesmoke',('Ocean','Galaxy','Vapor','Frost','Glacier','Aurora')),
+    'brimstone': ('weapon_deagle','am_crystallized',('Lava','Sunrise','Royal','Coral','Inferno','Sunset')),
+    'cascade': ('weapon_awp','am_seastorm',('Ocean','Frost','Forest','Coral','Glacier','Teal')),
+    'cinder': ('weapon_m4a1','am_jorm_orange',('Lava','Sunrise','Coral','Royal','Inferno','Sunset')),
+    'eclipse': ('weapon_awp','am_aqua_flecks',('Galaxy','Vapor','Royal','Midnight','Rose','Violet')),
+    'halcyon': ('weapon_m4a1_silencer','am_royal',('Ocean','Frost','Coral','Vapor','Glacier','Rose')),
+    'kaleido': ('weapon_ak47','am_moro_textile_bright',('Candy','Galaxy','Vapor','Royal','Toxin','Rainbow')),
+    'monsoon': ('weapon_m4a1','am_jorm_blue',('Ocean','Forest','Vapor','Frost','Aurora','Glacier')),
+    'nebula': ('weapon_deagle','am_heist_plans_purple',('Galaxy','Vapor','Royal','Candy','Midnight','Aurora')),
+    'solstice': ('weapon_m4a1','am_gold_brick',('Sunrise','Coral','Royal','Lava','Sunset','Candy')),
+    'zephyr': ('weapon_ak47','am_geometric_steps',('Forest','Ocean','Frost','Toxin','Glacier','Aurora')),
+}
+
+# These donors are known four-colour gun patterns, not weapon-specific UV artwork.
+GUN_PATTERN_DONORS = ('am_ossify','am_crystallized','am_bamboo_jungle','aa_flames','am_fuschia',
+    'am_geometric_steps','am_ddpatdense_peacock','am_jorm_blue','am_kimono_sunrise',
+    'am_chainmail','am_carbon_fiber','am_heist_plans_green','am_moro_textile_bright',
+    'am_seastorm','am_electric_red','aa_wiring','aa_vertigogeo_neon','am_scales_bravo')
+REFINED_DONORS = tuple(n for n in GUN_PATTERN_DONORS if n != 'aa_flames') + (
+    'am_aqua_flecks','am_m4a1s_bluesmoke','am_gold_brick','am_royal','am_jorm_orange','am_jorm_green',
+    'am_heist_plans_purple','am_turqoise_halftone','am_ossify_blue','am_czv2_mf','am_navy_shine','am_gyrate')
+
+
+
+def custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits, report=None):
+    if report is None: report={}
+    # Keep build27a definitions even when a repeated donor is replaced in the current pool.
+    previous = _curated_custom_cases(source_text,kits,titles,kit_path,finish_source,families,made_kits,False)
+    current = _curated_custom_cases(source_text,kits,titles,kit_path,finish_source,families,made_kits,True)
+    definitions={entry[0]:entry for entry in previous[0]}
+    definitions.update({entry[0]:entry for entry in current[0]})
+    files=dict(previous[1]);files.update(current[1])
+    return _curated_custom_cases(source_text,kits,titles,kit_path,finish_source,families,made_kits,True,
+                                 refined=True,retained=(list(definitions.values()),files),palette_report=report)
+
+
+def _curated_custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits, distinct_patterns,
+                          refined=False, retained=None, palette_report=None):
+    """Curated collection loot lists; retain the previous kits/materials for owned inventory.
+
+    No new crate definitions. Original official weapon/material combinations are
+    excluded even when different kit names point at the same material.
+    """
+    import native_finishes as finishes
+    if retained is None:
+        old_kits, files, _, _, _, _ = legacy_custom_cases(
+            source_text,kits,titles,kit_path,finish_source,families,made_kits)
+    else:
+        old_kits, files = retained
+        files = dict(files)
+    new_kits=list(old_kits)
+    present={n for n,_,_ in new_kits} | set(made_kits)
+    official=set(re.findall(r'"\[([^\]]+)\](weapon_[a-z0-9_]+)"',source_text))
+    weapons=sorted(w for w in FILLER_GUNS if re.search(r'"name"\s+"%s"'%w,source_text))
+    material=lambda base:kit_path(base,kits[base][1]).replace('\\','/').lower()
+    official_materials={(material(base),gun) for base,gun in official if base in kits}
+    fillers=sorted(n for n,(_,v) in kits.items() if v.get('style') in FILLER_STYLES and titles.get(n)
+                   and not any(word in n for word in WEAPON_WORDS))
+    donors=[n for n in (REFINED_DONORS if refined else GUN_PATTERN_DONORS) if n in kits]
+    used=set(); counts={}; lists=[]; specs=[]; entries=[]; icons={}; checked_materials={}
+
+    def copy_values(base,tier):
+        values={k:v for k,v in kits[base][1].items() if isinstance(v,str) and k not in ('name','description_string','description_tag')}
+        values.update(composite_material_path=kit_path(base,kits[base][1]),_rarity=tier)
+        return values
+
+    def add(name,title,values):
+        if name not in present:
+            new_kits.append((name,title,values));present.add(name)
+
+    def colour_family(icon,slot,base,tier,themes):
+        family=('%s_%s_%s_%s_%s'%('cw2f' if refined else 'ccf',icon,slot,base,tier))
+        variants=[]; first_path=None; seen_palettes=set()
+        variants_to_make=[(theme,False) for theme in themes]
+        if refined: variants_to_make += [(theme,True) for theme in themes[:2]]
+        for theme,inverse in variants_to_make:
+            suffix=theme.lower()+('_inverted' if inverse else '')
+            material_name=('rwc_%s_%s_%s'%(base,suffix,tier) if refined else 'rc_%s_%s'%(base,suffix))
+            path=finishes.COMPMAT_DIR+material_name+'.vcompmat'
+            if material_name not in checked_materials:
+                report={}
+                options={'weapon_palette':tier,'weapon_inverse':inverse} if refined else {}
+                made=finishes.make_finish(finish_source,base,kit_path(base,kits[base][1]),material_name,theme,
+                                          report=palette_report if refined else report,**options)
+                if not made:
+                    checked_materials[material_name]=False
+                    continue
+                palette=report.get(base,{})
+                before=palette.get('original_colors');after=palette.get('themes',{}).get(theme)
+                if before and after and max(abs(a-b) for x,y in zip(before,after) for a,b in zip(x[:3],y[:3])) < .025:
+                    checked_materials[material_name]=False
+                    continue  # a renamed copy that barely changes is not new content
+                files[path+'_c'],files[finishes.VMAT_DIR+material_name+'.vmat_c']=made
+                checked_materials[material_name]=True
+            if not checked_materials[material_name]:continue
+            if refined:
+                palette=(palette_report or {}).get(base+':'+tier,{}).get('themes',{}).get(theme+(' / inverted' if inverse else ''))
+                if palette:
+                    signature=tuple(round(c,4) for colour in palette for c in colour)
+                    if signature in seen_palettes:continue
+                    seen_palettes.add(signature)
+            variant='%s_%s_%s_%s_%s_%s'%('cw2v' if refined else 'ccv',icon,slot,base,suffix,tier)
+            values=copy_values(base,tier);values['composite_material_path']=path
+            add(variant,titles.get(base,base.replace('_',' ').title()),values)
+            variants.append(variant);first_path=first_path or path
+        if len(variants)<(2 if refined else 1):return None
+        values=copy_values(base,tier);values['composite_material_path']=first_path
+        add(family,titles.get(base,base.replace('_',' ').title()),values)
+        families[family]=variants
+        return family
+
+    # Generic donor fallbacks are only used when a particular material is unavailable.
+    fallback=donors+[n for n in fillers if kits[n][1].get('style') in CLASSIC_STYLES]
+    for icon in CASE_ICONS:
+        name=CASE_PREFIX+icon
+        gun,chase_base,themes=(REFINED_DESIGNS if refined else COLLECTION_DESIGNS)[icon]
+        if gun not in weapons:continue
+        chase=None
+        for base in dict.fromkeys([chase_base]+fallback):
+            if base not in kits:continue
+            chase=colour_family(icon,'chase',base,'ancient',themes)
+            if chase:break
+        if not chase:continue
+        tiers={'ancient':['[%s]%s'%(chase,gun)]};taken={gun};collection_materials={material(base)}
+        used.add((material(base),gun,'coloured'))
+        for tier,count in FILLER_TIERS['ancient']:
+            picked=[]
+            for slot in range(count):
+                chosen=None
+                # Pink/purple rewards are distinct recolours too, instead of filler
+                # carrying an inflated rarity. At blue, two slots get custom colours.
+                colour = refined or tier in ('legendary','mythical') or (tier=='rare' and slot<2)
+                pool=donors if colour else fillers
+                candidates=[(b,w) for b in pool for w in weapons if w not in taken
+                            and (not distinct_patterns or material(b) not in collection_materials)
+                            and (material(b),w,'coloured' if colour else 'original') not in used
+                            and (colour or (material(b),w) not in official_materials)]
+                rng=random.Random(name+':'+tier+':'+str(slot))
+                rng.shuffle(candidates)
+                candidates.sort(key=lambda bw:(counts.get(bw[0],0),counts.get(bw[1],0)))
+                for base,weapon in candidates:
+                    if colour:
+                        kit=colour_family(icon,tier+str(slot),base,tier,themes)
+                        if not kit:continue
+                    else:
+                        kit='cga_%s_%s'%(base,tier)
+                        add(kit,titles[base],copy_values(base,tier))
+                    chosen='[%s]%s'%(kit,weapon)
+                    used.add((material(base),weapon,'coloured' if colour else 'original'))
+                    counts[base]=counts.get(base,0)+1;counts[weapon]=counts.get(weapon,0)+1
+                    taken.add(weapon);collection_materials.add(material(base));break
+                if chosen:picked.append(chosen)
+            tiers[tier]=picked
+        # Never sell an incomplete collection when an installed schema is missing donors.
+        if any(len(tiers[t])!=n for t,n in FILLER_TIERS['ancient']):continue
+        order=['ancient','legendary','mythical','rare','uncommon']
+        lists.append(_collection_lists(name,tiers,order));specs.append(name)
+        entries.extend(i for t in order for i in tiers[t]);icons[name]=icon
+    return new_kits,files,'\n'.join(lists),specs,entries,icons
 
 
 def collections_test_spec(list_names):

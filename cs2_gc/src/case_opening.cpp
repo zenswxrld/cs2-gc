@@ -82,7 +82,8 @@ std::uint32_t PityChance(std::uint32_t previousMisses, std::uint32_t baseChance,
 }
 
 std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view lootListName,
-                                          const RandomSource &random, const CaseOdds &odds, std::uint32_t excludedRarity)
+                                          const RandomSource &random, const CaseOdds &odds, std::uint32_t excludedRarity,
+                                          std::uint32_t minimumRarity)
 {
     struct Tier
     {
@@ -93,7 +94,7 @@ std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view
 
     // Rank tiers by rarity among the list's own tiers, before any are dropped for lack of items.
     std::vector<LootTier> listed = schema.LootTiers(lootListName);
-    std::erase_if(listed, [](const LootTier &tier) { return tier.rarity == 0; });
+    std::erase_if(listed, [minimumRarity](const LootTier &tier) { return tier.rarity == 0 || tier.rarity < minimumRarity; });
     std::stable_sort(listed.begin(), listed.end(),
                      [](const LootTier &a, const LootTier &b) { return a.rarity < b.rarity; });
 
@@ -297,7 +298,15 @@ std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, c
     std::erase_if(skins, [&](const auto &skin) {
         return schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex).value_or(0) < config.match_skin_min_rarity;
     });
-    if ((config.match_case_percent && cases.empty()) || (config.match_case_percent < 100 && skins.empty()))
+    std::vector<std::string> customPools;
+    if (config.custom_cases && config.custom_collection_drop_percent)
+        for (const auto &name : schema.DropCollections())
+            for (const auto &tier : schema.LootTiers(name))
+                if (tier.rarity >= config.match_skin_min_rarity && std::any_of(tier.items.begin(),tier.items.end(),[&](const auto &entry) {
+                    const auto loot=schema.ResolveLootItem(entry);
+                    return loot && loot->kind==LootKind::Skin && !schema.IsKnife(loot->weaponDefIndex) && !schema.IsGlove(loot->weaponDefIndex);
+                })) { customPools.push_back(name); break; }
+    if ((config.match_case_percent && cases.empty()) || (config.match_case_percent < 100 && skins.empty() && customPools.empty()))
         return std::nullopt;
     std::vector<InventoryItem> result;
     for (std::uint32_t i = 0; i < config.match_drop_count; ++i)
@@ -311,10 +320,20 @@ std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, c
         }
         else
         {
-            const auto &skin = skins[Below(random, skins.size())];
-            const auto loot = schema.SkinAsLootItem(skin.weaponDefIndex, skin.paintKitIndex);
-            if (!loot) return std::nullopt;
-            item = MakeLootItem(*loot, *schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex), random, 0);
+            const bool custom = !customPools.empty() && (skins.empty() || Below(random,100)<config.custom_collection_drop_percent);
+            if (custom)
+            {
+                auto rolled=RollLootList(schema,customPools[Below(random,customPools.size())],random,{},0,config.match_skin_min_rarity);
+                if (!rolled) return std::nullopt;
+                item=*rolled; item.statTrak=false;
+            }
+            else
+            {
+                const auto &skin = skins[Below(random, skins.size())];
+                const auto loot = schema.SkinAsLootItem(skin.weaponDefIndex, skin.paintKitIndex);
+                if (!loot) return std::nullopt;
+                item = MakeLootItem(*loot, *schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex), random, 0);
+            }
         }
         result.push_back(item);
     }

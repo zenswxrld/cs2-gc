@@ -1,3 +1,127 @@
+# Helper27c — collection art pass: accent gradients and inversions
+
+Same DLL tag codex-20261022-27; Python/helper update. Includes27a/27b fixes.
+User confirms the27b chase model selection works in the native Armory.
+
+- Rework the12 existing gun collections with a wider, curated set of gun-finish donors; every active entry
+  is a colour family, including same-weapon recolours of official finishes. No gun cases added.
+- Six selected colour/gradient palettes per collection, plus two inversion candidates. Invalid,
+  near-original and duplicate palettes are excluded. No original colourway is an outcome of the NEW families.
+- Preserve coloured pattern regions, neutral trim, alpha and tonal contrast. Inversions swap painted neutral
+  panels; on all-colour patterns they reverse the existing tonal hierarchy. Not an RGB negative.
+- Lower tiers use more subdued saturation. Pattern textures, shader settings, roughness and wear inputs stay intact.
+- New cw2* / rwc_* definitions retain the earlier27a/27b definitions for owned skins. Names stay clean:
+  variants do not append palette or inversion suffixes to the displayed skin name.
+- User's M4A4 Blaze screenshot has no visible flame motif. Exclude aa_flames from new transfers;
+  older owned Blaze copies stay supported but their missing motif is NOT claimed fixed.
+- Eclipse and Monsoon remain drop-only; the other10 remain in Armory rotation. Standard case pools are unchanged.
+- New cs2_gc_weapon_palettes.json records original and generated colour vectors, source materials and exclusions.
+
+Install: close CS2/helper; back up inventory and cs2_gc_finish_ids.json. Extract ALL files (including weapon_palettes.py)
+into game/bin/win64; run cs2_gc_debug.exe. Keep the active config, inventory and finish-ID map.
+
+Test:
+1. Launch completes preparation with no skipped finish generation; Armory chase previews still match.
+2. Inspect all12 collections:16 entries each, no repeated donor within a collection, no new Blaze.
+3. Redeem repeated entries: colour and inverted variants roll under one name; original donor colourway absent.
+4. Compare accents/neutral panels in preview AND gameplay, including wear. Report dull, overly bright or misplaced
+   patterns with the weapon/collection name and cs2_gc_weapon_palettes.json.
+5. Existing owned skins still render, selling still works, restart retains inventory/stars/loadouts.
+
+Offline audit using supplied colour vectors and actual schema:192 entries,3–8 variants each,1395 active variants;
+154 near-original combinations rejected. This used reconstructed material fixtures, not target-client rendering.
+Glitter/pearl/iridescent shader effects remain research work; none were guessed or added here.
+Custom collection trade-up membership and the existing care-package claim timeout remain pending.
+
+---
+
+# Helper27b — correct chase tile and distinct patterns per collection
+
+Same DLL tag codex-20261022-27. Includes all27a preparation/crash mitigations.
+User screenshots confirm live main-page collection models and full-screen collection inspection render.
+They also show an unwanted repeated Ossified pattern in Ashfall and Brimstone/Cascade tiles displaying
+lower-tier guns instead of their intended chase.
+
+- Select the tile weapon directly from the generated chase-first manifest, independent of native lootlist ordering.
+- Each collection now uses distinct base material patterns; the chase pattern is not reused by a lower-tier gun.
+- Retain the previous27a kit/material definitions and colour families so existing owned skins continue rendering.
+
+Extract ALL files with CS2 closed; start cs2_gc_debug.exe. Test: Brimstone tile uses Desert Eagle,
+Cascade tile uses AWP; Ashfall has one Ossified pattern, and the lower-tier guns have other patterns.
+Redeem several times to confirm colour variations still roll and older owned27a skins still render.
+These specific corrections still need in-game verification. Existing custom trade-up/claim limitations remain.
+
+---
+
+# Additional27a fix — bot VPK read error
+
+The screenshot names game/cs2_gc_bots/pak01_000.vpk as unreadable. The rewards helper previously
+ran native preparation again inside the running game, including repacking VPKs. It now only handles
+rewards/console/profile configuration; all native archive preparation runs before launch in cs2_gc_debug.exe.
+This removes a possible archive-replacement race. The exact crash trigger still needs a retest.
+Run the updated launcher with CS2 fully closed so it rebuilds any mismatched bot archive.
+Do not delete your inventory or finish-ID map. If preparation fails, send cs2_gc_prepare.log instead of starting CS2 directly.
+
+# Helper hotfix27a — preparation failure after build27
+
+Same DLL tag `codex-20261022-27`; Python helper fixes. Extract ALL files over build27, close CS2 and run
+cs2_gc_debug.exe. Do not start CS2 directly for this check: preparation must finish successfully first.
+Keep your inventory, active config and finish-ID map; no reset is needed.
+
+The supplied preparation log showed KV3-v4 material parsing aborting finish generation while the launcher
+still continued. The latest GC session loaded build27 but rejected the colour-family file. The dump records
+a null read in client.dll+0x1138394; without game symbols this does not identify the exact crash trigger.
+A mismatched generated schema/material/family set is a plausible cause, not yet proven by a successful retest.
+
+- Skip unsupported donor KV3 versions before recolouring; the KV3 writer remains v5-only.
+- Use verified gun-pattern donors for recoloured filler slots rather than attempting arbitrary official materials.
+- Unexpected finish preparation errors now stop launch instead of silently rebuilding a partial catalogue.
+
+Test: run the helper; cs2_gc_prepare.log must show successful finish generation with no `skipped` KV3 error.
+The GC log must accept cs2_gc_skin_families.txt. Then open Armory, inspect custom collections, and restart.
+If it crashes again, send the new preparation/GC logs and dump. Native tile rendering remains unverified.
+
+---
+
+# Build27 handoff — collection-only overhaul
+
+DLL tag: `codex-20261022-27`. Target CS2 build25966348.
+
+Close CS2 and the helper. Back up your inventory, active config and **cs2_gc_finish_ids.json**.
+Extract ALL files into game/bin/win64 (including collection_icons), preserving your real Steam DLL,
+inventory and finish-ID map. Run cs2_gc_debug.exe. Python3 is still required.
+Only an example config is shipped; your active config stays yours. The launcher regenerates the owned packs.
+
+Changes:
+- Custom Armory collection tiles use one native live 3D chase weapon, keeping the stock click target, title and price.
+- Twelve gun collections keep the stock 1 red / 2 pink / 3 purple / 4 blue / 6 industrial layout.
+  Chase patterns now include nine gun patterns and three knife-family patterns, across five top weapons.
+- Colour families remain one named entry that rolls a colour variant. Pink/purple and two blue slots also get recolours.
+- Unchanged official weapon/material pairs and repeated unchanged custom pairs are excluded, including material aliases.
+- Ten collections rotate in Armory. Eclipse and Monsoon are drop-only: by default 15% of weapon reward slots,
+  respecting match_skin_min_rarity. Existing case/weapon split stays unchanged. Configure custom_collection_drop_percent=0 to disable.
+- No new custom gun cases. Previous kit/material definitions remain generated for owned skins.
+- Existing Dead Hand recolour removal remains in effect.
+
+Test these:
+1. Launch and confirm tag27 and a successful preparation log; open Armory and rotate several times.
+2. Custom collection tiles: one visible 3D chase, readable title/price, correct click destination, no gold question mark.
+   Check performance and framing on different resolutions; stock tiles should still render normally.
+3. Inspect each collection and redeem several times: 16 entries, varied base patterns, colours change within each named family.
+   Compare preview with the redeemed item in inventory and in-game. New donor/weapon combinations need visual verification.
+4. Eclipse/Monsoon must never appear for purchase. Earn weapon rewards; optionally temporarily use
+   match_case_percent=0 and custom_collection_drop_percent=100 to test the two pools quickly. Restore your settings afterward.
+   Rewards must respect the configured minimum rarity and have no StatTrak.
+5. Check older owned custom skins still render and survive restart. Check normal cases, souvenir purchases and selling.
+
+Still pending: custom collection trade-up membership and the inventory reward-claim timeout are not fixed by this build.
+No end-of-match drop popup was added. Automated checks do not prove native rendering or claim delivery.
+
+See CUSTOM-COLLECTIONS.md for the intended chase/availability list. Missing source materials fall back to verified donors;
+a collection with too few usable entries is omitted rather than sold incomplete.
+
+---
+
 # Build26q (Claude): stock collection layout + 12 custom gun cases
 
 - User: custom collections/cases must "look like this in the armory ... follow the layout rule for the

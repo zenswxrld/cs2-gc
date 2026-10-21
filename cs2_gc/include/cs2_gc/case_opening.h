@@ -53,7 +53,7 @@ void ApplySkinFamily(const Schema &schema, InventoryItem &item, const RandomSour
 // are skipped and the rest renormalised. Nothing when no tier has an item.
 std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view lootListName,
                                           const RandomSource &random, const CaseOdds &odds = {},
-                                          std::uint32_t excludedRarity = 0);
+                                          std::uint32_t excludedRarity = 0, std::uint32_t minimumRarity = 0);
 
 // Roll a souvenir weapon and same-event decals without mutating inventory or case pity.
 std::optional<InventoryItem> RollSouvenir(const Schema &schema, const CrateInfo &crate,

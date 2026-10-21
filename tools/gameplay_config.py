@@ -1,5 +1,6 @@
 """Validated cs2_gc_gameplay.cfg shared with the proxy (restart both after edits)."""
 DEFAULTS = {
+    'custom_collection_drop_percent': 15,
     'end_match_screens': 1, 'end_match_duration': 20, 'match_end_delay': 45,
     'armory_collection_slots': 3,
     'armory_charm_slots': 2,
@@ -56,6 +57,7 @@ DEFAULTS = {
     'premier_bonus_wins': 0,
 }
 LIMITS = {key: (0, 1) for key in DEFAULTS}
+LIMITS['custom_collection_drop_percent'] = (0, 100)
 LIMITS.update({key:(0,1000000) for key in DEFAULTS if key.startswith('sell_charm_')})
 LIMITS.update({key:(0,1000) for key in DEFAULTS if key.startswith('sell_wear_') and key!='sell_wear_enabled'})
 LIMITS.update({key: (0, 1000000) for key in ('kill_xp', 'headshot_xp', 'mvp_xp', 'match_complete_xp')})

@@ -46,6 +46,44 @@ SCHEMA = '''"items_game" {
 
 
 class ArmoryRotation(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('node'), 'Node required for collection tile model fixture')
+    def test_custom_tile_uses_one_chase_model_with_native_camera_and_preserves_stock_tiles(self):
+        script = '''const assert=require('assert');
+const m_localRotation={previews:{set_cs2gc_case_x:[['weapon_awp',9002]]}};
+const single={visible:true,GetParent:()=>tileBody}, carousel={visible:true}, tileBody={};
+const tile={FindChildInLayoutFile:name=>name==='id-xpshop-tile-single-image'?single:carousel};
+const InventoryAPI={GetItemDefinitionName:id=>id==='chase'?'weapon_awp':'unknown',
+ GetItemDefinitionIndexFromDefinitionName:name=>{assert.equal(name,'weapon_awp');return 9;},
+ GetFauxItemIDFromDefAndPaintIndex:(def,paint)=>{assert.equal(def,9);assert.equal(paint,9002);return 'chase';}};
+const XpShopWeaponCameraSettings={CameraSettings:[{type:'weapon_awp',camera:'sniper'}]};
+let models=[],holders=[];
+const $={CreatePanel:(type,parent,id)=>{const p={style:{},hittest:true,hittestchildren:true};holders.push(p);return p;}};
+function MakeMapItemPreviewPanel(parent,camera,map,entry) {
+ const p={style:{},SetActiveItem:i=>p.active=i,SetItemItemId:(id,slot)=>p.item=id,SetRenderInterval:n=>p.interval=n};
+ models.push({p,parent,camera,map});return p;
+}
+''' + rotate_armory.COLLECTION_TILE_MODEL + '''
+assert.equal(_LocalCollectionTileModel(tile,{item_name:'lootlist:set_arabesque',lootlist:['official']}),false);
+assert.equal(models.length,0);assert.equal(single.visible,true);
+assert.equal(_LocalCollectionTileModel(tile,{item_name:'lootlist:set_cs2gc_case_x',lootlist:[]}),false);
+assert.equal(_LocalCollectionTileModel(tile,{item_name:'lootlist:set_cs2gc_case_x',lootlist:['filler','chase']}),true);
+assert.equal(models.length,1);assert.equal(models[0].camera,'camera_weapon_sniper');
+assert.equal(models[0].map,'ui/xpshop_item');assert.equal(models[0].p.item,'chase');
+assert.equal(models[0].p.active,0);assert.equal(models[0].p.interval,10);
+assert.equal(models[0].p.hittest,false);assert.equal(holders[0].hittestchildren,false);
+assert.equal(single.visible,false);assert.equal(carousel.visible,false);
+'''
+        result=subprocess.run(['node','-e',script],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        with self.assertRaises(ValueError):rotate_armory.patch_collection_tile_models('changed native layout')
+
+    def test_tile_patch_scopes_repeated_native_conditions_to_shop_tile(self):
+        native = "    function _MakeShopTile(ShopEntry) {\n            if (ShopEntry.lootlist?.length === 1) {}\n    }\n"
+        other = "    function _Other(ShopEntry) {\n            if (ShopEntry.lootlist?.length === 1) {}\n    }\n"
+        patched = rotate_armory.patch_collection_tile_models(native + other)
+        self.assertTrue(patched.endswith(other))
+        self.assertEqual(patched.count('if (_LocalCollectionTileModel(elTile, ShopEntry))'), 1)
+
     def test_only_catalogue_rows_change_and_all_slots_have_independent_pools(self):
         changed, slots = catalog.patch_catalogue(SCHEMA, gameplay_config.DEFAULTS)
         old, new = collect(parse(SCHEMA)), collect(parse(changed))
@@ -170,6 +208,9 @@ assert.deepEqual(visible(), ['capsule', 'case_a', 'charm_a']);
         previews = native_finishes.collection_previews(lists, ['set_cs2gc_case_x'], {'cga_a_uncommon': 9001, 'cgf_doppler_ancient': 9002})
         self.assertEqual(previews, {'set_cs2gc_case_x': [['weapon_ak47', 9002], ['weapon_p90', 9001]]})  # chase first
         source = """    const m_elContentPanel = root;
+    function _MakeShopTile(ShopEntry) {
+            if (ShopEntry.lootlist?.length === 1) {}
+    }
     function _UpdateShopGoods(m_nTrack) {
         aShopItemsData.forEach((element) => {
             _MakeNavButton(element);

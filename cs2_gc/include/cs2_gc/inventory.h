@@ -61,6 +61,7 @@ struct InventoryItem
     std::uint32_t expiration{};
     std::optional<std::uint32_t> purchasePrice;
     bool ownerCertificate{}; // accepted terminal offer: shows the Original Owner Certificate (purchaser account id)
+    std::uint32_t musicKit{}; // music id attribute (166)
     bool statTrakFromContract{}; // preserve intentional local mixed-contract variants across startup repair
 };
 

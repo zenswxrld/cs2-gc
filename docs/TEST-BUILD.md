@@ -1,93 +1,63 @@
-# Codex test build 2026-10-20-05
+# Codex test build 2026-10-20-17
 
 ## Install
 
-1. Fully close CS2 and back up `steam_api64.dll`, `cs2_gc_inventory.txt` and your gameplay config.
-2. Copy the ZIP contents into `game/bin/win64`, keeping your existing original `steam_api64_real.dll`, `items_game.txt`, replay folder and proxy/account config. Keep Python 3 installed and every bundled helper beside the DLL. Preserve custom gameplay settings when copying the example config.
-3. With CS2 closed, double-click **cs2_gc_debug.exe** from that folder. It starts Steam with `-applaunch 730 -insecure -condebug +exec cs2_gc_console`, preparing the command CFG first. Debug flags and exec apply automatically for this launch. The hidden rewards helper starts/stops with CS2; no rewards window is needed. Steam may show its normal launch-options confirmation.
-4. Wait for native preparation messages in `cs2_gc_rewards.log`, fully close CS2, then launch again. Schema and Panorama changes need this extra restart. Unsupported/missing assets are logged and skipped without stopping XP.
-5. Open the native Armory. Check its timer and six category slots, buy one active item, and equip skins for both teams. Restart again to check saved loadouts.
+1. Fully close CS2. Back up the proxy DLL, `cs2_gc_inventory.txt` and gameplay config.
+2. Extract **all** ZIP contents into `game/bin/win64`. Preserve your original `steam_api64_real.dll`, schema, replay folder, proxy config and saved inventory. The ZIP supplies `cs2_gc_gameplay.example.cfg`; it does not overwrite your live gameplay config. New settings use their defaults when omitted.
+3. Start the **updated `cs2_gc_debug.exe`**. It prepares the native files while CS2 is closed, then starts Steam/CS2 with the debugging flags. No second launch is needed for files prepared this way.
+4. If preparation fails, read `cs2_gc_prepare.log` beside the launcher. The launcher leaves CS2 closed so its VPKs remain unlocked. Python 3 is required, as before.
 
-`grant_test_items.cmd` is an optional additive test-inventory tool, used with CS2 closed. It backs up first and adds 229 schema-validated items, including all skin tiers, StatTrak, cases/keys, capsules, terminals and passes. Each run adds another batch. It is not required for gameplay.
+Do not use the old launcher or start through Steam first when installing this update: Windows locks already-mounted VPKs. Build 15's logs show exactly this failure, leaving old Armory/scoreboard resources mounted against the new coordinator catalogue. The background helper remains for rewards; it should find the prebuilt native packs unchanged.
 
-## New in build 05
+## User-confirmed working before this update
 
-- Equipped loadout slots now save in the inventory, restore into client/server item state, and save immediately after native equip requests. Older saves have no stored choices to recover; equip again after installing.
-- Installed Panorama lookup accepts the actual `.js`, `.vjs`, `.js_c` or `.vjs_c` filename and slash representation. Raw JS stays raw. This addresses build 04's logged missing `.vjs_c` assets; the target game must still confirm loading.
-- Native mixed-recipe override now mounts through both `Game` and `Mod`. This is a new mounting test, **not a verified fix** for the user's still-segregated normal/StatTrak picker. The backend already accepts mixed contracts and uses their StatTrak fraction.
-- Armory catalogue and UI preparation now run automatically. Catalogue rows refer only to existing official items/loot lists; no custom cases, skins or paint kits. The GC validates source/output CRCs and the owned mount before loading that same generated schema on the next launch.
-- All six Armory category pools rotate independently every 15 minutes, with a visible countdown. One active entry per pool; previous selections expire without spending stars. A stale inspect screen returns to the main tiles when the cycle changes.
+Selling pays stars; newer weekly-collection weapon drops arrive; hiding Open to Rent and skipping the opening confirmation work. The rewards/rating tab appears and shows rating changes. Existing mixed trade-ups, held skins, certificates and rotation were also reported working earlier. These paths are retained. The missing end-match cards and poor layout are separate from the successful inventory rewards.
 
-| Slot | Pool in supplied build 25966348 | Default price |
-| --- | --- | ---: |
-| Cases | 42 standard keyed weapon cases | 2 stars |
-| Capsules | 34 curated sticker/team capsules | 1 star |
-| Weapon collections | 6 current/previous Armory collections | 4 stars |
-| Sticker sheets | 6 Armory sticker collections | 1 star |
-| Charms | 4 Armory charm collections | 3 stars |
-| Limited Edition Item | Heat Treated, XM1014 Solitude, M4A1-S Solitude, AK-47 Aphrodite, Howl | 25 stars; Howl 40 |
+## Build 17 changes
 
-The capsule selection includes team capsules from Katowice/Cologne 2014, Katowice/Cologne 2015, Stockholm, Antwerp, Paris, Copenhagen, Shanghai, Austin and Budapest where their group capsules exist in the installed schema, plus CS20, CS:GO 10, Halo, Half-Life Alyx and Skill Groups. This is a curated pool, not a live market popularity ranking. No individual team envelopes, coupons, souvenirs or music capsules enter it. Missing schema entries are omitted. Charms and sticker sheets use existing Armory pack loot lists; unrelated weapon collections do not enter the collection pool.
+- Removes the worded category tabs. Larger 56×48 paging arrows, a larger page number and a 23px countdown sit together in a centered header.
+- Balances the currently rotating goods across pages so shorter rows do not repeat unchanged. The featured limited item is pinned on the first page and stays visible while paging. Types are interleaved so container offers do not crowd stickers off the first page.
+- Agent tile portraits move to the right of the title/cost. Agent inspection uses up to eight named cards per page, a smaller heading and its own pager; a lower-height viewport uses fewer rows. Space is reserved for the native purchase/confirmation bar. Browsing previews does not choose the random purchase outcome.
+- Adds a dedicated rotating terminal offer, 2 stars by default, using installed volatile-container definitions. The inspected schema contains Genesis and Dead Hand. It grants a closed terminal through the existing native purchase/open path; it does not roll its offers at redemption. Settings: `armory_terminal_slots=1`, `armory_terminal_price=2`. Setting `terminals_enabled=0` also removes it from rotation. The catalogue now contains 122 real goods.
+- User confirmed the native bottom Sell for Stars placement. Graffiti is reported broken and intentionally deferred at the user's request.
 
-Limited items share the existing limited-style native tile flow. Howl uses the existing single-Howl `removed_items` list, retaining Contraband rarity. New catalogue rows create actual native shop indexes; there are no invented redeem indexes. Live rendering/redemption remains to be checked after the restart.
+Use the updated launcher after fully closing CS2, as above. New UI placement and terminal redemption need live testing. Paging/agent bounds and terminal rotation, star spending and unsealing have automated checks; the stock XP animation remains unresolved.
 
-## In-game test commands
+## Earlier build 16 changes retained
 
-Use **cs2_gc_debug.exe** to start the game: it adds the flags and runs the command setup automatically. Once the background helper is ready, use these directly in the in-game console.
+- **Pre-launch preparation:** fixes the logged Windows `Access is denied` errors when replacing `pak01_000.vpk`. Updates the client catalogue, Armory, scoreboard and results before those files can be mounted. This also addresses stale tiles attempting purchases that the newer coordinator correctly rejected.
+- **Sales menu:** removes Community Market sell/listing actions for local inventory items, and puts Sell for Stars at the bottom with a separator. The working native sale request and confirmation are retained.
+- **Armory:** retains the native tile/inspect style, adds visible category filters, a main-page countdown and paging. Native rows hold at most 4 / 3 / 4 offers, closer to the user's reference; a longer row gets another page. Rotation still controls eligible goods and purchases.
+- **Correct artwork/routing:** limited tiles explicitly hide the old hardcoded artwork and display the actual offer. Tile/nav callbacks rebind to their own current entry. Optional preview variations no longer disable the entire rotation patch. Failed coordinator redeems now log the reason code, cost and balance.
+- **Bot ratings:** removes the unverified player-name API call. Each bot gets its own cached rating within the configured spread, keyed by its actual scoreboard slot and identity. The value stays fixed rather than following each later player-rating change. A fresh UI session randomizes the set.
+- **Results layout:** fixes the native `id-eom-layout` 300-pixel height limit that clipped profile level and drop cards. The tab gets full height, a centered results card, smaller headings and opaque background; other tabs retain their stock height.
+- **Drop presentation:** captures new unacknowledged rewards on inventory updates and retains their IDs after acknowledgement, so an inventory popup cannot erase the results tab's detected cards. It never grants or acknowledges items itself.
+- **More time:** results tab displays for 20 seconds; local match restart delay is set to 45 seconds. Both settings are configurable. This needs confirmation in the target server/client.
+- **Music:** parses installed `music_definitions`, writes and saves music-id attribute 166, opens flat keyless music capsule lists, and respects their guaranteed StatTrak metadata. Music StatTrak uses the MVP counter type. Fixed music item definitions with a schema music ID also resolve correctly.
+- **Existing envelopes:** converts owned single-item guaranteed Store offers to their actual sticker/container/music item at startup, preserving item IDs and storage membership. Repeated launches do not add duplicates. New purchases resolve guaranteed contents directly. Ambiguous bundles remain unchanged; missing historical music IDs cannot be reconstructed from an empty generic item.
 
-For a manual Steam launch instead, add `-insecure -condebug`, wait for the helper, then enter `exec cs2_gc_console` once.
+## Useful settings
 
-Then use:
+`end_match_duration=20`, `match_end_delay=45`, `premier_bot_spread=1200`.
+Armory group counts and OfflineCS sale values remain in the gameplay config. Prices default to 1/2/5/10/25/50 by rarity, 150 for knives/gloves, 50% rarity value for stickers/charms, 10 for music, 30% container value and 50% agent price. StatTrak adds no sale premium. Cases/capsules use their CS2 local Armory costs.
 
-```
-cs2_gc_give_stars
-cs2_gc_give_stars_1000
-cs2_gc_force_rotation
-```
+## Test checklist
 
-The first adds 100 stars; the second adds 1,000. They add to the saved balance without advancing XP or passes. Force rotation advances every category pool; wait two seconds before buying. It advances the selection while retaining the normal quarter-hour timer. No BAT file is involved. Do not re-execute the setup CFG mid-session: it initializes the UI rotation offset. The launcher prepares a fresh nonce before startup; the helper reuses it. A helper restart in the same game retains its rotation offset.
+1. Confirm `cs2_gc_prepare.log` ends with preparation complete and `cs2_gc_log.txt` identifies build `codex-20261020-17`.
+2. Check both Armory arrows change the rows, the limited offer appears on page one, the centered countdown, and the paged agent preview. Buy a case, sticker, charm, capsule, terminal and agent; confirm each action matches its tile and spends the displayed stars.
+3. Right-click a spare item: Sell for Stars should be last, Community Market sell absent. Cancel once, then sell and confirm the saved balance.
+4. Check bots have varied ratings; win/loss changes your rating without moving their already-assigned values.
+5. Finish a local competitive match. Check the centered results card, profile level, drop images/names, and time to read them. The stock XP animation remains unresolved; this is the local results tab.
+6. Open a normal and StatTrak music capsule, equip each kit and check playback. Look for old guaranteed offer envelopes converting to their proper contents.
 
-These are console aliases using normal echo/user-info commands and the game's local console log. The helper reads new, exact session-marked lines; the proxy applies a cumulative star cursor atomically with inventory. Historical console output cannot pay again. The UI reads the same local rotation offset. These new aliases and automatic launcher still need live validation on this client.
+## Validation boundary
 
-Debug builds explicitly enable CMake `CS2_GC_DEBUG_TOOLS=ON`. It defaults **OFF** for release: no debug launcher target, no console-control polling, and the helper starts without test commands. Release launch instructions omit `-condebug` and the debug `+exec`; `-insecure` remains required for the offline GC. The launcher does not edit Steam launch options or the user's autoexec, so it leaves no persistent debug flags to remove.
+15 automated suites pass, including cached bot ratings, category paging/countdown, sale confirmation, acknowledged drop-card retention, music IDs/StatTrak, old-offer migration and save/reload. The preparation pipeline was exercised twice against inspected native scripts packed as version-2 resources: all updated overrides were built before launch, read back from their VPKs, syntax-checked, and remained byte-identical on the second pass. Windows x64 debug and release cross-builds pass. New target-client behavior still requires the checklist above.
 
-## Rewards retained
+Console echo-to-log transport for the testing commands remains unresolved in the last live logs. No change here claims to fix it. Terminal monetary-cap semantics and stock XP animation are also outside this update.
 
-New profiles start at **level 1, zero XP**. Profile levels take 5,000 XP and cap at 40.
+## Reset local inventory and progression
 
-| Action | XP |
-| --- | ---: |
-| Kill | 5 |
-| Headshot | +3 |
-| MVP | 25 |
-| Completed match | 600 |
+Fully close CS2 and the rewards helper. Move these files from `game/bin/win64` into a backup folder: `cs2_gc_inventory.txt`, `cs2_gc_gsi_state.json`, `cs2_gc_rewards.txt`, `cs2_gc_matches.txt`, `cs2_gc_premier.txt`, `cs2_gc_console.txt` and `cs2_gc_console_boot.txt`. Missing files are fine. Restart using the launcher; local saves are recreated as the helper starts and the inventory saves. Resetting only the inventory can reapply old cumulative rewards.
 
-Up to five active passes advance together at 400 XP/star, 40 stars per pass. No active pass means profile XP only. Plants/defuses are not connected. Bot matches are supported; warmup/spectated-player stats are excluded. The first snapshot is a baseline, not a retrospective payout.
-
-Every observed completed match grants three independent drops, each 50% case / 50% normal blue-through-red weapon. Every newly earned profile level grants three additional drops with the same policy, without a weekly cooldown. No automatic key or gold/Contraband match drop. Cursors and rewards persist together; old saves do not receive invented historical level rewards.
-
-Case/terminal pity starts soft at roll 10, guarantees the target by roll 100 and persists. Random Armory packs have independent saved pity, also 10/100; highest-tier base chance is at least 0.64%, never reducing a higher baseline. Fixed cases/capsules and limited skins do not advance Armory pity. Collection rolls do not get StatTrak.
-
-Local Premier rating uses observed competitive-mode results: start 1,000, +300/win, -100/loss, hidden until ten wins. It is a local model, not Valve's formula. Profile placement display was confirmed at one win / nine remaining. Scoreboard badges still need live verification. The generated `exec cs2_gc_premier_bots` config applies difficulty before spawning bots; automatic skill and end-of-match panels remain pending.
-
-## Known live failures and next checks
-
-**Terminal Buy is still unresolved.** Build-04 logs show its saved offer reload but the Store preparation fails with `Corrupt input data`. This build does not claim to fix that failure. Send `game/bin/win64/cs2_gc_replay/2501.bin` with both logs so the actual recorded price-sheet compression can be inspected. Use the native laptop; no terminal-purchase BAT is bundled.
-
-**Mixed native trade-up selection still failed in build 04**, after restarting. Test normal-first and StatTrak-first again after this build's additional Mod mount. Backend acceptance/probability tests do not prove the native inventory filter changed.
-
-**End-of-match drop, XP and rank screens are not implemented.** The user confirmed actual drops, earned stars, star persistence and the profile XP bar; these are separate from match presentation.
-
-Check Armory timer/category rendering, two consecutive forced rotations and active/stale redemptions; limited items including Howl; equip/restart/bot-match skins; scoreboard badges; one-click opening/hidden Rent; and per-level drops. Source/JS tests and a Windows cross-build cannot prove the client loaded overrides.
-
-## Configuration and recovery
-
-`cs2_gc_gameplay.cfg` controls XP, drops, mixed contracts, pity, terminals, rotation and Premier rules. Restart once for helper preparation and again to load changed native resources. Unknown/duplicate/out-of-range settings reject. The new category catalogue always enforces its active slots; `armory_rotation_slots` and optional `armory_rotation_enforce` retain their older uncategorised-schema fallback meaning.
-
-To restore homogeneous recipes, set `mixed_stattrak_tradeups=0`. To remove the generated catalogue/UI too, set `armory_rotation_enabled=0`. Launch for the helper to remove its owned mount lines, then restart. Other addons stay intact. Original schema/VPKs stay unchanged; first-edit gameinfo backups and manifest hashes protect external changes.
-
-Keep `cs2_gc_inventory.txt`, GSI state and cumulative cursor files. Deleting history can lose progression; it is not a supported reset. Older lost equip choices and pre-fix spending cannot be reconstructed. If preparation rejects an externally edited addon, inspect it instead of deleting saved inventory.
-
-All offline regression suites and the Windows x64 build are checked separately. Export forwarding preserves all 1,046 supplied proxy exports. No original game DLL, full schema, account data, replay or user log is distributed. Protocol fingerprint hashes still identify the original 25947352 fixture; they were not relabelled as build 25966348.
-
-Send `cs2_gc_rewards.log` and `cs2_gc_log.txt` with the failed action. Avoid publicly sharing GSI state/config because they contain a local identity or token. The remaining OfflineCS feature order is in `FEATURE-ROADMAP.md`.
+Keep your configs, schema and replay folder. A fresh inventory uses the starting `armory_credits` from `cs2_gc.cfg`; set it to 0 if you want zero starting stars. Set `premier_bonus_wins=0` in `cs2_gc_gameplay.cfg` to avoid granting test placement wins again. Default profile progression starts at level 1, 0 XP.

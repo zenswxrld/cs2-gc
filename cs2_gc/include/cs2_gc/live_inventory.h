@@ -75,6 +75,8 @@ public:
     // Adds an item to the inventory and returns it with its new id (the game sees it as
     // CustomItemIdBase + id).
     InventoryItem AddItem(InventoryItem item);
+    // free_case_keys: one matching key for every keyed case type owned. Returns the keys added.
+    std::vector<InventoryItem> EnsureCaseKeys(const Schema &schema);
 
     // Writes the items to a file in the inventory's own text format; false if that failed.
     bool Save(const std::filesystem::path &path) const { return m_inventory.Save(path); }
@@ -176,6 +178,7 @@ public:
 
     // Strips stickers and charms from Sticker Slabs. An earlier build wrote a sticker onto a slab item
     // (as if it were a weapon), saved it, and the game crashed on it. Returns how many items were repaired.
+    std::size_t RepairStoreCoupons(const Schema &schema);
     std::size_t RepairSlabs(const Schema &schema);
 
     // Earlier Armory rolls incorrectly assigned hidden StatTrak to collection-only finishes.

@@ -23,6 +23,7 @@ add_library(cs2_gc_core STATIC
     cs2_gc/src/protobuf_dump.cpp
     cs2_gc/src/replay.cpp
     cs2_gc/src/proxy_support.cpp
+    cs2_gc/src/item_sales.cpp
     cs2_gc/src/inventory.cpp
     cs2_gc/src/keyvalues.cpp
     cs2_gc/src/live_inventory.cpp
@@ -47,7 +48,23 @@ if(BUILD_TESTING)
 
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_FOUND)
+        add_test(NAME cs2_local_results_and_sales COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_local_results_and_sales.py -v)
+        set_tests_properties(cs2_local_results_and_sales PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_native_ui COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_native_ui.py -v)
+        add_test(NAME cs2_native_bot_names COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_native_bot_names.py -v)
+        set_tests_properties(cs2_native_bot_names PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_skip_key_select COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_skip_key_select.py -v)
+        set_tests_properties(cs2_skip_key_select PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_endmatch_stock COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_endmatch_stock.py -v)
+        set_tests_properties(cs2_endmatch_stock PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_kv3 COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_kv3.py -v)
+        set_tests_properties(cs2_kv3 PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_native_finishes COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_native_finishes.py -v)
+        set_tests_properties(cs2_native_finishes PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_native_knife_reel COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_native_knife_reel.py -v)
+        set_tests_properties(cs2_native_knife_reel PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_reset_profile COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_reset_profile.py -v)
+        set_tests_properties(cs2_reset_profile PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_vpk_pack COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_vpk_pack.py -v)
         set_tests_properties(cs2_vpk_pack PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         set_tests_properties(cs2_native_ui PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -99,7 +116,7 @@ if(CS2_GC_BUILD_PROXY)
             message(FATAL_ERROR "Regenerate the proxy .def with tools/make_proxy_def.py: ${SERVER_EXPORT} must be intercepted for bot servers")
         endif()
     endforeach()
-    add_library(cs2_gc_proxy SHARED cs2_gc/proxy/steam_api_proxy.cpp "${CS2_GC_PROXY_DEF}")
+    add_library(cs2_gc_proxy SHARED cs2_gc/proxy/steam_api_proxy.cpp cs2_gc/proxy/viewmodel_range.cpp "${CS2_GC_PROXY_DEF}")
     set_target_properties(cs2_gc_proxy PROPERTIES OUTPUT_NAME steam_api64 PREFIX "")
     target_link_libraries(cs2_gc_proxy PRIVATE cs2_gc_core)
     if(CS2_GC_DEBUG_TOOLS)

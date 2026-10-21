@@ -1,3 +1,43 @@
+# Current handoff: Codex build 17 (21 October 2026 local time)
+
+Follow-up on the same PR #9 branch. User says Armory works but requested visual cleanup: removed the worded category tabs, enlarged/centered arrows/page number/countdown, balanced rows across pages, and pinned the limited offer on the landing page (retained on later pages). Interleaved offer types to keep the page balanced. Agent tile art now sits on the right; agent inspection has up to 8 named cards with its own pager, a smaller title and reserved purchase-bar space, rather than all 63 overlapping. Preview paging does not affect the random recruitment pool.
+
+User additionally requested terminals in the Armory. Added a separate `terminal` rotation slot, default 1 visible at 2 stars, generated from installed volatile terminal definitions (Genesis and Dead Hand in the inspected schema). C++ and native UI use matching counts; purchases grant a closed real terminal and reuse existing unsealing. `terminals_enabled=0` hides the slot. New configurable keys: `armory_terminal_slots`, `armory_terminal_price`. No schema item/loot definitions are created.
+
+Latest user confirmation: bottom Sell for Stars is correctly positioned. Graffiti is broken; user explicitly said to hold that for later. Do not claim graffiti is fixed. Stock XP animation and console log transport remain open. Keep the working pre-launch resource preparation from build 16.
+
+New layout and terminal offers still need target-client verification. See TEST-BUILD.md. Existing notes below are archival.
+
+---
+
+# Current handoff: Codex build 16 (20 October 2026)
+
+Follow-up on PR #9, branch `codex/armory-agents-weekly-drops-and-match-screens`. Full checklist: [TEST-BUILD.md](TEST-BUILD.md).
+
+**Live finding:** user's build-15 helper could not replace mounted `cs2_gc_native`, `cs2_gc_armory` and `cs2_gc_scoreboard` VPKs (Windows error 5). GC loaded 120 offers while the client retained old six-slot UI/rating behavior. `cs2_gc_debug.exe` now runs new `prepare_native.py` to completion **before** starting Steam/CS2, aborting with a log on failure. Keep this order; preparing only after DLL/game load cannot update locked packs.
+
+**Confirmed by user:** native selling, weekly collection drops, Rent-button removal and one-click opening work. Results tab/rating delta appears but was clipped. Existing working mixed inputs, held skins, certificates and rotation remain intact.
+
+**Follow-up changes:** Community Market actions replaced by bottom Sell for Stars; native Armory category filters/countdown/4-3-4 row paging and explicit limited artwork/current-entry routing; stable individual bot ratings using real scoreboard slots rather than an unverified name API; full-height centered results card (stock parent is 300px); detected reward IDs retained through acknowledgement; configurable 20s tab/45s local match delay. Music definitions/id attribute/persistence/guaranteed ST capsule lists now supported. Single guaranteed old Store envelopes migrate in place without new IDs or duplicate items. Unknown/bundled offers and missing historical generic music IDs are left alone.
+
+Validation: 15 suites pass; Windows debug/release cross-builds; complete pre-launch override pipeline using inspected native scripts and version-2 resources, readback/syntax check from built VPKs, identical second-pass VPK bytes. New live validation remains necessary. Stock XP animation, console log transport and terminal price-cap semantics remain open.
+
+---
+
+# Current handoff: Codex build 15 (20 October 2026)
+
+Branch: `codex/armory-agents-weekly-drops-and-match-screens`, based on your `schema-loader` at `e6f93092f28f0664e479fd5b29080abdc876b44d`. See [TEST-BUILD.md](TEST-BUILD.md) for exact behavior and live checklist.
+
+This update adds configurable multi-group rotation, the official random-agent offer, expanded OfflineCS capsule choices, native limited artwork and certificates, a balance-area timer, weekly-only blue+ weapon rewards, varied local/bot Premier ratings, OfflineCS-style native sales and a native offline end-match rewards/rating tab. `item_sales.cpp` owns pricing and validation; the Panorama menu submits existing CMsgDeleteItem 1004, with the same native delete-to-sell approach as OfflineCS. Container refunds use CS2 Armory costs, not higher old shop prices. The test ZIP must include **all** Python modules, notably new `native_item_sales.py`, `native_endmatch.py`, and your `vpk_pack.py` / `vpk_signatures.py` / `native_offer_numbers.py`.
+
+Preserve your working `.vts_c` / resource-version-2 loader, VPK + signatures mechanism, mixed recipe fix, native trade-ups, terminal certificates and held-skin path. No new item/paint/loot-list definitions are created. Agent shop rows reference an existing official agent list; the backend chooses among the same 63 eligible official agents shown by the UI.
+
+Verified: 15 test suites; real-schema redemption of all 120 catalogue rows, including one agent row and five limited certificates; 40 blue+ weekly finishes; actual native script patch syntax; Windows debug/release cross-builds. New live-client behavior remains unverified. The end-match tab shows actual cached rating/profile level/new unacknowledged drops. It does **not** claim to fix stock XP animation/data-ready flags. It needs a pre-reward inventory baseline and deliberately avoids presenting older unacknowledged items as fresh rewards.
+
+Still open: stock XP animation and stock rank screen data readiness; target-client render/layout and native delete request verification; console echo lines missing from console.log; terminal monetary price cap must not be treated as an offer count. Bot names/chat/personality are outside this update. Existing history below is archival and can contain superseded failures/limits.
+
+---
+
 # Build 05: current status (supersedes historical notes below)
 
 Latest steering: automatic debug launch flags AND exec, disabled for release.
@@ -303,3 +343,176 @@ Full build-25966348 schema loaded successfully, all supplementary rare pools val
 3. Test each terminal's unseal/offer/decline/accept/reopen. If the native client sends additional messages (including 2536), capture their actual bodies before implementing another codec. Dead Hand special drops and historical-offer/collection-XP reward UI require further work.
 4. Test five regular/StatTrak Covert contracts and their model/paint/wear in the client. Exact modern normalized-float formula and gold phase odds need verification; regular wear mapping was preserved.
 5. Compile and mount the optional confirmation source override using the user's target Panorama tools. No game-resource rewrite was installed by the ZIP.
+
+---
+
+# Claude follow-up on build 17 (user reports, 21 October 2026)
+- Armory: removed the second countdown next to the page arrows; the single countdown is now white Stratum2 text
+  directly below "Get Armory Passes" (`id-xpshop-more-passes-btn`). Page arrows hide while a tab's inspect grid is
+  open (`xpshop-grids-visible`) and return on the tile view.
+- Terminal offers: the laptop's "Offer limit" is a price cap; it no longer sets the offer count (terminal.cpp uses
+  `terminal_default_offers`). The laptop label is total minus remaining, so the first offer reads 1st.
+- `cs2_gc_reset_profile.cmd` / `reset_profile.py`: option 1 resets level/XP/Premier/matches only (inventory progression
+  block set to level 1 and `cs2_gc_gsi_state.json` + cursors moved); option 2 also moves the inventory. Files are moved
+  to a dated backup folder.
+- Still open from the same report: clicking the bottom-right sticker capsule tile opens a random tab. Likely the stock
+  scrolling tile (`shuffledArray[iScrollingTile ...]`) routes the click to whichever entry it is showing; not fixed.
+- Follow-up (same day): Armory is one stock-style page again: 4 small / 3 large / 4 small, no paging arrows. The
+  limited edition item is always one of the 3 large tiles and is moved to the middle (`MoveChildAfter`). The single
+  white countdown sits on the right just under the green line (in `cs2gc-category-bar`), below the pass button.
+- Reset script bug fixed: in a .cmd file `set MODE=progress` cleared the CHOICE errorlevel, so option 2 always ran as
+  option 1 (rank reset, inventory kept). The answer is now read before any SET, and the full reset fails loudly if
+  cs2_gc_inventory.txt is still present afterwards.
+- Live-confirmed by the user: terminal offers now read 1st, 2nd, ... in order.
+- Bottom-right Armory tile opening "a random tab": the stock `InventoryUpdate()` re-activates whichever nav RadioButton
+  is `checked`, and our GC pushes inventory updates often. The patched tile click called `_UpdateInspectGrid` directly
+  without checking that entry's nav button, so the next update jumped to an older tab. `_LocalOpenEntry()` now checks
+  the entry's `<item_name>-nav` button before opening the grid. Needs live confirmation.
+- Top row had 3 tiles because the defaults gave it 2 charms + 1 agent; `armory_charm_slots` default is now 3 (C++ and
+  Python and the example cfg). Users with their own cfg must set `armory_charm_slots = 3` themselves.
+- The countdown's right margin is computed each second from the "Get Another Armory Pass" button
+  (`GetPositionWithinWindow` + `actuallayoutwidth`), so it lines up with the button.
+
+### Build 17e (Claude)
+
+- Capsule tile opened Random Agent: on the second open of a crate grid the stock refresh calls
+  `elModel.PanZoomEnabled()` on a null `ItemPreviewPanel` and throws before `_UpdateVisibleInspectGrid`, so the
+  previously shown grid (Random Agent) stayed visible. `patch_previews` now null-guards both `PanZoomEnabled()`
+  calls and the scheduled `TransitionToCamera`, and tiles/tabs open through `_LocalShowGrid`, which catches any
+  remaining error (logged as `cs2_gc armory: <item>: <error>` in the console) and still shows the entry's grid.
+  Not yet confirmed in the client.
+- Countdown right edge now lines up with `id-xpshop-balance` (the pass button is hidden at 5 passes).
+- Removed the custom Random Agent grid title styling (it sat over the tab icons) and the explicit `Stratum2` on the
+  countdown, so both use the stock CS2 font/styles.
+
+### Build 17f (Claude)
+
+- Armory capsule rows (`local_rotation_slot capsule`) now open on purchase: `Armory::Redeem` rolls one sticker
+  from the capsule crate's own loot list (`FindCrate(...)->lootListName`, StatTrak off), falling back to the
+  capsule item only if the loot list can't be resolved. Core test added. Requested by the user after seeing the
+  capsule itself granted; the client "Received from Armory" popup should show the sticker (not yet verified).
+
+### Build 17g (Claude)
+
+- `free_case_keys = 1` (new, default on): `LiveInventory::EnsureCaseKeys` keeps one matching key for every keyed
+  case type owned (at startup and after Armory/Store/match-drop grants, sent as SO creates), and `OpenCase` no
+  longer consumes the key while the option is on. No key purchase is needed. `0` restores normal keys.
+- `bot_fake_ping = 1`: the scoreboard override (`native_scoreboard.py`, needs `premier_scoreboard`) shows a steady
+  per-bot fake ping (15-75 ms, +-3 ms drift) and drops the `bot` row class / BOT ping label. Applied to the user's
+  real scoreboard script cleanly; not verified live.
+- `bot_random_names = 1`: new `native_bot_names.py` overrides `botprofile.db` in its own `cs2_gc_bots` folder,
+  renaming only the profile header names (`Template[+Template] Name`); the launcher reshuffles names on each start
+  (seed in `cs2_gc_bot_names_seed.txt`), the helper reuses the seed so it never changes the VPK while CS2 runs.
+  An unexpected file layout is refused and logged as "Bot names skipped" without blocking the launch. The CS2
+  botprofile.db layout itself has not been inspected; check cs2_gc_prepare.log.
+- "Buggy until restart": the user's logs show the launcher prepared everything ("installed", nothing changed by the
+  helper) and the GC sessions before/after a restart are identical. Cause still unknown; need concrete symptoms.
+  Killfeed/chat "BOT" prefixes are not changed (no script for them inspected).
+- 17h: fake bot ping confirmed live but changed too fast; now it moves by at most 2 ms every 3-8 s and stays
+  within 5 ms of the bot's base. Random names did NOT apply in the user's test (default names shown) - check the
+  "Bot names" line of cs2_gc_prepare.log. The scoreboard shows "[BOT]" before bot names; not changed yet.
+- 17h: `skip_key_selection = 1` (new `skip_key_select.py`, folder `cs2_gc_open`) patches the user's
+  item_context_entries: Open on a local case (id 1e12..2e12) with exactly one chosen action item goes straight to
+  popup_capability_decodable with that key as tool_id (same settings the stock picker passes). Not verified live.
+  Bot names list replaced with realistic gamer handles.
+- 17i: stock end-of-match panels. New `native_endmatch_stock.py` patches the user's endofmatch-rank and
+  endofmatch-skillgroup scripts (folders cs2_gc_eom_xp / cs2_gc_eom_rating): when the engine has no XP / skill
+  group data (always offline), they are fed from local values against `EndOfMatch.LocalBaseline` (captured by the
+  native_endmatch.py patch at match start, cleared at EOM shutdown): XP from MyPersonaAPI.GetCurrentLevel/
+  GetCurrentXp (GetCurrentXp exists in client.dll strings; guarded with typeof), rating/wins from
+  FriendsListAPI Premier. The rating panel retries for up to 4 s for the post-match update. Codex's custom panel
+  is now drops-only and hides itself when nothing dropped. Not verified live.
+  `bot_prefix ""` added to the launcher cfg and premier bots cfg to try to drop "[BOT]" (cvar exists in
+  server.dll; whether it is the source of the tag is unverified).
+
+### Knife recolours + Black Market Case (Claude, in progress - not built yet)
+
+User explicitly wants (20 Oct 2026): OfflineCS-style knife recolours (CSOffline `examples/make_recolors.py`,
+646 `rk_` kits), existing abstract finishes on knives (Twilight Galaxy = am_aqua_flecks, Gold Brick =
+am_gold_brick, Blue Phosphor = am_m4a1s_bluesmoke, ...) plus recolours of those, and one gold-only
+"Black Market Case" (CSOffline icon `examples/case_icons/crate_csgogc_black_market.png`) in the Armory limited
+slot. This needs an AGENTS.md exception (custom paint kits / one case) - add it when implementing.
+
+Verified on the user's own files (cs2_gc_extracted_3):
+- CS2 paint kits in items_game have no colours. A kit either has `composite_material_path` or, for legacy kits,
+  uses `weapons/paints/legacy/<name>.vcompmat`. That vcompmat_c (RED2+DATA, KV3 v5 LZ4) only includes
+  `_shared_paint_generic.vcompmat` and points `CONTAINER_SOURCE_TYPE_SPECIFIC_MATERIAL` at
+  `materials/models/weapons/customization/paints/vmats/<name>.vmat`.
+- That vmat_c (RERL, RED2, DATA, INSG) holds `m_vectorParams` g_vColor0..g_vColor3 as 0..1 float4 - the same
+  four colours CSOffline changed (0..255 there). Style is `F_PAINT_STYLE` in m_intParams.
+- New tools/kv3.py reads KV3 v5 (none/LZ4) and writes it uncompressed, plus resource containers. Round trip
+  verified on all six user samples (not committed: proprietary). tests/test_kv3.py is synthetic.
+Plan: native_finishes.py at prepare time reads base vcompmat_c/vmat_c from the installed VPK, writes
+`rk_<base>_<theme>` copies (vmat: new m_materialName + recoloured g_vColor*, vcompmat: new specific material
+path) into a cs2_gc_finishes VPK folder; adds paint_kits (+paint_kits_rarity) entries with
+composite_material_path in the native_tradeups items_game override (run before patch_catalogue so the GC, which
+loads the mounted native schema, sees them); names via a resource/csgo_english.txt copy with added
+`PaintKit_rk_*_Tag` tokens; Black Market crate cloned from an existing case with its own revolving loot list
+(unusual tier only) and an Armory limited row. Open questions to test live with a small batch first:
+(1) do missing default_generated inventory icons render/fall back, (2) does a VPK resource/csgo_english.txt
+override load, (3) the case icon needs a vtex_c (sample: user's default_generated vtex_c, DATA v1 512x384 fmt 28,
+image data appended after the resource; VRF Texture.cs has the layout).
+
+User's next list after this: career/achievements + collections tab (not in Armory), souvenir packages, bot
+difficulty by rank, bot clan tags/chat/skins, music kit StatTrak/MVP, viewmodel settings + in-game give
+command (no default RCON exposure). Still open: random bot names did not apply (need cs2_gc_prepare.log),
+"[BOT]" tag (17i tries `bot_prefix ""`), confirm 17i stock XP/rating panels live.
+
+### Build 17k: knife recolours + knife-only Black Market Case (Claude)
+
+- `tools/native_finishes.py` (called by native_tradeups.prepare before the Armory catalogue, so client and GC
+  both load the result): reads base vcompmat_c/vmat_c from the installed pak01 (one-time directory index),
+  writes `rk_<base>_<theme>` recolours (OfflineCS themes/duo themes, brightness kept, too-dark ones skipped)
+  under `weapons/paints/cs2_gc/` + `materials/.../vmats/cs2_gc/` into the `cs2_gc_finishes` VPK folder (Game
+  search path), adds paint_kits (ids from 30000, copied base fields + composite_material_path) and
+  paint_kits_rarity, names via a copy of the installed `resource/csgo_english.txt` with added tokens, and the
+  case icon `panorama/images/econ/weapon_cases/crate_cs2gc_black_market_png.vtex_c` (uncompressed BGRA8888 from
+  the OfflineCS PNG, shipped as tools/cs2_gc_black_market_case.png).
+- Bases: KNIFE_BASES (official colour knife finishes incl. Gamma Doppler, Freehand, Bright Water) get all 18
+  themes on 4 random knives each; extra finishes (Twilight Galaxy am_aqua_flecks, Gold Brick am_gold_brick,
+  Blue Phosphor am_m4a1s_bluesmoke + abstract am_/aa_/an_ anodized kits without weapon words) go on every knife
+  and get 6 themes on 2 knives each. Official pairs come from data/gold_pools.txt.
+- Case: `crate_cs2gc_black_market`, cloned from Operation Bravo (4003: model, key 1203 - free keys apply), new
+  def id (first free from 4950), new supply series, loot list with one `_ancient` tier = knives only. GC change:
+  a knife rolled from a case loot list is marked unusual (★). Armory: limited row (`black_market_price`,
+  default 100) so it rotates through the big tile; xpshop crate preview draws a random 96 of the contents.
+- Any failure is reported as "knife finishes: skipped: ..." in the Recipes/catalogue line of
+  cs2_gc_prepare.log and never blocks the launch. `knife_finishes = 0` unmounts everything.
+- NOT yet verified live: inventory icons for new combos (CS2 ships pre-rendered default_generated icons), the
+  csgo_english override, the vtex icon, and the recolours rendering. Check these first.
+- 17l: 17k's `resource/csgo_english.txt` override in the cs2_gc_finishes VPK broke ALL game text (raw #tokens
+  everywhere). Removed; never override the language file. Finish and case names are now literal text in
+  description_string/description_tag/item_name; the old file is deleted on the next prepare (stale cleanup).
+- 17q: user's logs: knife finishes built (704 recolours, 4285 case knives). New collections/capsules failed with
+  status 5 NotInRotation: the helper never saw console.log (game not started with -condebug), so the GC's
+  rotation offset stayed 0 while the page advanced. Armory::Redeem now only checks the rotation when
+  armory_rotation_enforce = 1 (default 0, also for the Howl); the page decides what is shown. Bot names were
+  skipped because CS2's botprofile.db repeats names; that check is removed.
+- 17s: the user's console.log proves CS2 does NOT write `echo` output to console.log (zero "[Console]" lines),
+  so stars/rotate never reached the helper. It does log incrementvar results ("<var> 1.000000"). Commands now
+  `incrementvar cs2gc_<nonce>_s100|_s1000|_rot 0 1000000 1` (variables setinfo'd per launch by the launcher cfg and
+  the helper cfg); console_controls counts each logged line (old echo form still accepted).
+- 17t: every theme for Twilight Galaxy / Gold Brick / Blue Phosphor (added after the original set so existing
+  ids do not move), extra-finish recolours on 4 knives each. Paint kit ids are now saved in
+  game/bin/win64/cs2_gc_finish_ids.json and reused, so owned knives keep their finish when the list changes.
+- 17v: the Black Market Case opened with the stock countdown because the client collapses an all-knife loot list
+  to one placeholder (GetLootListItemsCount <= 1). New native_knife_reel.py (folder cs2_gc_reel) patches the user's
+  popup_capability_decodable: for crate_cs2gc_black_market only, aItemsInLootlist is filled from a 60-knife sample
+  (cs2_gc_black_market_reel.json, written by native_finishes) and the stock scroll runs; the stop tile shows the
+  granted item as usual.
+- 17w: Black Market Case pairs with no shipped `default_generated/<weapon>_<kit>_<light|medium|heavy>_png.vtex_c`
+  get the stock `weapon_cases/default_rare_item_png.vtex_c` (user's choice) - added only to the cs2_gc_finishes VPK
+  (vpk_pack.pack(extra=...), identical contents stored once), never written loose. Real pictures stay for shipped
+  pairs. Base-name fallback for extra finish titles (17v showed "Skeleton Knife | Ember").
+- 17z: user wants the Black Market Case to hold ONLY custom finishes (new knife finishes + recolours); all official knife finishes removed from it (they stay in regular cases).
+- 18a: 12 four-colour GRADIENT_THEMES (colour i -> hue i) for FADE_BASES (fades, marble fade, doppler/gamma phases, marbleized, tiger tooth); appended after older recolours, ids saved.
+- 18b: single-hue themes on FADE_BASES sweep 80 degrees along the finish's colour order (user: fades looked one flat colour).
+- 18c: prices: black_market_price 100 (floor sell_knife_glove+1), sell_knife_glove 72, armory_terminal_price 10, new armory_case_price 5. Capsule tiles open as sticker lootlists (the capsule's own stickers) like sticker collections.
+- 18d: viewmodel range (OfflineCS viewmodel_range). cs2_gc/proxy/viewmodel_range.cpp: background thread waits for
+  client.dll, follows the static CConVarRef objects (client rva 0x25328c0/d0/e0 = viewmodel_offset_x/y/z,
+  0x256aad0 = viewmodel_fov, read from the user's client.dll registration code: each call builds a setup with
+  SetMin(0x76a610)/SetMax(0x76a600) then RegisterConVar via ICvar vtable +0x130 writing ConVarData* to obj+8),
+  checks ConVarData {name, default*, min*, max*} (hl2sdk-cs2 layout) against the exact name and the limits from
+  that code (x 1/-2/2.5, y 1/-2/2, z -1/-2/2, fov 60/60/68) and only then widens: offsets x viewmodel_range_percent
+  (default 250), fov viewmodel_fov_min..max (40..90). Any mismatch logs "left unchanged". cl_bob was requested but
+  no cl_bob convar exists anywhere in this client.dll (removed in CS2), so nothing to restore. Not verified live.

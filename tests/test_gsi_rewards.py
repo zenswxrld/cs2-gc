@@ -71,7 +71,7 @@ class BotRewards(unittest.TestCase):
         self.assertEqual(self.rewards.state['total'], 16)
 
     def test_bonus_premier_wins_apply_once_and_only_upward(self):
-        (Path(self.tmp.name) / 'cs2_gc_gameplay.cfg').write_text('premier_bonus_wins = 8\n')
+        (Path(self.tmp.name) / 'cs2_gc_gameplay.cfg').write_text('premier_bonus_wins = 8\npremier_rating_variation = 0\n')
         granted = gsi.Rewards(self.tmp.name)
         self.assertEqual(granted.state['premier']['wins'], 8)
         self.assertEqual(granted.state['premier']['rating'], 1000 + 8 * 300)

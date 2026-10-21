@@ -155,6 +155,7 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
             if (below(10000) < chance)
             {
                 item = MakeLootItem(top[below(top.size())], highest, random, 0);
+                ApplySkinFamily(m_schema, *item, random);
                 topReward = true;
             }
             else item = RollLootList(m_schema, name, random, collectionOdds, highest);

@@ -394,6 +394,41 @@ std::uint32_t Schema::SouvenirMapSticker(std::uint32_t crateDefinition) const
     return found == m_stickerKits.end() ? 0 : found->second;
 }
 
+bool Schema::LoadSkinFamilies(std::string_view text)
+{
+    const auto parsed = ParseKeyValues(text);
+    const auto *root = parsed ? parsed->Find("skin_families") : nullptr;
+    if (!root || !root->block)
+        return false;
+    const auto index = [&](const std::string &name) -> std::optional<std::uint32_t> {
+        std::uint32_t value = 0;
+        const auto kit = m_paintKits.find(name);
+        if (kit == m_paintKits.end() || !ParseU32(kit->second->key, value)) return std::nullopt;
+        return value;
+    };
+    std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> families;
+    for (const auto &family : root->children)
+    {
+        const auto key = index(family.key);
+        if (!family.block || !key)
+            return false;
+        auto &variants = families[*key];
+        for (const auto &variant : family.children)
+            if (const auto value = index(variant.key))
+                variants.push_back(*value);
+        if (variants.empty())
+            families.erase(*key);
+    }
+    m_skinFamilies = std::move(families);
+    return true;
+}
+
+const std::vector<std::uint32_t> *Schema::SkinFamily(std::uint32_t paintKitIndex) const
+{
+    const auto found = m_skinFamilies.find(paintKitIndex);
+    return found == m_skinFamilies.end() ? nullptr : &found->second;
+}
+
 bool Schema::LoadGoldPools(std::string_view text)
 {
     const auto parsed = ParseKeyValues(text);

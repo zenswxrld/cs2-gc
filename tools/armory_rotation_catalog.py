@@ -90,6 +90,9 @@ def catalogue(source, config):
             add('lootlist:' + name, slot, price, template)
 
     for name in ARMORY_COLLECTIONS: loot(name, 'collection', 4)
+    # Custom colour-family collections (native_skins.py), once the user has checked them with the test case.
+    if config.get('custom_collections', 0):
+        for name in sorted(n for n in sections.get('item_sets', {}) if n.startswith('set_cs2gc_')): loot(name, 'collection', 4)
     # The current weekly drop pool collections rotate through the collection tiles too.
     for name in sorted(n for n in sections.get('item_sets', {}) if n.startswith('set_timed_drops_')): loot(name, 'collection', 4)
     for name in lists:

@@ -129,7 +129,15 @@ std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view
     }
 
     const LootItem &drop = chosen->items[Below(random, chosen->items.size())];
-    return MakeLootItem(drop, chosen->rarity, random, schema.IsGlove(drop.weaponDefIndex) ? 0 : odds.statTrakPerMille);
+    auto item = MakeLootItem(drop, chosen->rarity, random, schema.IsGlove(drop.weaponDefIndex) ? 0 : odds.statTrakPerMille);
+    ApplySkinFamily(schema, item, random);
+    return item;
+}
+
+void ApplySkinFamily(const Schema &schema, InventoryItem &item, const RandomSource &random)
+{
+    if (const auto *variants = item.paintKitIndex ? schema.SkinFamily(item.paintKitIndex) : nullptr)
+        item.paintKitIndex = (*variants)[Below(random, variants->size())]; // rarity stays the collection tier's
 }
 
 std::optional<InventoryItem> RollSouvenir(const Schema &schema, const CrateInfo &crate,

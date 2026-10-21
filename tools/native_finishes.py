@@ -410,7 +410,7 @@ def _block(key, values, indent):
     return '\n'.join(lines)
 
 
-def patch_items_game(source_text, entries, case, case_price=None, extra_cases=()):
+def patch_items_game(source_text, entries, case, case_price=None, extra_cases=(), extra_sections=None):
     """Add the recolour paint kits and the knife-only Black Market Case to an items_game override.
 
     extra_cases: more gold-only cases as dicts (name, title, description, base, items), e.g. the Gauntlet Case."""
@@ -426,11 +426,13 @@ def patch_items_game(source_text, entries, case, case_price=None, extra_cases=()
         if kit_id in sections.get('paint_kits', {}): raise ValueError('Paint kit id %s is taken' % kit_id)
     # Names are written as plain text: overriding the game's language file broke every other string (17k).
     kit_text = '\n'.join(_block(kit_id, [('name', name), ('description_string', title), ('description_tag', title)] +
-                                sorted((k, v) for k, v in values.items() if k != 'composite_material_path') +
+                                sorted((k, v) for k, v in values.items()
+                                       if k != 'composite_material_path' and not k.startswith('_')) +
                                 [('composite_material_path',
                                   values.get('composite_material_path') or COMPMAT_DIR + name + '.vcompmat')], 2)
                          for kit_id, name, title, values in entries)
-    rarity_text = '\n'.join('\t\t' + _quote(name) + '\t\t"ancient"' for _, name, _, _ in entries)
+    rarity_text = '\n'.join('\t\t' + _quote(name) + '\t\t' + _quote(values.get('_rarity', 'ancient'))
+                            for _, name, _, values in entries)
     item_texts, list_texts, revolving_texts, details = [], [], [], {'kits': len(entries)}
     for spec in cases:
         base = sections.get('items', {}).get(spec['base'])
@@ -447,9 +449,12 @@ def patch_items_game(source_text, entries, case, case_price=None, extra_cases=()
         case_def.append(('attributes', [('set supply crate series', [('attribute_class', 'supply_crate_series'),
                                                                      ('value', str(series))])]))
         item_texts.append(_block(case_id, case_def, 2))
-        tier = spec['name'] + '_ancient'
-        list_texts.append(_block(spec['name'], [(tier, '1')], 2) + '\n' +
-                          _block(tier, [(entry, '1') for entry in spec['items']], 2))
+        if spec.get('loot_lists'):  # a case made of existing (tiered) loot lists, e.g. custom collections
+            list_texts.append(_block(spec['name'], [(name, '1') for name in spec['loot_lists']], 2))
+        else:
+            tier = spec['name'] + '_ancient'
+            list_texts.append(_block(spec['name'], [(tier, '1')], 2) + '\n' +
+                              _block(tier, [(entry, '1') for entry in spec['items']], 2))
         revolving_texts.append('\t\t' + _quote(str(series)) + '\t\t' + _quote(spec['name']))
         if spec['name'] == CASE_NAME:
             details.update(case=CASE_NAME, case_id=case_id, series=series, case_items=len(spec['items']))
@@ -457,8 +462,10 @@ def patch_items_game(source_text, entries, case, case_price=None, extra_cases=()
             details[spec['name']] = dict(case_id=case_id, series=series, case_items=len(spec['items']))
     top = parse_spans(source_text).one('items_game')
     inserts = {}
-    for key, text in (('paint_kits', kit_text), ('paint_kits_rarity', rarity_text), ('items', '\n'.join(item_texts)),
-                      ('client_loot_lists', '\n'.join(list_texts)), ('revolving_loot_lists', '\n'.join(revolving_texts))):
+    sections_text = [('paint_kits', kit_text), ('paint_kits_rarity', rarity_text), ('items', '\n'.join(item_texts)),
+                     ('client_loot_lists', '\n'.join(list_texts)), ('revolving_loot_lists', '\n'.join(revolving_texts))]
+    sections_text += [(key, text) for key, text in (extra_sections or {}).items() if text]
+    for key, text in sections_text:
         nodes = [node for node in top.children if node.key == key and node.children is not None]
         if not nodes: raise ValueError('items_game has no %s section' % key)
         inserts[nodes[-1].end - 1] = inserts.get(nodes[-1].end - 1, '') + '\n' + text + '\n\t'
@@ -620,7 +627,28 @@ def prepare(proxy_directory, config, items_game_text):
                 files['panorama/images/econ/weapon_cases/' + native_skins.TEST2_CASE_NAME + '_png.vtex_c'] = \
                     make_vtex(template, ICON.read_bytes())
             skins += skins2
-    patched, details = patch_items_game(items_game_text, entries, case, extra_cases=extra)
+    sections_extra = {}
+    if config.get('custom_skins_test', 1) or config.get('custom_collections', 0):
+        import native_skins
+        family_kits, sets_text, lists_text, family_text, set_names, collection_items = native_skins.collections(
+            items_game_text, kits, [name for _, name, _, _ in entries if name.startswith('rk_')], kit_path)
+        if set_names:
+            next_id = max([FIRST_KIT_ID - 1] + [int(v) for v in known.values()] + [int(k) for k, _, _, _ in entries]) + 1
+            for name, title, values in family_kits:
+                if name in known: kit_id = str(known[name])
+                else: kit_id = str(next_id); next_id += 1
+                entries.append((kit_id, name, title, values))
+            known.update({name: int(kit_id) for kit_id, name, _, _ in entries})
+            atomic_write(ids_path, json.dumps(known, indent=1, sort_keys=True) + '\n')
+            atomic_write(proxy / native_skins.FAMILIES_FILE, family_text)
+            sections_extra = {'item_sets': sets_text, 'client_loot_lists': lists_text}
+            skins += collection_items
+            if config.get('custom_skins_test', 1):
+                extra.append(native_skins.collections_test_spec(set_names))
+                if template is not None and ICON.is_file():
+                    files['panorama/images/econ/weapon_cases/' + native_skins.COLLECTIONS_TEST_NAME + '_png.vtex_c'] = \
+                        make_vtex(template, ICON.read_bytes())
+    patched, details = patch_items_game(items_game_text, entries, case, extra_cases=extra, extra_sections=sections_extra)
     atomic_write(proxy / REEL_FILE, json.dumps(reels, sort_keys=True) + '\n')
     atomic_write(manifest_path, json.dumps(dict(owner=OWNER, files=len(files), **details), indent=2) + '\n')
     wanted = {mod / path for path in files}

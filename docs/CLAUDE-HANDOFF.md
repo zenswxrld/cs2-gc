@@ -1,3 +1,18 @@
+# Build26m (Claude): custom colour-family collections + test case
+
+User approved colour families ("families sounds great"). native_skins.collections(): family paint kits
+cgf_<family>_<rarity> (16 families x 4 tiers) reuse an official finish's composite material for the picture and
+title; three item_sets/client_loot_lists — set_cs2gc_doppler (Doppler, Gamma Doppler, Marble Fade),
+set_cs2gc_spectrum (Fade, Twilight Galaxy, Gold Brick, Blue Phosphor, Ultraviolet), set_cs2gc_classics (Tiger
+Tooth, Slaughter, Crimson Web, Damascus, Case Hardened, Blued Steel, Bright Water, Freehand) — one entry per family
+per gun, tier by gun (TIERS: rifles/AWP/Deagle Covert ... shotguns/LMGs/autos Mil-Spec). Families file
+cs2_gc_skin_families.txt (family kit -> official variants + rk_ recolours) is loaded by the GC
+(Schema::LoadSkinFamilies); RollLootList and the Armory pity top-reward call ApplySkinFamily, granting a random
+variant at the tier's rarity. Variants are not item_set members (no trade-ups from them). Grant-only
+crate_cs2gc_collections_test (loot = the three collection lists). custom_collections = 1 (default 0) adds the
+collections to the Armory rotation as collection rows priced 4 like the others, after the user's test.
+patch_items_game gained extra_sections, loot_lists cases and per-kit _rarity. DLL tag claude-20261021-26m.
+
 # Helper26l (Claude): Custom Skins Test Case 2
 
 User: batch 1 "all honestly work. really well". Batch 2: crate_cs2gc_custom_skins2_test (grant

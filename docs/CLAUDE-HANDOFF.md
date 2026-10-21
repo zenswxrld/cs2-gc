@@ -492,3 +492,6 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   so stars/rotate never reached the helper. It does log incrementvar results ("<var> 1.000000"). Commands now
   `incrementvar cs2gc_<nonce>_s100|_s1000|_rot 0 1000000 1` (variables setinfo'd per launch by the launcher cfg and
   the helper cfg); console_controls counts each logged line (old echo form still accepted).
+- 17t: every theme for Twilight Galaxy / Gold Brick / Blue Phosphor (added after the original set so existing
+  ids do not move), extra-finish recolours on 4 knives each. Paint kit ids are now saved in
+  game/bin/win64/cs2_gc_finish_ids.json and reused, so owned knives keep their finish when the list changes.

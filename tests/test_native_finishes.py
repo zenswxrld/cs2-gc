@@ -1,3 +1,4 @@
+import json
 import struct
 import sys
 import tempfile
@@ -142,6 +143,17 @@ class NativeFinishes(unittest.TestCase):
             icon = (mod / ('panorama/images/' + finishes.CASE_IMAGE + '_png.vtex_c')).read_bytes()
             size = struct.unpack_from('<I', icon, 0)[0]
             self.assertEqual(len(icon) - size, 256 * 192 * 4)
+            ids = json.loads((proxy / 'cs2_gc_finish_ids.json').read_text())
+            self.assertEqual(str(ids['rk_aa_fade_crimson']), [k for k, v in sections['paint_kits'].items()
+                                                              if as_dict(v)['name'] == 'rk_aa_fade_crimson'][0])
+            # Saved ids win over the order, so owned knives keep their finish when the list grows.
+            moved = dict(ids, rk_aa_fade_crimson=39999)
+            (proxy / 'cs2_gc_finish_ids.json').write_text(json.dumps(moved))
+            again, _ = finishes.prepare(proxy, {'knife_finishes': 1}, SCHEMA)
+            kept = {as_dict(v)['name']: k for k, v in collect(parse(again))['paint_kits'].items()}
+            self.assertEqual(kept['rk_aa_fade_crimson'], '39999')
+            (proxy / 'cs2_gc_finish_ids.json').write_text(json.dumps(ids))
+            finishes.prepare(proxy, {'knife_finishes': 1}, SCHEMA)
             # Deterministic: a second run with the same files writes nothing new.
             before = (mod / 'pak01_dir.vpk').read_bytes()
             again, status = finishes.prepare(proxy, {'knife_finishes': 1}, SCHEMA)

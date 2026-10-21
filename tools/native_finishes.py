@@ -58,7 +58,7 @@ KNIFE_BASES = {
 EXTRA_FINISHES = ('am_aqua_flecks', 'am_gold_brick', 'am_m4a1s_bluesmoke')
 EXTRA_THEMES = 6  # recolours per extra finish (knife bases get every theme)
 RECOLOUR_KNIVES = 4  # knives each knife-base recolour appears on in the case
-EXTRA_RECOLOUR_KNIVES = 2
+EXTRA_RECOLOUR_KNIVES = 4
 WEAPON_WORDS = ('ak47', 'ak_', 'awp', 'm4a1', 'm4a4', 'deagle', 'scar20', 'g3sg1', 'p250', 'p90', 'mp9', 'mp7', 'mac10',
                 'ump', 'famas', 'galil', 'aug_', 'sg553', 'sg556', 'ssg08', 'nova', 'xm1014', 'mag7', 'sawedoff', 'negev',
                 'm249', 'glock', 'usp', 'p2000', 'fiveseven', 'tec9', 'cz75', 'elite', 'bizon', 'revolver', 'knife', 'glove',
@@ -234,7 +234,7 @@ def kit_path(name, values):
     return values.get('composite_material_path') or 'weapons/paints/legacy/' + name + '.vcompmat'
 
 
-def plan(source_text, gold_pools_text, titles, finish_source):
+def plan(source_text, gold_pools_text, titles, finish_source, known_ids=None):
     """Everything to generate, deterministic for the same game files.
 
     Returns (files {path: bytes}, kit entries [(name, base, title, values)], case entries ["[kit]weapon"], tokens)."""
@@ -254,7 +254,10 @@ def plan(source_text, gold_pools_text, titles, finish_source):
                    and not KNIFE_VARIANT.search(kit)]
     for kit in colour_kits + extras:
         case += ['[%s]%s' % (kit, knife) for knife in knife_names]
-    next_id = FIRST_KIT_ID
+    # Paint kit ids are stored on owned knives, so an existing recolour keeps its id: known ids come first, and new
+    # recolours take the next free number after them.
+    known_ids = dict(known_ids or {})
+    next_id = max([FIRST_KIT_ID - 1] + [int(v) for v in known_ids.values()]) + 1
     rng = random.Random(20261021)
 
     def add(base, theme, knives_for):
@@ -268,10 +271,13 @@ def plan(source_text, gold_pools_text, titles, finish_source):
         title = '%s %s' % (KNIFE_BASES.get(base) or titles.get(base, base), theme)
         values = {k: v for k, v in kits[base][1].items() if k not in ('name', 'description_string', 'description_tag',
                                                                        'composite_material_path') and isinstance(v, str)}
-        entries.append((str(next_id), name, title, values))
+        if name in known_ids:
+            kit_id = str(known_ids[name])
+        else:
+            kit_id = str(next_id); next_id += 1
+        entries.append((kit_id, name, title, values))
         tokens['PaintKit_' + name] = title
         tokens['PaintKit_' + name + '_Tag'] = title
-        next_id += 1
         picks = knife_names[:]
         rng.shuffle(picks)
         case.extend('[%s]%s' % (name, knife) for knife in sorted(picks[:knives_for]))
@@ -283,6 +289,11 @@ def plan(source_text, gold_pools_text, titles, finish_source):
         picks = themes[:]
         random.Random(base).shuffle(picks)
         for theme in picks[:EXTRA_THEMES]: add(base, theme, EXTRA_RECOLOUR_KNIVES)
+    # Added in 17t after the first set (so earlier ids never move): every colour for the finishes asked for by name.
+    for base in [name for name in EXTRA_FINISHES if name in extras]:
+        picks = themes[:]
+        random.Random(base).shuffle(picks)
+        for theme in picks[EXTRA_THEMES:]: add(base, theme, EXTRA_RECOLOUR_KNIVES)
     return files, entries, sorted(set(case)), tokens
 
 
@@ -438,7 +449,14 @@ def prepare(proxy_directory, config, items_game_text):
     english = english.decode('utf-8-sig')
     gold = (proxy / 'gold_pools.txt').read_text(encoding='utf-8')
     _, _, kits, _ = schema_info(items_game_text, gold)
-    files, entries, case, tokens = plan(items_game_text, gold, titles_from(english, kits), source)
+    ids_path = proxy / 'cs2_gc_finish_ids.json'
+    try:
+        known = json.loads(ids_path.read_text(encoding='utf-8')) if ids_path.is_file() else {}
+    except ValueError:
+        known = {}
+    files, entries, case, tokens = plan(items_game_text, gold, titles_from(english, kits), source, known)
+    known.update({name: int(kit_id) for kit_id, name, _, _ in entries})
+    atomic_write(ids_path, json.dumps(known, indent=1, sort_keys=True) + '\n')
     template = source.read('panorama/images/econ/weapon_cases/crate_operation_ii_png.vtex_c')
     if template is not None and ICON.is_file():
         files['panorama/images/' + CASE_IMAGE + '_png.vtex_c'] = make_vtex(template, ICON.read_bytes())

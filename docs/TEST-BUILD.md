@@ -1,3 +1,12 @@
+# Additional27a fix — bot VPK read error
+
+The screenshot names game/cs2_gc_bots/pak01_000.vpk as unreadable. The rewards helper previously
+ran native preparation again inside the running game, including repacking VPKs. It now only handles
+rewards/console/profile configuration; all native archive preparation runs before launch in cs2_gc_debug.exe.
+This removes a possible archive-replacement race. The exact crash trigger still needs a retest.
+Run the updated launcher with CS2 fully closed so it rebuilds any mismatched bot archive.
+Do not delete your inventory or finish-ID map. If preparation fails, send cs2_gc_prepare.log instead of starting CS2 directly.
+
 # Helper hotfix27a — preparation failure after build27
 
 Same DLL tag `codex-20261022-27`; Python helper fixes. Extract ALL files over build27, close CS2 and run

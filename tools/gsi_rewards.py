@@ -18,22 +18,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gameplay_config import load as load_gameplay
 from console_controls import ConsoleControls
 import premier_rating
-from native_tradeups import prepare as prepare_native_tradeups
-from rotate_armory import prepare as prepare_armory_rotation
-from native_scoreboard import prepare as prepare_native_scoreboard
-from native_store import prepare as prepare_native_store
-from skip_container_confirm import prepare as prepare_container_confirm
-from native_endmatch import prepare as prepare_endmatch
-from native_item_sales import prepare as prepare_item_sales
-from native_offer_numbers import prepare as prepare_offer_numbers
-from native_bot_names import prepare as prepare_bot_names
-from skip_key_select import prepare as prepare_key_select
-from native_endmatch_stock import prepare as prepare_stock_results
-from native_care_packages import prepare as prepare_care_packages
-from native_mainmenu import prepare as prepare_mainmenu
-from native_mission_launch import prepare as prepare_missions
-from native_knife_reel import prepare as prepare_knife_reel
-from native_resources import ensure_first_game_path
 from rewards_runtime import InstanceLock, ParentProcess, serve_until_parent_exits
 import contextlib
 import traceback
@@ -269,53 +253,10 @@ def run_with_parent(args, parent):
             if not config_path.exists() or config_path.read_text(encoding='utf-8') != content:
                 atomic_text(config_path, content)
                 print('GSI config installed/updated. If this is the first setup, restart CS2 once to load it.', flush=True)
-        try:
-            native_status = prepare_native_tradeups(args.proxy_dir, bool(rewards.config['mixed_stattrak_tradeups']), rewards.config)
-            print('Native trade-up UI: ' + native_status, flush=True)
-        except (OSError, ValueError, KeyError) as error:
-            # A changed schema or missing game file must not stop earned XP/stars.
-            print('Native trade-up UI setup skipped: ' + str(error), flush=True)
-        try:
-            print('Native Armory rotation: ' + prepare_armory_rotation(args.proxy_dir, rewards.config), flush=True)
-        except (OSError, ValueError, KeyError) as error:
-            print('Native Armory rotation setup skipped: ' + str(error), flush=True)
-        try:
-            print('Native Premier scoreboard: ' + prepare_native_scoreboard(args.proxy_dir, rewards.config), flush=True)
-        except (OSError, ValueError, KeyError) as error:
-            print('Native Premier scoreboard setup skipped: ' + str(error), flush=True)
-        try:
-            print('Native terminal Store: ' + prepare_native_store(args.proxy_dir, rewards.config), flush=True)
-        except (OSError, ValueError, KeyError, EOFError, lzma.LZMAError, struct.error) as error:
-            print('Native terminal Store setup skipped: ' + str(error), flush=True)
-        try:
-            print('Native container confirmation: ' + prepare_container_confirm(args.proxy_dir, rewards.config), flush=True)
-        except (OSError, ValueError, KeyError) as error:
-            print('Native container confirmation setup skipped: ' + str(error), flush=True)
-        for name, prepare in [('Native item sales', prepare_item_sales), ('Native match results', prepare_endmatch),
-                              ('Native key picker skip', prepare_key_select),
-                              ('Native stock XP/rating panels', prepare_stock_results), ('Main-menu promotion', prepare_mainmenu), ('Care packages', prepare_care_packages), ('Bot mission launch', prepare_missions),
-                              ('Native Black Market reel', prepare_knife_reel)]:
-            try:
-                print(name + ': ' + prepare(args.proxy_dir, rewards.config), flush=True)
-            except (OSError, ValueError, KeyError) as error:
-                print(name + ' setup skipped: ' + str(error), flush=True)
-        try:
-            print('Native terminal offer numbers: ' + prepare_offer_numbers(args.proxy_dir, rewards.config), flush=True)
-        except (OSError, ValueError, KeyError) as error:
-            print('Native terminal offer numbers setup skipped: ' + str(error), flush=True)
-        try:
-            print('Native bot names: ' + prepare_bot_names(args.proxy_dir, rewards.config), flush=True)
-        except (OSError, ValueError, KeyError) as error:
-            print('Native bot names setup skipped: ' + str(error), flush=True)
-        try:
-            print('Native write-path placeholder: ' + ensure_first_game_path(args.proxy_dir), flush=True)
-        except (OSError, ValueError, KeyError) as error:
-            print('Native write-path placeholder setup skipped: ' + str(error), flush=True)
-        try:
-            from vpk_signatures import update as update_vpk_signatures
-            print('Native VPK signatures: ' + update_vpk_signatures(args.proxy_dir), flush=True)
-        except (OSError, ValueError, struct.error) as error:
-            print('Native VPK signatures setup skipped: ' + str(error), flush=True)
+        # CS2 has already mounted these archives. Native preparation belongs to
+        # prepare_native.py in the launcher, while the game is closed. Replacing
+        # a numbered VPK here can invalidate the engine's open directory/offsets.
+        print('Native resources: unchanged while CS2 is running; prepare with cs2_gc_debug.exe before launch.', flush=True)
         try:
             from vpk_pack import status as vpk_status
             print('Native VPK overrides: ' + vpk_status(args.proxy_dir), flush=True)

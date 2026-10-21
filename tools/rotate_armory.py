@@ -217,6 +217,20 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
                 label.style.horizontalAlign = 'right'; label.style.verticalAlign = 'center';
             }
             label.text = text;
+            // Refresh button: the same console alias as cs2_gc_force_rotation, so the GC rotates with the page.
+            if (!bar.FindChildInLayoutFile('cs2gc-refresh-armory')) {
+                const button = $.CreatePanel('Button', bar, 'cs2gc-refresh-armory');
+                button.style.horizontalAlign = 'left'; button.style.verticalAlign = 'center';
+                button.style.height = '28px'; button.style.padding = '0px 14px';
+                button.style.backgroundColor = '#2f6b55cc'; button.style.border = '1px solid #6fbf9a88';
+                const caption = $.CreatePanel('Label', button, '', {text: 'REFRESH ARMORY'});
+                caption.style.fontSize = '16px'; caption.style.color = '#ffffff'; caption.style.verticalAlign = 'center';
+                button.SetPanelEvent('onactivate', () => {
+                    GameInterfaceAPI.ConsoleCommand('cs2_gc_force_rotation');
+                    $.DispatchEvent('CSGOPlaySoundEffect', 'UIPanorama.generic_button_press', 'MOUSE');
+                    $.Schedule(0.2, _LocalRotationRefresh);
+                });
+            }
             // Line the right edge up with the Credits Balance block (always shown; the pass button hides at 5 passes).
             const anchor = root.FindChildInLayoutFile('id-xpshop-balance');
             if (anchor && anchor.IsValid() && bar.GetPositionWithinWindow && anchor.GetPositionWithinWindow) {

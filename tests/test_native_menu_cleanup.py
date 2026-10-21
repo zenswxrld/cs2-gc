@@ -40,5 +40,26 @@ fake=false;draw();assert.equal(stock.visible,true);assert.equal(stock.text,'{g:p
 """
         self.run_js(script)
 
+    def test_rewards_only_open_in_inventory_after_map_unloads(self):
+        source="""    function _OnShowMainMenu() {}
+function check(){
+        if (GameStateAPI.IsLocalPlayerPlayingMatch()) return;
+        if (!$('#MainMenuNavBarHome').checked)
+            return;
+        const objStore = InventoryAPI.GetCacheTypeElementJSOByIndex("PersonalStore", 0);
+        opened++;
+}
+"""
+        script="""const assert=require('assert');let opened=0,inventory=false,map='de_mirage',playing=false;
+const $=id=>({checked:id==='#MainMenuNavBarHome'?!inventory:inventory});
+const GameStateAPI={IsLocalPlayerPlayingMatch:()=>playing,GetMapBSPName:()=>map};
+const InventoryAPI={GetCacheTypeElementJSOByIndex:()=>({})};
+"""+native_mainmenu.patch(source,care_packages=True,hide_promo=False)+"""
+check();assert.equal(opened,0);inventory=true;check();assert.equal(opened,0);
+map='';playing=true;check();assert.equal(opened,0);playing=false;inventory=false;check();assert.equal(opened,0);
+inventory=true;check();assert.equal(opened,1);
+"""
+        self.run_js(script)
+
     def test_changed_mainmenu_fails_closed(self):
         with self.assertRaises(ValueError):native_mainmenu.patch('changed')

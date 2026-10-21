@@ -1,3 +1,15 @@
+# Build 21: remove crashing reward-preview econ objects
+
+Includes build 20. User reports end-of-match crash in build 19. Supplied log ends after first account-zero preview create (def 4186) at ~817106 ms; minidump records access violation reading 0x30 in client.dll +0x83f065. Strong timing evidence, not a symbolized causal stack. Never commit the supplied logs/dump.
+
+Removed all unowned preview creates from match/level notifications and both welcome paths, plus preview destroys on claim. PersonalStore now carries four local choice descriptors (base 3e12, slot in bits32+, paint in bits16-31, definition in low16), not econ item IDs. Popup resolves the display item through native GetFauxItemIDFromDefAndPaintIndex, retains each descriptor as its submission token and enables selection for local catalogue previews. Backend validates current generation, balance3, exactly3 unique descriptors/slots and exact def/paint matches before mapping back to persisted reserved IDs. Only chosen rewards create real owned econ objects. Existing queues are preserved unchanged on disk.
+
+Main-menu popup is Inventory only and requires no loaded map; Home and the match-ending transition cannot open it. XP/Premier end-match patches untouched. Custom Drops tab remains disabled. Metadata cache updates can still occur at match end; no preview items or reward UI are created there.
+
+26 automated suites pass, both Windows cross-builds compile, patched native scripts pass JS syntax checks. Native transport/rendering and crash resolution need live validation. Preserve saved inventory and queues; extract the full ZIP and use the updated launcher before testing.
+
+---
+
 # Build 20: mission launching, direct souvenir purchases, limited prices and scoreboard names
 
 Based on main after PR #11. Build tag `codex-20261021-20`.

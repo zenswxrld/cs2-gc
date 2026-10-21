@@ -4029,16 +4029,23 @@ void NativeCarePackages()
     auto endpointInventory=std::make_shared<LiveInventory>(saved);LocalGameCoordinator endpoint({});int saves=0;
     endpoint.EnableContainers(endpointInventory,shared,[]{return 500ull;},[&]{++saves;});
     Check(endpoint.ApplyMatchRewards(1,[&]{++saves;}),"native choice package queues through the coordinator");
-    bool personal=false,oldDrop=false;std::uint32_t size=0;
+    bool personal=false,oldDrop=false,unsafePreview=false;std::vector<std::uint64_t> choiceTokens;std::uint32_t size=0;
     while(endpoint.IsMessageAvailable(&size)) {
         std::vector<std::uint8_t> bytes(size);std::uint32_t type=0,got=0;endpoint.RetrieveMessage(&type,bytes.data(),size,&got);
         oldDrop|=(type&~ProtobufMask)==gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification;
         FrameView frame;ReadProtobufFrame(type,bytes,frame);
         if((type&~ProtobufMask)==gc_msg::ESOMsg::k_ESOMsg_Create) {
-            const auto object=DecodeSoSingleObject(frame.body);if(object && object->typeId==4)personal=true;
+            const auto object=DecodeSoSingleObject(frame.body);
+            if(object && object->typeId==1)unsafePreview=true;
+            if(object && object->typeId==4) {
+                personal=true;PbReader store(object->data);PbField field;
+                while(store.Next(field))if(field.number==3 && field.wire==0)choiceTokens.push_back(field.value);
+            }
         }
     }
-    Check(personal && !oldDrop && saves==1,"native PersonalStore published without old end-match drops");
+    Check(personal && !oldDrop && !unsafePreview && saves==1 && choiceTokens.size()==4 &&
+          std::set<std::uint64_t>(choiceTokens.begin(),choiceTokens.end()).size()==4,
+          "match end publishes only choice descriptors, no preview econ items or end-match drops");
     {
         const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
         Check(disk.has_value(),"queued package reloads for reconnect");
@@ -4059,12 +4066,12 @@ void NativeCarePackages()
                 if(object.typeId==1)previewCount+=static_cast<unsigned>(object.objects.size());
             }
         }
-        Check(storeFound && previewCount==4 && resumed->Items().Items().empty(),
-              "reconnect publishes four unowned previews and the native PersonalStore without granting them");
+        Check(storeFound && previewCount==0 && resumed->Items().Items().empty(),
+              "reconnect restores choice descriptors without recreating the crashing unowned econ previews");
     }
     const auto &offer=endpointInventory->Items().CarePackages().front();
     PbWriter request;request.Varint(1,offer.generation);request.Varint(2,3);
-    for(unsigned i=0;i<3;++i)request.Varint(3,CustomItemIdBase+offer.offers[i].id);
+    for(unsigned i=0;i<3;++i)request.Varint(3,choiceTokens[i]);
     std::vector<std::uint8_t> body;WriteProtobufFrame(9219,{},request.bytes(),body);
     endpoint.SendMessage(9219|ProtobufMask,body.data(),body.size());
     endpoint.SendMessage(9219|ProtobufMask,body.data(),body.size());

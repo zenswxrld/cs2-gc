@@ -530,3 +530,7 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   slot. Reel file is now {case name: pairs}; the reel patch accepts the old list. GC: a glove from a case's own
   loot list is unusual (Schema::IsGlove). glove_finishes = 0 removes it. Official glove finishes are not in it
   (same rule as the knives). Not verified live.
+- Note for Codex (21 Oct): every "CS2 port checks" run on this branch (PR #9) fails in the windows-latest Build
+  step while ubuntu passes; main last passed at 6b19d25. The job log could not be downloaded from this session
+  (log storage host blocked), so the MSVC error is unknown - likely a /W4 /WX warning in cs2_gc_core (src/ only)
+  that GCC -Wall -Wextra does not report. Next queued for Claude: souvenir packages.

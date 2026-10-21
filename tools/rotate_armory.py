@@ -295,6 +295,7 @@ PREPARE = '''        // Resolve each tile from its own native row, without inher
             const slot = m_localRotation.categories[entry.item_name];
             entry.local_terminal = slot === 'terminal';
             entry.local_souvenir = slot === 'souvenir';
+            entry.local_direct_case = entry.item_name === 'crate_cs2gc_black_market' || entry.item_name === 'crate_cs2gc_gauntlet';
             if (slot === 'agent') {
                 entry.lootlist = m_localRotation.agents.map(name => InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
                     InventoryAPI.GetItemDefinitionIndexFromDefinitionName(name), 0));
@@ -346,7 +347,7 @@ def patch_previews(source):
             return panel;
         }'''
     source = source.replace(create, create + agent, 1)
-    source = source.replace("if (ShopEntry.entry_type !== 'crate') {", "if (ShopEntry.local_terminal || ShopEntry.local_souvenir || ShopEntry.entry_type !== 'crate') {", 1)
+    source = source.replace("if (ShopEntry.entry_type !== 'crate') {", "if (ShopEntry.local_terminal || ShopEntry.local_souvenir || ShopEntry.local_direct_case || ShopEntry.entry_type !== 'crate') {", 1)
     placement = '    function PlaceTiles(elTilesContainer, ShopEntry) {'
     source = source.replace(placement, placement + "\n        if (ShopEntry.local_agent) { _LocalPlaceAgentTiles(elTilesContainer, ShopEntry); return; }", 1)
 

@@ -8,6 +8,8 @@ added next to the knife finishes (native_finishes.py): same VPK folder, same ite
 game's own files changes. glove_finishes = 0 removes the Gauntlet Case; knife_finishes = 0 removes both cases.
 """
 import random
+import colorsys
+import math
 import re
 
 import kv3
@@ -34,6 +36,39 @@ UNUSED = {
 UNUSED_DIR = 'gloves/paints/volatile_02/'
 GLOVE_FADES = ('specialist_fade', 'specialist_marble_fade')
 THEMES_PER_GLOVE = 8
+PANEL_STYLES = {'original': '', 'white': 'White Panels', 'black': 'Black Panels', 'inverted': 'Inverted Panels'}
+PALETTE_REPORT = 'cs2_gc_glove_palettes.json'
+# User-approved existing finish: keep its exact legacy two-tone palette and saved identity.
+# Panel variants still use accent-only recolouring; approval does not extend to other themes.
+APPROVED_PALETTES = {('gloves/paints/specialist_forest_brown.vcompmat', 'Toxic'),
+                     ('gloves/paints/specialist_webs_red.vcompmat', 'Aurora')}
+
+
+def recolor_accents(colors, theme, fade=False, panels='original'):
+    """Recolour chromatic accents; preserve structural tones and alpha unless a panel variant is requested.
+
+    Read the actual material palette. No channel number is assumed to mean a palm, seam or panel.
+    Ambiguous/muted colours are retained; a neutral-only palette is never turned into an all-over tint.
+    """
+    if panels not in PANEL_STYLES: raise ValueError('Unknown glove panel style: ' + panels)
+    if any(len(c) != 4 or any(not math.isfinite(v) or v < 0 or v > 1 for v in c) for c in colors):
+        raise ValueError('Expected finite normalized glove tint vectors')
+    themed = finishes.recolor(colors, theme, fade=fade, keep_value=True)
+    result = []
+    for original, target in zip(colors, themed):
+        _, saturation, value = colorsys.rgb_to_hsv(*original[:3])
+        color = list(original)
+        if value > .12 and saturation >= .35:
+            hue, target_saturation, _ = colorsys.rgb_to_hsv(*target[:3])
+            color[:3] = colorsys.hsv_to_rgb(hue, min(saturation, target_saturation), value)
+        elif panels != 'original' and (saturation <= .2 or value <= .12):
+            if panels == 'white': tone = .82 + .10 * math.sqrt(value)
+            elif panels == 'black': tone = .025 + .075 * math.sqrt(value)
+            else: tone = .04 + .88 * (1 - value)
+            color[:3] = [tone] * 3
+        result.append(color)
+    return result
+
 
 
 def glove_info(source_text, gold_pools_text):
@@ -64,7 +99,7 @@ def _tints(root):
     return found if len(found) == len(TINTS) else None
 
 
-def make_glove_finish(source, compmat_path, new_name, theme, fade=False):
+def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels='original', report=None):
     """(vcompmat bytes, vmat bytes) for a recolour, or None when the finish is not an eight-tint glove material."""
     compmat = source.read(compmat_path + '_c')
     if compmat is None: return None
@@ -86,7 +121,20 @@ def make_glove_finish(source, compmat_path, new_name, theme, fade=False):
     if tints is None: return None
     current = [[item.value for item in tints[name].value] for name in TINTS]
     if any(len(color) != 4 for color in current): return None
-    new = finishes.recolor(current, theme, fade=fade, keep_value=True)
+    approved = panels == 'original' and (compmat_path, theme) in APPROVED_PALETTES
+    try:
+        new = (finishes.recolor(current, theme, fade=fade, keep_value=True) if approved else
+               recolor_accents(current, theme, fade=fade, panels=panels))
+    except ValueError: return None
+    if report is not None:
+        report[compmat_path] = {
+            'original_tints': current,
+            'accent_channels': [i+1 for i,c in enumerate(current)
+                if max(c[:3]) > .12 and colorsys.rgb_to_hsv(*c[:3])[1] >= .35],
+            'policy': 'accent-only-v1',
+            'preserved_legacy_themes': sorted(t for path,t in APPROVED_PALETTES if path == compmat_path),
+        }
+    if panels != 'original' and new == recolor_accents(current, theme, fade=fade): return None
     for name, color in zip(TINTS, new):
         for item, value in zip(tints[name].value, color): item.value = value
     vmat_path = VMAT_DIR + new_name + '.vmat'
@@ -97,7 +145,7 @@ def make_glove_finish(source, compmat_path, new_name, theme, fade=False):
             finishes._with_block(material, 'DATA', kv3.write_kv3(m_guid, m_root)))
 
 
-def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids):
+def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, panel_variants=True, report=None):
     """(files, kit entries, case items, {glove name: def index}); deterministic for the same game files.
 
     known_ids: saved {kit name: id}; used_ids: ids already given out this run (knife recolours)."""
@@ -128,13 +176,19 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids):
             picks = picks[:THEMES_PER_GLOVE] + (list(finishes.GRADIENT_THEMES) if base in GLOVE_FADES else [])
             base_title = titles.get(base) or base.split('_', 1)[-1].replace('_', ' ').title()
             for theme in picks:
-                name = 'rg_%s_%s' % (base, theme.lower())
-                made = make_glove_finish(source, compmat, name, theme, fade=base in GLOVE_FADES)
-                if not made: continue
-                files[COMPMAT_DIR + name + '.vcompmat_c'], files[VMAT_DIR + name + '.vmat_c'] = made
-                entries.append((kit_id(name), name, '%s %s' % (base_title, theme),
-                                {'composite_material_path': COMPMAT_DIR + name + '.vcompmat'}))
-                case.append('[%s]%s' % (name, glove))
+                for panels, panel_title in PANEL_STYLES.items():
+                    suffix = '' if panels == 'original' else '_panels_' + panels
+                    name = 'rg_%s_%s%s' % (base, theme.lower(), suffix)
+                    # Retain known variants in the schema if disabled later, but stop offering them as drops.
+                    if panels != 'original' and not panel_variants and name not in known_ids: continue
+                    made = make_glove_finish(source, compmat, name, theme, fade=base in GLOVE_FADES,
+                                             panels=panels, report=report)
+                    if not made: continue
+                    files[COMPMAT_DIR + name + '.vcompmat_c'], files[VMAT_DIR + name + '.vmat_c'] = made
+                    title = '%s %s%s' % (base_title, theme, ' — ' + panel_title if panel_title else '')
+                    entries.append((kit_id(name), name, title,
+                                    {'composite_material_path': COMPMAT_DIR + name + '.vcompmat'}))
+                    if panel_variants or panels == 'original': case.append('[%s]%s' % (name, glove))
     return files, entries, sorted(set(case)), {name: int(key) for name, key in gloves.items()}
 
 

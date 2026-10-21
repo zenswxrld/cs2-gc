@@ -528,8 +528,11 @@ def prepare(proxy_directory, config, items_game_text):
     glove_entries, glove_case, glove_defs = [], [], {}
     if config.get('glove_finishes', 1):
         import native_gloves
+        glove_palettes = {}
         glove_files, glove_entries, glove_case, glove_defs = native_gloves.plan(
-            items_game_text, gold, titles, source, known, [kit_id for kit_id, _, _, _ in entries])
+            items_game_text, gold, titles, source, known, [kit_id for kit_id, _, _, _ in entries],
+            panel_variants=bool(config.get('glove_panel_variants', 1)), report=glove_palettes)
+        atomic_write(proxy / native_gloves.PALETTE_REPORT, json.dumps(glove_palettes, sort_keys=True, indent=1) + '\n')
         files.update(glove_files)
         if glove_case and template is not None and native_gloves.ICON.is_file():
             files['panorama/images/econ/weapon_cases/' + native_gloves.CASE_NAME + '_png.vtex_c'] = \

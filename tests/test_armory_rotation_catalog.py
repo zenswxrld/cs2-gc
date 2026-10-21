@@ -65,6 +65,30 @@ class ArmoryRotation(unittest.TestCase):
         disabled = dict(gameplay_config.DEFAULTS, armory_howl_enabled=0)
         self.assertNotIn('lootlist:removed_items', catalog.catalogue(SCHEMA, disabled))
 
+    @unittest.skipUnless(shutil.which('node'), 'Node required for native preview fixture')
+    def test_direct_custom_rewards_keep_case_presentation(self):
+        script = """const assert=require('assert');
+const m_localRotation={categories:{crate_cs2gc_gauntlet:'limited',crate_cs2gc_black_market:'limited',ordinary:'case'},
+ custom_rewards:{}};
+const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:(d,p)=>d+':'+p,GetItemName:id=>id};
+const m_tileWidth=200,m_tileHeight=180;
+function _OpenFullScreenInspectItem() {}
+const aShopItemsData=['crate_cs2gc_gauntlet','crate_cs2gc_black_market','ordinary'].map(item_name=>({item_name,entry_type:'crate',lootlist:['case'],suffix_loc_string:'_crate'}));
+""" + rotate_armory.PREPARE + """
+assert.equal(aShopItemsData[0].entry_type,'crate');
+assert.deepEqual(aShopItemsData[0].lootlist,['case']);
+assert.deepEqual(aShopItemsData[1].lootlist,['case']);
+assert.equal(aShopItemsData[1].entry_type,'crate');
+assert.equal(aShopItemsData[0].suffix_loc_string,'_crate');
+assert.equal(aShopItemsData[0].callout,'case');
+assert.equal(aShopItemsData[1].callout,'case');
+assert.equal(aShopItemsData[0].local_direct_case,true);
+assert.equal(aShopItemsData[2].entry_type,'crate');
+assert.equal(aShopItemsData[2].local_direct_case,false);
+"""
+        result=subprocess.run(['node','-e',script],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_limited_prices_repair_old_generated_prices_and_stay_stable(self):
         source=SCHEMA.replace('"set_xpshop_wpn_01" { "weapon_test" "1" }',
             '"set_xpshop_wpn_01" { "weapon_test" "1" } "set_xpshop_wpn_04" { "weapon_test" "1" }')

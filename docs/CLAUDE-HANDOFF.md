@@ -1,3 +1,7 @@
+# Helper update26a: Store Keys tab
+
+User confirms cases removed, rarity resale desired and tested best knife/glove resale below custom-case cost. native_store removes case-associated key names/IDs and every weapon_case_key prefab (including inherited/unlinked keys) from price entries/banner layout. Inspected native StoreItems.MakeStoreItemList classifies key banners; MakeTabsBtnsFromStoreData creates key tab only when category nonempty. No guessed UI IDs or layout rewrite. Existing inventory key selling unchanged. Same DLL26, helper pack26a. Store tests14 pass. Live tab disappearance requires user restart/test.
+
 # Build26: economy safeguards, Store cases, bot labels and material inspection
 
 See TEST-BUILD.md for current behavior and test list; it supersedes older notes below. DLLtag26. Terminal purchases explicitly remain sellable by rarity/wear: do not mark terminal offers noStarSale. Free generic Store grants are marked noStarSale, persisted and inherited by opening/coupon repair/contracts/charm detach/slab seal. Native attribute2 (cannot trade, verified in schema) exposes the restriction to the sale menu. Existing inventory is not retroactively marked. Free terminal purchases are an intentional remaining income route per user instruction, so do not claim an exploit-proof economy.

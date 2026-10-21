@@ -40,11 +40,23 @@ def patch(body, source, terminals_enabled=True):
     cases = sheet.find_case_items(sections)
     case_names = {row[0] for row in cases}
     case_ids = {row[2] for row in cases}
+    # Native StoreItems builds the Keys tab from banner rows for key tools.
+    # Remove both price entries and banner rows; no Panorama layout patch needed.
+    case_names.update(row[1] for row in cases)
+    case_ids.update(row[3] for row in cases)
+    prefabs = sections.get('prefabs', {})
+    def is_key(node, seen=()):
+        for prefab in sheet.items_game.as_dict(node).get('prefab', '').split():
+            if prefab == 'weapon_case_key': return True
+            if prefab not in seen and prefab in prefabs and is_key(prefabs[prefab], seen+(prefab,)): return True
+        return False
     # Custom cases are keyless, so the standard case/key finder does not list them.
     for definition, node in sections.get('items', {}).items():
         if isinstance(node, list):
             name = sheet.items_game.as_dict(node).get('name', '')
             if name in ('crate_cs2gc_black_market', 'crate_cs2gc_gauntlet'):
+                case_names.add(name); case_ids.add(str(definition))
+            elif is_key(node):
                 case_names.add(name); case_ids.add(str(definition))
     before = len(entries)
     entries[:] = [(name, values) for name, values in entries
@@ -75,4 +87,4 @@ def prepare(directory, config):
     if not target.exists() or target.read_bytes() != result:
         temporary = target.with_name(target.name + '.tmp')
         temporary.write_bytes(result); temporary.replace(target)
-    return f'ready: {count} missing terminal Store definitions added; cases removed from Store; original replay unchanged'
+    return f'ready: {count} missing terminal Store definitions added; cases/keys removed from Store; original replay unchanged'

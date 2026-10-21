@@ -1,3 +1,9 @@
+# Helper update26a — hide Store keys
+
+Removes key price entries and banner tiles, including inherited key prefabs. The native Store creates the Keys tab only when key banner entries exist, so it should disappear after restarting with this update. Existing inventory keys remain sellable. Same DLLtag26; extract all files and launch again to regenerate the Store sheet. Target-client tab check pending.
+
+User confirmed build26 removes Store cases, higher rarities sell for more, and tested best knife/glove resale is one star below the custom-case price. Those pricing rules are unchanged.
+
 # CS2-GC test build26 — pricing, native bot labels and material checks
 
 DLL tag: `codex-20261021-26`. Target client build25966348.

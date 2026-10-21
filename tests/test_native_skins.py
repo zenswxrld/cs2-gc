@@ -56,8 +56,8 @@ class CustomSkins(unittest.TestCase):
                          'weapons/paints/legacy/am_doppler_phase2.vcompmat')
         self.assertFalse([n for n in values if 'ak47lam' in n])  # weapon-named patterns are not fillers
         fillers = [i for i in items if i.startswith('[cga_')]
-        self.assertTrue(fillers and all(re.match(r'\[cga_(hy_granite|sp_palm)_(legendary|mythical|rare)\]', i) for i in fillers))
-        self.assertEqual({v['_rarity'] for n, v in values.items() if n.startswith('cga_')}, {'legendary', 'mythical', 'rare'})
+        self.assertTrue(fillers and all(re.match(r'\[cga_(hy_granite|sp_palm)_(legendary|mythical|rare|uncommon)\]', i) for i in fillers))
+        self.assertEqual({v['_rarity'] for n, v in values.items() if n.startswith('cga_')}, {'legendary', 'mythical', 'rare', 'uncommon'})
         self.assertEqual({t for n, t, _ in new if n.startswith('cga_hy_granite_')}, {'Granite'})
         # Only our colours, each named like the family, at the chase's rarity.
         self.assertIn('"cgf_doppler_ancient"\n\t{\n\t\t"cgv_am_doppler_phase1_lava_ancient"\t"1"\n\t}', families)

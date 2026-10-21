@@ -130,7 +130,11 @@ COLLECTION_COUNT = 40
 CHASE_TIERS = {'weapon_usp_silencer': 'legendary', 'weapon_glock': 'legendary'}
 # Ordinary skins per tier: official generic patterns (solid, hydrographic, spray, patina) on guns that never had
 # them, given the tier's rarity through alias paint kits cga_<finish>_<tier> that reuse the official material.
-FILLER_TIERS = (('legendary', 2), ('mythical', 3), ('rare', 5))
+# Same layout as the stock Armory collections (Overpass 2024, Graphic Design, Train 2025): 16 skins —
+# 1 Covert, 2 Classified, 3 Restricted, 4 Mil-Spec, 6 Industrial. A Classified chase (USP-S, Glock) stays the
+# top skin: its collection has 4 Restricted, 5 Mil-Spec and 6 Industrial instead.
+FILLER_TIERS = {'ancient': (('legendary', 2), ('mythical', 3), ('rare', 4), ('uncommon', 6)),
+                'legendary': (('mythical', 4), ('rare', 5), ('uncommon', 6))}
 FILLER_STYLES = ('1', '2', '3', '8')
 FILLER_GUNS = tuple(w for tier in TIERS.values() for w in tier)
 
@@ -210,9 +214,7 @@ def collections(source_text, kits, recolours, kit_path, titles=None):
         rng = random.Random(list_name)
         tiers = {top: ['[%s]%s' % (chase, gun)]}
         taken = {gun}
-        rank = ('rare', 'mythical', 'legendary', 'ancient')
-        for tier, count in FILLER_TIERS:
-            if rank.index(tier) >= rank.index(top): continue  # the chase is the collection's top skin
+        for tier, count in FILLER_TIERS[top]:
             picked = []
             for _ in range(count * 20 if fillers else 0):
                 if len(picked) == count: break
@@ -224,7 +226,7 @@ def collections(source_text, kits, recolours, kit_path, titles=None):
                     made.add(alias)
                 picked.append('[%s]%s' % (alias, weapon)); taken.add(weapon)
             tiers[tier] = picked
-        order = [t for t in ('ancient', 'legendary', 'mythical', 'rare') if tiers.get(t)]
+        order = [t for t in ('ancient', 'legendary', 'mythical', 'rare', 'uncommon') if tiers.get(t)]
         lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote(list_name), ''.join('\t\t\t%s\t\t"1"\n' % _quote(
             '%s_%s' % (list_name, t)) for t in order)))
         for t in order:

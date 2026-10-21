@@ -1,3 +1,21 @@
+# Helper27b — correct chase tile and distinct patterns per collection
+
+Same DLL tag codex-20261022-27. Includes all27a preparation/crash mitigations.
+User screenshots confirm live main-page collection models and full-screen collection inspection render.
+They also show an unwanted repeated Ossified pattern in Ashfall and Brimstone/Cascade tiles displaying
+lower-tier guns instead of their intended chase.
+
+- Select the tile weapon directly from the generated chase-first manifest, independent of native lootlist ordering.
+- Each collection now uses distinct base material patterns; the chase pattern is not reused by a lower-tier gun.
+- Retain the previous27a kit/material definitions and colour families so existing owned skins continue rendering.
+
+Extract ALL files with CS2 closed; start cs2_gc_debug.exe. Test: Brimstone tile uses Desert Eagle,
+Cascade tile uses AWP; Ashfall has one Ossified pattern, and the lower-tier guns have other patterns.
+Redeem several times to confirm colour variations still roll and older owned27a skins still render.
+These specific corrections still need in-game verification. Existing custom trade-up/claim limitations remain.
+
+---
+
 # Additional27a fix — bot VPK read error
 
 The screenshot names game/cs2_gc_bots/pak01_000.vpk as unreadable. The rewards helper previously

@@ -323,9 +323,13 @@ PREPARE = '''        // Resolve each tile from its own native row, without inher
 
 COLLECTION_TILE_MODEL = '''    function _LocalCollectionTileModel(elTile, ShopEntry) {
         const name = String(ShopEntry.item_name || '').replace('lootlist:', '');
-        if (!name.startsWith('set_cs2gc_') || !m_localRotation.previews[name] || !ShopEntry.lootlist?.length)
+        const chase = m_localRotation.previews[name]?.[0];
+        if (!name.startsWith('set_cs2gc_') || !chase || !ShopEntry.lootlist?.length)
             return false;
-        const itemId = ShopEntry.lootlist[0]; // generated preview order: chase first
+        // Native lootlist arrays may be sorted by the client. The generated manifest
+        // keeps rarity order, so take its chase explicitly instead of the first native item.
+        const itemId = InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
+            InventoryAPI.GetItemDefinitionIndexFromDefinitionName(chase[0]), chase[1]);
         const defName = InventoryAPI.GetItemDefinitionName(itemId);
         const cameraData = XpShopWeaponCameraSettings.CameraSettings.find(({type}) => type === defName);
         const camera = 'camera_weapon_' + (cameraData !== undefined ? cameraData.camera : '0');

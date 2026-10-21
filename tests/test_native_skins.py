@@ -29,11 +29,14 @@ class CustomSkins(unittest.TestCase):
         finishes.make_finish=make
         try:
             result=skins.custom_cases(schema,kits,titles,lambda n,v:'paints/'+n+'.vcompmat',None,families,set())
+            previous=skins._curated_custom_cases(schema,kits,titles,lambda n,v:'paints/'+n+'.vcompmat',None,{},set(),False)
         finally:finishes.make_finish=original
         new,files,lists,names,items,icons=result
         self.assertEqual(len(names),12)
         self.assertEqual(len(items),12*16)
         lookup={n:v for n,_,v in new}
+        self.assertTrue({n for n,_,_ in previous[0]}.issubset(lookup),'owned27a kit definitions must remain available')
+        self.assertTrue(set(previous[1]).issubset(files),'owned27a materials must remain available')
         chases=[i for i in items if i.startswith('[ccf_') and '_chase_' in i]
         self.assertEqual(len(chases),12)
         self.assertEqual(len({i.split(']')[1] for i in chases}),5)
@@ -43,6 +46,16 @@ class CustomSkins(unittest.TestCase):
             from inventory_item import collect,parse
             parsed=collect(parse('"items_game" { "client_loot_lists" { '+lists+' } }'))['client_loot_lists']
             self.assertEqual([len(parsed[name+'_'+tier]) for tier in ('ancient','legendary','mythical','rare','uncommon')],[1,2,3,4,6])
+            collection_entries=[entry for tier in ('ancient','legendary','mythical','rare','uncommon') for entry,_ in parsed[name+'_'+tier]]
+            donor_names=[entry.split(']')[0][1:] for entry in collection_entries]
+            base_materials=[]
+            for kit in donor_names:
+                # Variant composite paths embed the original donor before the palette name.
+                if kit.startswith('ccf_'):
+                    base=next(base for base in sorted(kits,key=len,reverse=True) if '_'+base+'_' in kit)
+                    base_materials.append('paints/'+base+'.vcompmat')
+                else:base_materials.append(lookup[kit]['composite_material_path'])
+            self.assertEqual(len(base_materials),len(set(base_materials)),name+' repeats a donor pattern')
         active=[i[1:].split(']')[0] for i in items]
         self.assertTrue(all(len(families[n])==4 for n in active if n.startswith('ccf_')))
         self.assertNotIn('[cga_hy_pattern0_uncommon]weapon_nova',items)

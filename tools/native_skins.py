@@ -374,6 +374,16 @@ GUN_PATTERN_DONORS = ('am_ossify','am_crystallized','am_bamboo_jungle','aa_flame
 
 
 def custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits):
+    # Keep build27a definitions even when a repeated donor is replaced in the current pool.
+    previous = _curated_custom_cases(source_text,kits,titles,kit_path,finish_source,families,made_kits,False)
+    current = _curated_custom_cases(source_text,kits,titles,kit_path,finish_source,families,made_kits,True)
+    definitions={entry[0]:entry for entry in previous[0]}
+    definitions.update({entry[0]:entry for entry in current[0]})
+    files=dict(previous[1]);files.update(current[1])
+    return list(definitions.values()),files,*current[2:]
+
+
+def _curated_custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits, distinct_patterns):
     """Curated collection loot lists; retain the previous kits/materials for owned inventory.
 
     No new crate definitions. Original official weapon/material combinations are
@@ -444,7 +454,7 @@ def custom_cases(source_text, kits, titles, kit_path, finish_source, families, m
             chase=colour_family(icon,'chase',base,'ancient',themes)
             if chase:break
         if not chase:continue
-        tiers={'ancient':['[%s]%s'%(chase,gun)]};taken={gun}
+        tiers={'ancient':['[%s]%s'%(chase,gun)]};taken={gun};collection_materials={material(base)}
         used.add((material(base),gun,'coloured'))
         for tier,count in FILLER_TIERS['ancient']:
             picked=[]
@@ -455,6 +465,7 @@ def custom_cases(source_text, kits, titles, kit_path, finish_source, families, m
                 colour = tier in ('legendary','mythical') or (tier=='rare' and slot<2)
                 pool=donors if colour else fillers
                 candidates=[(b,w) for b in pool for w in weapons if w not in taken
+                            and (not distinct_patterns or material(b) not in collection_materials)
                             and (material(b),w,'coloured' if colour else 'original') not in used
                             and (colour or (material(b),w) not in official_materials)]
                 rng=random.Random(name+':'+tier+':'+str(slot))
@@ -470,7 +481,7 @@ def custom_cases(source_text, kits, titles, kit_path, finish_source, families, m
                     chosen='[%s]%s'%(kit,weapon)
                     used.add((material(base),weapon,'coloured' if colour else 'original'))
                     counts[base]=counts.get(base,0)+1;counts[weapon]=counts.get(weapon,0)+1
-                    taken.add(weapon);break
+                    taken.add(weapon);collection_materials.add(material(base));break
                 if chosen:picked.append(chosen)
             tiers[tier]=picked
         # Never sell an incomplete collection when an installed schema is missing donors.

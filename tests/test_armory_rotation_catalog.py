@@ -52,7 +52,9 @@ class ArmoryRotation(unittest.TestCase):
 const m_localRotation={previews:{set_cs2gc_case_x:[['weapon_awp',9002]]}};
 const single={visible:true,GetParent:()=>tileBody}, carousel={visible:true}, tileBody={};
 const tile={FindChildInLayoutFile:name=>name==='id-xpshop-tile-single-image'?single:carousel};
-const InventoryAPI={GetItemDefinitionName:id=>id==='chase'?'weapon_awp':'unknown'};
+const InventoryAPI={GetItemDefinitionName:id=>id==='chase'?'weapon_awp':'unknown',
+ GetItemDefinitionIndexFromDefinitionName:name=>{assert.equal(name,'weapon_awp');return 9;},
+ GetFauxItemIDFromDefAndPaintIndex:(def,paint)=>{assert.equal(def,9);assert.equal(paint,9002);return 'chase';}};
 const XpShopWeaponCameraSettings={CameraSettings:[{type:'weapon_awp',camera:'sniper'}]};
 let models=[],holders=[];
 const $={CreatePanel:(type,parent,id)=>{const p={style:{},hittest:true,hittestchildren:true};holders.push(p);return p;}};
@@ -64,7 +66,7 @@ function MakeMapItemPreviewPanel(parent,camera,map,entry) {
 assert.equal(_LocalCollectionTileModel(tile,{item_name:'lootlist:set_arabesque',lootlist:['official']}),false);
 assert.equal(models.length,0);assert.equal(single.visible,true);
 assert.equal(_LocalCollectionTileModel(tile,{item_name:'lootlist:set_cs2gc_case_x',lootlist:[]}),false);
-assert.equal(_LocalCollectionTileModel(tile,{item_name:'lootlist:set_cs2gc_case_x',lootlist:['chase','filler']}),true);
+assert.equal(_LocalCollectionTileModel(tile,{item_name:'lootlist:set_cs2gc_case_x',lootlist:['filler','chase']}),true);
 assert.equal(models.length,1);assert.equal(models[0].camera,'camera_weapon_sniper');
 assert.equal(models[0].map,'ui/xpshop_item');assert.equal(models[0].p.item,'chase');
 assert.equal(models[0].p.active,0);assert.equal(models[0].p.interval,10);

@@ -245,7 +245,7 @@ def _with_block(data, name, content):
     return kv3.write_resource(version, blocks)
 
 
-def make_finish(source, kit, kit_path, new_name, theme, report=None):
+def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_palette=None, weapon_inverse=False):
     """(vcompmat bytes, vmat bytes) for a recolour of `kit`, or None when it is not a four-colour finish."""
     compmat = source.read(kit_path + '_c')
     if compmat is None: return None
@@ -269,18 +269,29 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None):
     if colors is None: return None
     current = [[item.value for item in colors['g_vColor%d' % i].value] for i in range(4)]
     if any(len(color) != 4 for color in current): return None
-    new_colors = (recolor_hardened(current, theme) if kit == 'aq_oiled' else
-                  recolor_gold_brick(current, theme) if kit == 'am_gold_brick' else
-                  # Teal needs related blue-green tones: the wide fade sweep reaches
-                  # green at one end. Keep this knife-only exception out of glove tinting.
-                  recolor(current, theme, fade=kit in FADE_BASES and theme != 'Teal'))
+    if not weapon_palette:
+        new_colors = (recolor_hardened(current, theme) if kit == 'aq_oiled' else
+                      recolor_gold_brick(current, theme) if kit == 'am_gold_brick' else
+                      # Teal needs related blue-green tones: the wide fade sweep reaches
+                      # green at one end. Keep this knife-only exception out of glove tinting.
+                      recolor(current, theme, fade=kit in FADE_BASES and theme != 'Teal'))
+    if weapon_palette:
+        from weapon_palettes import recolour, is_new_colourway, invert_panels
+        new_colors = recolour(current, theme, weapon_palette, THEMES, DUO_THEMES, GRADIENT_THEMES)
+        if weapon_inverse: new_colors = invert_panels(current,new_colors)
+        if not is_new_colourway(current,new_colors):
+            if report is not None:
+                report.setdefault('excluded',[]).append({'donor':kit,'theme':theme,'tier':weapon_palette,'reason':'near-original colourway'})
+            return None
     if report is not None:
-        entry = report.setdefault(kit, {'source_compmat': kit_path, 'source_material': specific.value,
+        report_key = kit + ':' + weapon_palette if weapon_palette else kit
+        entry = report.setdefault(report_key, {'source_compmat': kit_path, 'source_material': specific.value,
             'shader': m_root.get('m_shaderName').value if m_root.get('m_shaderName') else '',
-            'original_colors': current, 'policy': ('hardened-metal-accents-v1' if kit == 'aq_oiled' else
+            'original_colors': current, 'policy': ('weapon-accent-gradient-v1' if weapon_palette else
+                'hardened-metal-accents-v1' if kit == 'aq_oiled' else
                 'related-metal-tones-v1' if kit == 'am_gold_brick' else 'ranked-theme-v1'),
             'themes': {}})
-        entry['themes'][theme] = new_colors
+        entry['themes'][theme + (' / inverted' if weapon_inverse else '')] = new_colors
     if max(brightness(c) for c in new_colors) < 110 / 255: return None  # dark patterns need a bright colour to show
     for i in range(4):
         for item, value in zip(colors['g_vColor%d' % i].value, new_colors[i]): item.value = value
@@ -652,9 +663,11 @@ def prepare(proxy_directory, config, items_game_text):
         family_kits, sets_text, lists_text, families, set_names, collection_items, chases = native_skins.collections(
             items_game_text, kits, [name for _, name, _, _ in entries if name.startswith('rk_')], kit_path, titles)
         case_lists, icons = '', {}
+        weapon_palettes = {}
         if config.get('custom_cases', 1):
             case_kits, case_files, case_lists, case_specs, case_items, icons = native_skins.custom_cases(
-                items_game_text, kits, titles, kit_path, source, families, {n for n, _, _ in family_kits})
+                items_game_text, kits, titles, kit_path, source, families, {n for n, _, _ in family_kits}, report=weapon_palettes)
+            atomic_write(proxy / 'cs2_gc_weapon_palettes.json', json.dumps(weapon_palettes,sort_keys=True,indent=1)+'\n')
             family_kits += case_kits
             files.update(case_files)
             skins += case_items

@@ -15,14 +15,14 @@ class CustomSkins(unittest.TestCase):
     def test_curated_collections_mix_chase_donors_keep_variants_and_exclude_official_duplicates(self):
         import native_finishes as finishes
         guns=sorted(set(skins.FILLER_GUNS))
-        kits={name:(str(i),{'name':name,'style':'5'}) for i,name in enumerate(skins.GUN_PATTERN_DONORS)}
+        kits={name:(str(i),{'name':name,'style':'5'}) for i,name in enumerate(skins.REFINED_DONORS)}
         kits.update({base:(str(100+i),{'name':base,'style':'5'}) for i,(_,base,_) in enumerate(skins.COLLECTION_DESIGNS.values())})
         kits.update({'hy_pattern%d'%i:(str(200+i),{'name':'hy_pattern%d'%i,'style':'2'}) for i in range(30)})
         titles={name:name for name in kits}
         schema='"items_game" { "items" { %s } "client_loot_lists" { "official" { "[hy_pattern0]weapon_nova" "1" } } }'%(
             ' '.join('"%d" { "name" "%s" }'%(i,g) for i,g in enumerate(guns)))
         families={}; original=finishes.make_finish
-        def make(source,base,path,name,theme,report=None):
+        def make(source,base,path,name,theme,report=None,**options):
             if report is not None:
                 report[base]={'original_colors':[[.2,.3,.4,1]]*4,'themes':{theme:[[.8,.2,.3,1]]*4}}
             return b'compmat:'+name.encode(),b'vmat'
@@ -37,7 +37,7 @@ class CustomSkins(unittest.TestCase):
         lookup={n:v for n,_,v in new}
         self.assertTrue({n for n,_,_ in previous[0]}.issubset(lookup),'owned27a kit definitions must remain available')
         self.assertTrue(set(previous[1]).issubset(files),'owned27a materials must remain available')
-        chases=[i for i in items if i.startswith('[ccf_') and '_chase_' in i]
+        chases=[i for i in items if i.startswith('[cw2f_') and '_chase_' in i]
         self.assertEqual(len(chases),12)
         self.assertEqual(len({i.split(']')[1] for i in chases}),5)
         knife_bases=set(finishes.KNIFE_BASES)
@@ -51,13 +51,16 @@ class CustomSkins(unittest.TestCase):
             base_materials=[]
             for kit in donor_names:
                 # Variant composite paths embed the original donor before the palette name.
-                if kit.startswith('ccf_'):
+                if kit.startswith('cw2f_'):
                     base=next(base for base in sorted(kits,key=len,reverse=True) if '_'+base+'_' in kit)
                     base_materials.append('paints/'+base+'.vcompmat')
                 else:base_materials.append(lookup[kit]['composite_material_path'])
             self.assertEqual(len(base_materials),len(set(base_materials)),name+' repeats a donor pattern')
         active=[i[1:].split(']')[0] for i in items]
-        self.assertTrue(all(len(families[n])==4 for n in active if n.startswith('ccf_')))
+        self.assertTrue(all(2 <= len(families[n]) <= 8 for n in active))
+        self.assertTrue(all(n.startswith('cw2f_') for n in active))
+        self.assertFalse(any('aa_flames' in n for n in active),'broken Blaze transfers must not enter new rolls')
+        self.assertTrue(all(any('_inverted_' in v for v in families[n]) for n in active))
         self.assertNotIn('[cga_hy_pattern0_uncommon]weapon_nova',items)
         # Each unchanged weapon/material pair is unique across all twelve collections.
         plain=[(lookup[n]['composite_material_path'],entry.split(']')[1]) for entry,n in zip(items,active) if n.startswith('cga_')]

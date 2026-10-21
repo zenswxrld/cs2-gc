@@ -1,3 +1,40 @@
+# Helper27c — collection art pass: accent gradients and inversions
+
+Same DLL tag codex-20261022-27; Python/helper update. Includes27a/27b fixes.
+User confirms the27b chase model selection works in the native Armory.
+
+- Rework the12 existing gun collections with a wider, curated set of gun-finish donors; every active entry
+  is a colour family, including same-weapon recolours of official finishes. No gun cases added.
+- Six selected colour/gradient palettes per collection, plus two inversion candidates. Invalid,
+  near-original and duplicate palettes are excluded. No original colourway is an outcome of the NEW families.
+- Preserve coloured pattern regions, neutral trim, alpha and tonal contrast. Inversions swap painted neutral
+  panels; on all-colour patterns they reverse the existing tonal hierarchy. Not an RGB negative.
+- Lower tiers use more subdued saturation. Pattern textures, shader settings, roughness and wear inputs stay intact.
+- New cw2* / rwc_* definitions retain the earlier27a/27b definitions for owned skins. Names stay clean:
+  variants do not append palette or inversion suffixes to the displayed skin name.
+- User's M4A4 Blaze screenshot has no visible flame motif. Exclude aa_flames from new transfers;
+  older owned Blaze copies stay supported but their missing motif is NOT claimed fixed.
+- Eclipse and Monsoon remain drop-only; the other10 remain in Armory rotation. Standard case pools are unchanged.
+- New cs2_gc_weapon_palettes.json records original and generated colour vectors, source materials and exclusions.
+
+Install: close CS2/helper; back up inventory and cs2_gc_finish_ids.json. Extract ALL files (including weapon_palettes.py)
+into game/bin/win64; run cs2_gc_debug.exe. Keep the active config, inventory and finish-ID map.
+
+Test:
+1. Launch completes preparation with no skipped finish generation; Armory chase previews still match.
+2. Inspect all12 collections:16 entries each, no repeated donor within a collection, no new Blaze.
+3. Redeem repeated entries: colour and inverted variants roll under one name; original donor colourway absent.
+4. Compare accents/neutral panels in preview AND gameplay, including wear. Report dull, overly bright or misplaced
+   patterns with the weapon/collection name and cs2_gc_weapon_palettes.json.
+5. Existing owned skins still render, selling still works, restart retains inventory/stars/loadouts.
+
+Offline audit using supplied colour vectors and actual schema:192 entries,3–8 variants each,1395 active variants;
+154 near-original combinations rejected. This used reconstructed material fixtures, not target-client rendering.
+Glitter/pearl/iridescent shader effects remain research work; none were guessed or added here.
+Custom collection trade-up membership and the existing care-package claim timeout remain pending.
+
+---
+
 # Helper27b — correct chase tile and distinct patterns per collection
 
 Same DLL tag codex-20261022-27. Includes all27a preparation/crash mitigations.

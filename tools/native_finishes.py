@@ -638,12 +638,13 @@ def prepare(proxy_directory, config, items_game_text):
                 items_game_text, kits, titles, kit_path, source, families, {n for n, _, _ in family_kits})
             family_kits += case_kits
             files.update(case_files)
-            extra += case_specs
             skins += case_items
-            for name, icon in icons.items():
-                picture = Path(__file__).resolve().parent / 'case_icons' / ('cs2gc_%s.png' % icon)
-                if template is not None and picture.is_file():
-                    files['panorama/images/econ/weapon_cases/' + name + '_png.vtex_c'] = make_vtex(template, picture.read_bytes())
+            emblem_template = source.read('panorama/images/econ/set_icons/set_arabesque_png.vtex_c') or template
+            for name in icons:
+                emblem = Path(__file__).resolve().parent / 'collection_icons' / (name + '.png')
+                if emblem_template is not None and emblem.is_file():
+                    for suffix in ('_png.vtex_c', '_small_png.vtex_c'):
+                        files['panorama/images/econ/set_icons/' + name + suffix] = make_vtex(emblem_template, emblem.read_bytes())
         if family_kits:
             next_id = max([FIRST_KIT_ID - 1] + [int(v) for v in known.values()] + [int(k) for k, _, _, _ in entries]) + 1
             for name, title, values in family_kits:

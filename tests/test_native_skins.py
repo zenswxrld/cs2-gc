@@ -127,10 +127,12 @@ class CustomSkins(unittest.TestCase):
         finally:
             finishes.make_finish = original
         self.assertEqual(len(specs), len(skins.CASE_ICONS))
-        spec = specs[0]
-        self.assertTrue(spec['name'].startswith(skins.CASE_PREFIX) and not spec['name'].endswith('_test'))
-        counts = {t: lists.count('"[', lists.index('"%s_%s"' % (spec['name'], t)),
-                                 lists.index('}', lists.index('"%s_%s"' % (spec['name'], t))))
+        name = specs[0]
+        self.assertTrue(name.startswith('set_cs2gc_case_'))  # Armory collections, not crates
+        self.assertEqual(skins.CASE_COLLECTIONS[name], 'The Ashfall Collection')
+        self.assertIn('"%s"\n\t\t{\n\t\t\t"%s_ancient"' % (name, name), lists)
+        header = lambda t: lists.index('"%s_%s"\n\t\t{' % (name, t))
+        counts = {t: lists.count('"[', header(t), lists.index('}', header(t)))
                   for t in ('ancient', 'legendary', 'mythical', 'rare', 'uncommon')}
         self.assertEqual(counts, {'ancient': 1, 'legendary': 2, 'mythical': 3, 'rare': 4, 'uncommon': 6})
         case_items = [i for i in items if i]
@@ -142,7 +144,8 @@ class CustomSkins(unittest.TestCase):
         self.assertEqual(len(families[some]), skins.CLASSIC_THEMES)
         self.assertTrue(all(v.startswith('cgr_') for v in families[some]))
         self.assertTrue(any(path.endswith('.vcompmat_c') and '/rc_hy_pattern' in path for path in files))
-        self.assertEqual(icons[spec['name']], skins.CASE_ICONS[0])
+        self.assertEqual(icons[name], skins.CASE_ICONS[0])
+        self.assertTrue((Path(skins.__file__).parent / 'collection_icons' / (name + '.png')).is_file())  # emblem shipped
 
 
 if __name__ == '__main__':

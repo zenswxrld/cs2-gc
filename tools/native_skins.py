@@ -245,18 +245,23 @@ def family_text(families):
         for name, variants in sorted(families.items())) + '}\n'
 
 
-# Custom weapon cases (user, 22 Oct): guns only, no gold, in the Armory case slot, the same layout as the
-# collections. In each case the Covert chase and one Classified and one Restricted skin come in a colour range;
+# Custom weapon collections (user, 22 Oct: first "cases" in the case slot, then "I want it like this not a case,
+# they are collections"): guns only, no gold, Armory collection tiles, the same layout as the collections. In each case the Covert chase and one Classified and one Restricted skin come in a colour range;
 # the Classified/Restricted ranges are new recolours of classic patterns (rc_<pattern>_<theme> materials).
 CASE_ICONS = ('ashfall', 'aurora', 'brimstone', 'cascade', 'cinder', 'eclipse', 'halcyon', 'kaleido', 'monsoon',
               'nebula', 'solstice', 'zephyr')  # the user's OfflineCS case pictures, tools/case_icons/cs2gc_<n>.png
-CASE_PREFIX = 'crate_cs2gc_case_'
+CASE_PREFIX = 'set_cs2gc_case_'  # user: "they are collections", Armory collection tiles, not crates
 CLASSIC_STYLES = ('2', '3')  # hydrographic and spray-paint patterns: four colours, any gun
 CLASSIC_THEMES = 8
 
 
+CASE_COLLECTIONS = {CASE_PREFIX + icon: 'The %s Collection' % icon.title() for icon in CASE_ICONS}
+
+
 def custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits):
-    """(new kit entries, files {path: bytes}, loot lists text, case specs, [loot entries], {case: icon name}).
+    """(new kit entries, files {path: bytes}, loot lists text, [collection list names], [loot entries], {list: icon}).
+
+    Despite the name these are Armory collections (loot lists), like Arabesque.
 
     families/made_kits: from collections() (the cgf_ chase families), extended in place with the new ones."""
     import native_finishes as finishes
@@ -329,14 +334,13 @@ def custom_cases(source_text, kits, titles, kit_path, finish_source, families, m
                 picked.append('[%s]%s' % (alias(kit, tier), weapon)); taken.add(weapon)
             tiers[tier] = picked
         order = [t for t in ('ancient', 'legendary', 'mythical', 'rare', 'uncommon') if tiers.get(t)]
+        lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote(name), ''.join('\t\t\t%s\t\t"1"\n' % _quote(
+            '%s_%s' % (name, t)) for t in order)))
         for t in order:
             lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote('%s_%s' % (name, t)),
                                                      ''.join('\t\t\t%s\t\t"1"\n' % _quote(i) for i in tiers[t])))
         entries += [i for t in order for i in tiers[t]]
-        specs.append(dict(name=name, title='%s Case' % icon.title(), base=CASE_BASE, items=[],
-                          loot_lists=['%s_%s' % (name, t) for t in order],
-                          description='Custom weapon case. The %s %s and a few other skins come in a range of '
-                                      'colours.' % (GUN_TITLES[gun], FAMILIES[family][0])))
+        specs.append(name)
         icons[name] = icon
     return new_kits, files, '\n'.join(lists), specs, entries, icons
 

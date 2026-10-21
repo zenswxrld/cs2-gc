@@ -660,6 +660,16 @@ and gameplay config must accompany the DLL; restart helper AND CS2 after edits.
 
 Based on `schema-loader` commit `42150481ac7db513a64f4b6704cd3c0a1b8349c0` (PR #4). User authorized changes and asked that all source changes be pushed so Claude can continue. See [TEST-BUILD.md](TEST-BUILD.md) for installation, exact reward rules, limitations and verification.
 
+
+## 26r (Claude) - custom gun cases become Armory collections
+- The 12 custom cases are now collection tiles (`set_cs2gc_case_<name>` loot lists, rotation type `collection`, count 4)
+  like Arabesque: no crate items, no keys. native_skins.custom_cases writes a top list plus the tier lists.
+- Emblems: tools/make_collection_icons.py draws CS2-style diamond badges into tools/collection_icons/; native_finishes
+  packs them as panorama/images/econ/set_icons/<name>_png / _small_png (template set_arabesque), and the catalogue
+  rows set ui_set_image = <name>. The old tools/case_icons pictures are removed.
+- The DLL is unchanged from 26q. Crates bought in 26q (crate_cs2gc_case_*) no longer have a definition, so open them first.
+- Not verified live yet: tile layout, emblem rendering, unlock flow.
+
 ## User reports and scope
 
 - Normal ten-item contracts now work in the user's existing build. Keep this as live-confirmed for the predecessor, not a validation of the new binary.

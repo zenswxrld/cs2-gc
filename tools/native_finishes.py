@@ -628,11 +628,23 @@ def prepare(proxy_directory, config, items_game_text):
                     make_vtex(template, ICON.read_bytes())
             skins += skins2
     sections_extra = {}
-    if config.get('custom_skins_test', 1) or config.get('custom_collections', 0):
+    if config.get('custom_skins_test', 1) or config.get('custom_collections', 0) or config.get('custom_cases', 1):
         import native_skins
-        family_kits, sets_text, lists_text, family_text, set_names, collection_items, chases = native_skins.collections(
+        family_kits, sets_text, lists_text, families, set_names, collection_items, chases = native_skins.collections(
             items_game_text, kits, [name for _, name, _, _ in entries if name.startswith('rk_')], kit_path, titles)
-        if set_names:
+        case_lists = ''
+        if config.get('custom_cases', 1):
+            case_kits, case_files, case_lists, case_specs, case_items, icons = native_skins.custom_cases(
+                items_game_text, kits, titles, kit_path, source, families, {n for n, _, _ in family_kits})
+            family_kits += case_kits
+            files.update(case_files)
+            extra += case_specs
+            skins += case_items
+            for name, icon in icons.items():
+                picture = Path(__file__).resolve().parent / 'case_icons' / ('cs2gc_%s.png' % icon)
+                if template is not None and picture.is_file():
+                    files['panorama/images/econ/weapon_cases/' + name + '_png.vtex_c'] = make_vtex(template, picture.read_bytes())
+        if family_kits:
             next_id = max([FIRST_KIT_ID - 1] + [int(v) for v in known.values()] + [int(k) for k, _, _, _ in entries]) + 1
             for name, title, values in family_kits:
                 if name in known: kit_id = str(known[name])
@@ -640,10 +652,11 @@ def prepare(proxy_directory, config, items_game_text):
                 entries.append((kit_id, name, title, values))
             known.update({name: int(kit_id) for kit_id, name, _, _ in entries})
             atomic_write(ids_path, json.dumps(known, indent=1, sort_keys=True) + '\n')
-            atomic_write(proxy / native_skins.FAMILIES_FILE, family_text)
+            atomic_write(proxy / native_skins.FAMILIES_FILE, native_skins.family_text(families))
             # Loot lists only: CS2 refuses the whole schema for an item_set whose name is not a #CSGO_ token
             # (26m: CEconItemSystem::ParseItemSchemaFile assertion), and overriding the language file breaks text.
-            sections_extra = {'client_loot_lists': lists_text}
+            sections_extra = {'client_loot_lists': '\n'.join(t for t in (lists_text, case_lists) if t)}
+        if set_names:
             skins += collection_items
             if config.get('custom_skins_test', 1):
                 extra.append(native_skins.collections_test_spec(set_names))

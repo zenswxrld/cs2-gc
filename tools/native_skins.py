@@ -235,10 +235,110 @@ def collections(source_text, kits, recolours, kit_path, titles=None):
         names.append(list_name)
         entries += [i for t in order for i in tiers[t]]
         chases.append(tiers[top][0])
-    family_text = '"skin_families"\n{\n' + ''.join(
+    return new_kits, '', '\n'.join(lists), families, names, entries, chases
+
+
+def family_text(families):
+    """cs2_gc_skin_families.txt for the GC: family kit -> its colour kits."""
+    return '"skin_families"\n{\n' + ''.join(
         '\t%s\n\t{\n%s\t}\n' % (_quote(name), ''.join('\t\t%s\t"1"\n' % _quote(v) for v in variants))
         for name, variants in sorted(families.items())) + '}\n'
-    return new_kits, '', '\n'.join(lists), family_text, names, entries, chases
+
+
+# Custom weapon cases (user, 22 Oct): guns only, no gold, in the Armory case slot, the same layout as the
+# collections. In each case the Covert chase and one Classified and one Restricted skin come in a colour range;
+# the Classified/Restricted ranges are new recolours of classic patterns (rc_<pattern>_<theme> materials).
+CASE_ICONS = ('ashfall', 'aurora', 'brimstone', 'cascade', 'cinder', 'eclipse', 'halcyon', 'kaleido', 'monsoon',
+              'nebula', 'solstice', 'zephyr')  # the user's OfflineCS case pictures, tools/case_icons/cs2gc_<n>.png
+CASE_PREFIX = 'crate_cs2gc_case_'
+CLASSIC_STYLES = ('2', '3')  # hydrographic and spray-paint patterns: four colours, any gun
+CLASSIC_THEMES = 8
+
+
+def custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits):
+    """(new kit entries, files {path: bytes}, loot lists text, case specs, [loot entries], {case: icon name}).
+
+    families/made_kits: from collections() (the cgf_ chase families), extended in place with the new ones."""
+    import native_finishes as finishes
+    official = set(re.findall(r'"\[([^\]]+)\](weapon_[a-z0-9_]+)"', source_text))
+    weapons = sorted(w for w in FILLER_GUNS if re.search(r'"name"\s+"%s"' % w, source_text))
+    new_kits, files, lists, specs, entries, icons = [], {}, [], [], [], {}
+    made = set(made_kits)
+
+    def copy_values(name):
+        values = {k: v for k, v in kits[name][1].items()
+                  if isinstance(v, str) and k not in ('name', 'description_string', 'description_tag')}
+        values['composite_material_path'] = kit_path(name, kits[name][1])
+        return values
+
+    def alias(kit, tier):
+        name = 'cga_%s_%s' % (kit, tier)
+        if name not in made:
+            new_kits.append((name, titles[kit], dict(copy_values(kit), _rarity=tier))); made.add(name)
+        return name
+
+    def classic_family(base, tier):
+        """cgc_<base>_<tier>, whose colours are new recolours of a classic pattern; None if it cannot be recoloured."""
+        family = 'cgc_%s_%s' % (base, tier)
+        if family in families: return family
+        themes = list(finishes.THEMES) + list(finishes.DUO_THEMES)
+        random.Random(base).shuffle(themes)
+        variants = []
+        for theme in themes[:CLASSIC_THEMES]:
+            material = 'rc_%s_%s' % (base, theme.lower())
+            if finishes.COMPMAT_DIR + material + '.vcompmat_c' not in files:
+                made_files = finishes.make_finish(finish_source, base, kit_path(base, kits[base][1]), material, theme)
+                if not made_files: continue
+                files[finishes.COMPMAT_DIR + material + '.vcompmat_c'], files[finishes.VMAT_DIR + material + '.vmat_c'] = made_files
+            variant = 'cgr_%s_%s_%s' % (base, theme.lower(), tier)
+            values = dict(copy_values(base), _rarity=tier)
+            values['composite_material_path'] = finishes.COMPMAT_DIR + material + '.vcompmat'
+            new_kits.append((variant, titles[base], values)); variants.append(variant)
+        if not variants: return None
+        new_kits.append((family, titles[base], dict(copy_values(base), _rarity=tier)))
+        families[family] = variants; made.add(family)
+        return family
+
+    fillers = sorted(n for n, (_, v) in kits.items() if v.get('style') in FILLER_STYLES and n in titles
+                     and titles[n] and not any(word in n for word in WEAPON_WORDS))
+    classics = [n for n in fillers if kits[n][1].get('style') in CLASSIC_STYLES]
+    chases = [(gun, family) for family in FAMILIES for gun in CHASE_GUNS
+              if CHASE_TIERS.get(gun, 'ancient') == 'ancient' and 'cgf_%s_ancient' % family in families]
+    for index, icon in enumerate(CASE_ICONS):
+        name = CASE_PREFIX + icon
+        rng = random.Random(name)
+        if not chases: break
+        gun, family = chases[(index * 7) % len(chases)]
+        if gun not in weapons: continue
+        tiers = {'ancient': ['[cgf_%s_ancient]%s' % (family, gun)]}
+        taken = {gun}
+        ranged = {'legendary': 1, 'mythical': 1}
+        for tier, count in FILLER_TIERS['ancient']:
+            picked, tries = [], 0
+            while len(picked) < count and tries < count * 40 and fillers:
+                tries += 1
+                weapon = rng.choice([w for w in weapons if w not in taken] or weapons)
+                if ranged.get(tier) and classics:
+                    base = rng.choice(classics)
+                    family_kit = classic_family(base, tier) if (base, weapon) not in official else None
+                    if family_kit:
+                        ranged[tier] -= 1
+                        picked.append('[%s]%s' % (family_kit, weapon)); taken.add(weapon); continue
+                kit = rng.choice(fillers)
+                if (kit, weapon) in official: continue
+                picked.append('[%s]%s' % (alias(kit, tier), weapon)); taken.add(weapon)
+            tiers[tier] = picked
+        order = [t for t in ('ancient', 'legendary', 'mythical', 'rare', 'uncommon') if tiers.get(t)]
+        for t in order:
+            lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote('%s_%s' % (name, t)),
+                                                     ''.join('\t\t\t%s\t\t"1"\n' % _quote(i) for i in tiers[t])))
+        entries += [i for t in order for i in tiers[t]]
+        specs.append(dict(name=name, title='%s Case' % icon.title(), base=CASE_BASE, items=[],
+                          loot_lists=['%s_%s' % (name, t) for t in order],
+                          description='Custom weapon case. The %s %s and a few other skins come in a range of '
+                                      'colours.' % (GUN_TITLES[gun], FAMILIES[family][0])))
+        icons[name] = icon
+    return new_kits, files, '\n'.join(lists), specs, entries, icons
 
 
 def collections_test_spec(list_names):

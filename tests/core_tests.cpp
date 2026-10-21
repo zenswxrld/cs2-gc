@@ -4173,7 +4173,8 @@ void NativeCarePackages()
         "61" { "name" "crate_cs2gc_black_market" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
         "62" { "name" "crate_cs2gc_gauntlet" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
         "63" { "name" "crate_cs2gc_dead_hand_test" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
-        "64" { "name" "crate_cs2gc_custom_skins_test" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } } }
+        "64" { "name" "crate_cs2gc_custom_skins_test" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
+        "65" { "name" "crate_cs2gc_case_ashfall" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } } }
       "paint_kits" { "10" { "name" "blue" } }
       "paint_kits_rarity" { "blue" "common" }
       "item_sets" { "set_timed_drops_test" { "items" { "[blue]weapon_test" "1" } } }
@@ -4186,8 +4187,8 @@ void NativeCarePackages()
         std::mt19937_64 engine(77);bool testCase=false;
         for (int n=0;n<500;++n)
             if (const auto drops=RollMatchDrops(*schema,[&]{return engine();},config))
-                for (const auto &drop:*drops) testCase|=drop.defIndex==63||drop.defIndex==64;
-        Check(!testCase,"grant-only test cases never drop");
+                for (const auto &drop:*drops) testCase|=drop.defIndex==63||drop.defIndex==64||drop.defIndex==65;
+        Check(!testCase,"grant-only test cases and Armory-only custom cases never drop");
     }
     Inventory saved;saved.SetGameplay(config);
     LiveInventory live(saved);

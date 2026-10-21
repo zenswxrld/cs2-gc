@@ -286,6 +286,7 @@ std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, c
         {
             // Grant-only test cases (crate_cs2gc_*_test) never drop.
             if (crate.name.starts_with("crate_cs2gc_") && crate.name.ends_with("_test")) continue;
+            if (crate.name.starts_with("crate_cs2gc_case_")) continue; // custom cases: Armory only (user's choice)
             if (crate.name == "crate_cs2gc_black_market" || crate.name == "crate_cs2gc_gauntlet") {
                 if ((crate.name == "crate_cs2gc_black_market" && config.knife_finishes) ||
                     (crate.name == "crate_cs2gc_gauntlet" && config.knife_finishes && config.glove_finishes))

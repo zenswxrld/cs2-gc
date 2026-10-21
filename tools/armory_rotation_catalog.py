@@ -102,7 +102,11 @@ def catalogue(source, config):
     for name in lists:
         if name.startswith('keychain_pack_') and name.endswith('_lootlist'): loot(name, 'charm', 3)
         if name.startswith('sticker_pack_') and name.endswith('_lootlist'): loot(name, 'sticker', 1)
-    for name in sorted(cases): add(name, 'case', config.get('armory_case_price', 5), {'flags': '2'})
+    for name in sorted(cases):
+        # Our grant-only test cases are never sold; the custom weapon cases are, like any case.
+        if name.startswith('crate_cs2gc_') and not name.startswith('crate_cs2gc_case_'): continue
+        if name.startswith('crate_cs2gc_case_') and not config.get('custom_cases', 1): continue
+        add(name, 'case', config.get('armory_case_price', 5), {'flags': '2'})
     for name in sorted(souvenirs): add(name, 'souvenir', config['armory_souvenir_price'], {'flags': '2'})
     if config['terminals_enabled']:
         for name in sorted(terminals): add(name, 'terminal', config['armory_terminal_price'])

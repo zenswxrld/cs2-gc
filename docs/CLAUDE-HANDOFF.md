@@ -1,3 +1,21 @@
+# Build26q (Claude): stock collection layout + 12 custom gun cases
+
+- User: custom collections/cases must "look like this in the armory ... follow the layout rule for the
+  collections" (Overpass 2024 grid). Stock Armory collections are 1 Covert / 2 Classified / 3 Restricted /
+  4 Mil-Spec / 6 Industrial (checked set_overpass_2024, set_graphic_design, set_train_2025). FILLER_TIERS now
+  follows that; a Classified chase (USP-S, Glock) gets 4 Restricted / 5 Mil-Spec / 6 Industrial instead.
+- Custom cases (user's answers: Armory case slot, guns only, no gold, "a few random per case" ranges):
+  native_skins.custom_cases(): 12 crates crate_cs2gc_case_<name> ("Ashfall Case" ...) with the user's
+  OfflineCS case pictures (tools/case_icons/cs2gc_*.png), base 4003 key, same 16-skin layout. Ranges: the
+  Covert chase (cgf_ family on a top gun) plus one Classified and one Restricted classic pattern
+  (hydro/spray) family cgc_<pattern>_<tier> whose colours cgr_<pattern>_<theme>_<tier> use NEW recolour
+  materials rc_<pattern>_<theme> (native_finishes.make_finish, 8 themes). Sold in the Armory case slot
+  (armory_case_price); RollMatchDrops skips crate_cs2gc_case_*; the catalogue no longer sells *_test crates.
+  custom_cases = 1 (default). collections() now returns the families dict; family_text() writes the file.
+- User wants these trade-up-able later. Note: client item_sets need #CSGO_ tokens (see 26n), so collection
+  membership for trade-ups must come from somewhere else (GC-side list) — not done yet.
+DLL tag claude-20261021-26q.
+
 # Helper26p (Claude): chase rarity by gun, families = our colours only, one name per family
 
 User clarifications: the chase rarity follows the gun (AK red, USP purple: CHASE_TIERS — USP-S and Glock

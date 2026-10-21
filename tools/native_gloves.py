@@ -55,9 +55,10 @@ GLOVE_TITLES = {'slick_stitched_green_grey': 'Racing'}
 NO_PANEL_VARIANTS = {'gloves/paints/handwrap_camo_grey.vcompmat'}
 # Dead Hand gloves whose main colour is printed into a texture (only trim and cuffs can change), from the
 # user's screenshots: offer only colours that sit within 60 degrees of that printed colour, so the result reads
-# as one design (other Dead Hand gloves use their own main accent hue, see dead_hand_main_hue). Hues: crane brocade red, flower brocade teal, seigaiha teal, Ultra Violent purple, Occult red
+# as one design (other Dead Hand gloves use their own main accent hue, see dead_hand_main_hue). Beadwork:
+# blue-violet beads, so blues are offered too (user liked Violet Beadwork Azure). Hues: crane brocade red, flower brocade teal, seigaiha teal, Ultra Violent purple, Occult red
 # velvet, Plum Quill purple, Sunburst orange.
-DEAD_HAND_PRINT_HUES = {'glove_sport_pinstripe_black': 0, 'glove_driver_brocade_crane_red': 355, 'glove_driver_brocade_flower_red': 190,
+DEAD_HAND_PRINT_HUES = {'glove_sport_beadwork_diamonds_purple': 265, 'glove_sport_pinstripe_black': 0, 'glove_driver_brocade_crane_red': 355, 'glove_driver_brocade_flower_red': 190,
                         'glove_driver_scallop_metallic_blue': 195, 'glove_sport_tech_gradient_bright': 285,
                         'glove_sport_velvet_red': 350, 'glove_driver_ostrich_purple': 275,
                         'glove_specialist_sunburst_red': 30}

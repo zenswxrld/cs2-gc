@@ -34,6 +34,7 @@ struct AppliedKeychain
     float offsetY{};
     float offsetZ{};
     std::uint32_t slabSticker{}; // for a sealed Sticker Slab: the sticker kit inside it
+    bool noStarSale{}; // free Store charm; preserved through attaching/detaching
 };
 
 inline constexpr std::size_t MaxXpTracks = 5; // the Armory page has room for five passes
@@ -65,6 +66,7 @@ struct InventoryItem
     bool souvenir{};
     std::uint32_t tournamentEvent{}, tournamentTeam0{}, tournamentTeam1{}, tournamentPlayer{};
     bool statTrakFromContract{}; // preserve intentional local mixed-contract variants across startup repair
+    bool noStarSale{}; // free Store grants and derivatives cannot mint stars; terminal offers exempt
 };
 
 struct CarePackage

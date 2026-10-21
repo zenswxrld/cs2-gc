@@ -35,6 +35,8 @@ struct GameplayConfig
     std::uint32_t sell_covert{50};
     std::uint32_t sell_knife_glove{72};
     std::uint32_t sell_sticker_percent{50};
+    std::uint32_t sell_charm_mil_spec{1}, sell_charm_restricted{3}, sell_charm_classified{9}, sell_charm_covert{25};
+    std::uint32_t sell_wear_enabled{1}, sell_wear_fn{125}, sell_wear_mw{110}, sell_wear_ft{100}, sell_wear_ww{80}, sell_wear_bs{60};
     std::uint32_t sell_music_kit{10};
     std::uint32_t sell_container_percent{30};
     std::uint32_t sell_agent_percent{50};

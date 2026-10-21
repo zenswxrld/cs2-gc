@@ -13,6 +13,22 @@ import premier_rating
 
 @unittest.skipUnless(shutil.which('node'), 'Node required for Panorama fixtures')
 class NativeLocalFeatures(unittest.TestCase):
+    def test_wear_charm_fixed_caps_and_free_store_restriction(self):
+        data=dict(enabled=True,flat={},rarity=[0,1,2,5,10,25,50],gold=72,stickerPercent=50,
+            charm=[0,0,0,1,3,9,25],wearEnabled=True,wear=[125,110,100,80,60],fixedCaps={'7:11':3})
+        script="""const assert=require('assert');let wear=0,rarity=3,charm=false,free=0,paint=10;
+const InventoryAPI={GetItemDefinitionIndex:()=>7,GetItemRarity:()=>rarity,GetWear:()=>wear,
+ GetItemAttributeValue:(id,name)=>name==='cannot trade'?free:name==='set item texture wear'?wear:paint};
+const ItemInfo={IsKeychain:()=>charm,IsSticker:()=>false,IsPatch:()=>false,IsSprayPaint:()=>false,
+ IsSpraySealed:()=>false,IsMelee:()=>false,IsGloves:()=>false,IsWeapon:()=>true};
+"""+native_item_sales.PRICE.replace('__SETTINGS__',__import__('json').dumps(data))+"""
+assert.equal(_LocalSalePrice('1000000000001'),6);wear=.7;assert.equal(_LocalSalePrice('1000000000001'),3);
+charm=true;assert.equal(_LocalSalePrice('1000000000001'),1);rarity=6;assert.equal(_LocalSalePrice('1000000000001'),25);
+free=1;assert.equal(_LocalSalePrice('1000000000001'),0);free=0;charm=false;paint=11;wear=0;
+assert.equal(_LocalSalePrice('1000000000001'),3);
+"""
+        self.run_js(script)
+
     def run_js(self, code):
         result = subprocess.run(['node', '-e', code], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)

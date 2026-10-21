@@ -46,6 +46,26 @@ def glove_files():
 
 
 class NativeGloves(unittest.TestCase):
+    def test_snow_leopard_panel_variants_preserve_dark_pattern_contrast(self):
+        colors=[[.69,.65,.635,0],[.659,.655,.655,0],[.47,.388,.306,0],[.725,.71,.71,0],
+                [.216,.216,.216,0],[.235,.212,.212,0],[.49,.467,.431,0],[.769,.757,.737,0]]
+        for panels in ('white','black','inverted'):
+            result=gloves.recolor_accents(colors,'Ember',panels=panels,protect_dark_neutrals=True)
+            self.assertEqual(result[4:6],colors[4:6])
+        self.assertGreater(gloves.recolor_accents(colors,'Ember',panels='white',protect_dark_neutrals=True)[1][0],.8)
+
+    def test_schema_composite_paths_are_inspected_and_only_known_tint_format_is_recoloured(self):
+        path='gloves/paints/volatile_02/fixture.vcompmat'
+        schema=SCHEMA_GLOVES.replace('"name" "sporty_purple"','"name" "sporty_purple" "composite_material_path" "'+path+'"')
+        files=glove_files();files[path+'_c']=files.pop('gloves/paints/sporty_purple.vcompmat_c')
+        source=finishes.Source(folder=None);source.read=files.get;source.exists=lambda name:name in files
+        inspection={}
+        _,entries,pool,_=gloves.plan(schema,GOLD_GLOVES,{},source,{},[],inspection=inspection)
+        self.assertTrue(any('[rg_sporty_purple_' in item for item in pool))
+        self.assertEqual(inspection[path]['status'],'supported eight-tint material')
+        self.assertEqual(len(inspection[path]['vectors']),8)
+        self.assertIn('"composite_material_path" "'+path+'"',schema)
+
     def test_lunar_weave_muted_blues_become_ash_while_brown_stays(self):
         colors=[[.23,.18,.18,0],[.28,.35,.39,0],[.33,.30,.29,0],[.28,.30,.35,0],
                 [.26,.33,.31,0],[.245,.27,.29,0],[.64,.56,.41,0],[.42,.29,.20,0]]

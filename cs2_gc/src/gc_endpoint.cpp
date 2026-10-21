@@ -511,6 +511,7 @@ void LocalGameCoordinator::EnableStorePurchases(std::shared_ptr<LiveInventory> i
                                        [] { return std::uint64_t{0}; }, schema->ProducesStatTrak(line.defIndex) ? 1000 : 0);
                            }
                            if (schema && schema->ProducesStatTrak(line.defIndex)) item.statTrak = true;
+                           item.noStarSale = true; // free local Store grants are not star income
                            item = inventory->AddItem(item);
                            SoSingleObject created;
                            created.typeId = static_cast<std::int32_t>(ItemTypeId);

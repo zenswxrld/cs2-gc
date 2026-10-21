@@ -142,8 +142,15 @@ std::optional<InventoryItem> RollSouvenir(const Schema &schema, const CrateInfo 
     auto rolled = RollLootList(schema, crate.lootListName, random, openingOdds);
     if (!rolled) return std::nullopt;
     InventoryItem item = *rolled;
-    if (!item.paintKitIndex || schema.IsKnife(item.defIndex) || schema.IsGlove(item.defIndex))
-        return std::nullopt;
+    if (!DecorateSouvenir(item,schema,crate,random)) return std::nullopt;
+    return item;
+}
+
+bool DecorateSouvenir(InventoryItem &item, const Schema &schema, const CrateInfo &crate, const RandomSource &random)
+{
+    if (crate.kind!=CrateKind::Souvenir || !item.paintKitIndex || schema.IsKnife(item.defIndex) || schema.IsGlove(item.defIndex))
+        return false;
+    item.stickers.clear();
     item.souvenir = true; item.statTrak = false; item.unusual = false;
     item.tournamentEvent = crate.tournamentEvent;
     // Local packages have no recorded match. Select same-event teams/decals without inventing a match stage.
@@ -178,7 +185,7 @@ std::optional<InventoryItem> RollSouvenir(const Schema &schema, const CrateInfo 
             apply(signature.kit); item.tournamentPlayer = signature.player;
         }
     }
-    return item;
+    return true;
 }
 
 OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t crateId,
@@ -248,6 +255,7 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
     InventoryItem item = *rolled;
     if (!golds.empty())
         inventory.SetCasePity(item.unusual ? 0 : std::min(inventory.CasePity() + 1, 99u));
+    item.noStarSale = crateItem->noStarSale;
 
     // Nothing above mutated the inventory; consume and grant together.
     inventory.Remove(crateId);

@@ -253,6 +253,20 @@ console.log('native badge fixture passed');
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
+    def test_store_removes_case_entries_and_tiles_while_retaining_terminal_and_other_goods(self):
+        from test_price_sheet import ITEMS_GAME
+        source=ITEMS_GAME
+        tree=copy.deepcopy(SHEET)
+        entries=price_sheet.section(tree,'store','entries')
+        entries.append(('case_alias',[('item_link','crate_one'),('prices',[('USD',1)])]))
+        original=fixture_sheet.build_message(fixture_sheet.encode_kv(tree))
+        result,_=native_store.patch(original,source,terminals_enabled=False)
+        changed=price_sheet.decode_kv(price_sheet.decompress(price_sheet.read_message(result)[2]))
+        self.assertNotIn('case_alias',dict(price_sheet.section(changed,'store','entries')))
+        self.assertNotIn('4001',dict(price_sheet.section(changed,'store','store_banner_layout')))
+        self.assertIn('Name Tag',dict(price_sheet.section(changed,'store','entries')))
+        self.assertEqual(native_store.patch(result,source,terminals_enabled=False),(result,0))
+
     def test_native_terminal_store_adds_missing_schema_entries_preserves_message_and_is_idempotent(self):
         source = '''"items_game" { "items" {
          "5176" { "name" "terminal_one" "attributes" { "volatile container" { "value" "1" } } }

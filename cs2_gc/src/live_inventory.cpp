@@ -65,6 +65,7 @@ std::size_t LiveInventory::RepairStoreCoupons(const Schema &schema)
         auto converted = MakeLootItem(*loot, schema.ItemRarity(loot->weaponDefIndex), [] {return 0ull;},
             schema.ProducesStatTrak(saved.defIndex) ? 1000 : 0);
         converted.id = saved.id; converted.storedIn = saved.storedIn;
+        converted.noStarSale = saved.noStarSale;
         converted.statTrak = converted.statTrak || saved.statTrak;
         *m_inventory.Find(saved.id) = converted;
         ++count;
@@ -130,6 +131,7 @@ std::optional<LiveInventory::Detached> LiveInventory::DetachCharm(std::uint64_t 
     charm.defIndex = DefinitionKeychain;
     charm.keychain = weapon->charm->kit;
     charm.slabSticker = weapon->charm->slabSticker;
+    charm.noStarSale = weapon->charm->noStarSale;
     weapon->charm.reset();
     Detached detached;
     detached.charm = AddItem(charm);
@@ -185,6 +187,7 @@ std::optional<LiveInventory::Sealed> LiveInventory::SealSticker(const Schema &sc
     sealed.charm.defIndex = DefinitionKeychain;
     sealed.charm.keychain = *keychain;
     sealed.charm.slabSticker = sticker->stickerKit;
+    sealed.charm.noStarSale = sticker->noStarSale || slab->noStarSale;
     sealed.charm.rarity = schema.ItemRarity(slab->defIndex);
     m_inventory.Remove(sealed.sticker.id);
     m_inventory.Remove(sealed.slab.id);
@@ -269,6 +272,7 @@ std::optional<LiveInventory::Opened> LiveInventory::Open(const Schema &schema, s
     {
         InventoryItem item;
         item.defIndex = contents[random() % contents.size()];
+        item.noStarSale = crate->noStarSale;
         item.rarity = schema.ItemRarity(item.defIndex);
         m_inventory.Remove(crate->id);
         item.id = m_inventory.Add(item);
@@ -334,7 +338,7 @@ std::optional<LiveInventory::StickerApplied> LiveInventory::ApplySticker(const A
         if (target->charm)
             return std::nullopt;
         target->charm = AppliedKeychain{sticker->keychain, request.offsetX, request.offsetY, request.offsetZ,
-                                        sticker->slabSticker};
+                                        sticker->slabSticker, sticker->noStarSale};
     }
     else
     {

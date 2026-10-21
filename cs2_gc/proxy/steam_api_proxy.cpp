@@ -932,7 +932,15 @@ State &Init()
                             s.log->Write("could not save cs2_gc_inventory.txt");
                     }
                     s.coordinator->EnableStorePurchases(
-                        live, [schema](std::uint32_t defIndex) { return schema->HasItem(defIndex); },
+                        live, [schema](std::uint32_t defIndex) {
+                            if (!schema->HasItem(defIndex)) return false;
+                            const auto *crate = schema->FindCrate(defIndex);
+                            if (crate && crate->kind == CrateKind::Case) return false;
+                            for (const auto contents : schema->CouponContents(defIndex))
+                                if (const auto *nested = schema->FindCrate(contents); nested && nested->kind == CrateKind::Case)
+                                    return false;
+                            return true;
+                        },
                         [live, inventoryPath, inventoryFileUsable, saveLog] {
                             if (inventoryFileUsable && !live->Save(inventoryPath))
                                 saveLog->Write("could not save cs2_gc_inventory.txt");
@@ -986,7 +994,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: codex-20261021-25");
+        s.log->Write("test build: codex-20261021-26");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");

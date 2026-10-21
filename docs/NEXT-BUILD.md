@@ -1,3 +1,3 @@
-# Current test build:25
+# Current test build:26
 
-Souvenir-only local contracts, native Souvenir output/provenance, normal collection/wear rules and safe refusal of unsupported mixes/outcomes. Config souvenir_tradeups=1. All26 suites pass; both Windows builds compile. Native UI test pending. See TEST-BUILD.md and FEATURES.md. Store claims still need latest failed-claim GC log.
+See TEST-BUILD.md for the complete changes, install steps and native-client checklist. Terminal purchases remain sellable by rarity/wear. Inventory reward claims and full Dead Hand coverage remain pending.

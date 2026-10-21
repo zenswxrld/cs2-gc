@@ -16,6 +16,11 @@ INJECT = '''
                     const localMode = MockAdapter.GetGameModeInternalName(false);
                     const isLocal = oPlayer.m_xuid === localXuid;
                     const isBot = MockAdapter.IsFakePlayer(oPlayer.m_xuid);
+                    if (isLocal && !oPlayer.m_oStats.cs2gcLogged) {
+                        oPlayer.m_oStats.cs2gcLogged = true;
+                        $.Msg('cs2_gc scoreboard hook reached: mode=' + localMode +
+                              ' queued=' + GameStateAPI.IsQueuedMatchmakingMode_Team());
+                    }
                     if ((isLocal || (__BOTS__ && isBot)) &&
                         (localMode === 'competitive' || localMode === 'premier') &&
                         !GameStateAPI.IsQueuedMatchmakingMode_Team() && !GameStateAPI.IsDemoOrHltv()) {
@@ -26,6 +31,14 @@ INJECT = '''
                             score = Number.isFinite(score) && score >= 0 ? score : 0;
                             wins = Number.isFinite(wins) && wins >= 0 ? wins : 0;
                             if (wins < __PLACEMENTS__) score = 0;
+                            if (isBot && score > 0 && __SPREAD__ > 0) {
+                                const identity = String(oPlayer.m_xuid) + ':' + oPlayer.GetGameStat('slot');
+                                let hash = 2166136261;
+                                for (let i = 0; i < identity.length; ++i) hash = Math.imul(hash ^ identity.charCodeAt(i), 16777619) >>> 0;
+                                if (!m_localBotRatings[identity])
+                                    m_localBotRatings[identity] = Math.max(1, Math.min(__MAX__, score + ((hash ^ m_localBotSeed) >>> 0) % (__SPREAD__ * 2 + 1) - __SPREAD__));
+                                score = m_localBotRatings[identity];
+                            }
                             const badgeKey = 'localPremier:' + score + ':' + wins;
                             nativeBadge.visible = true;
                             if (oPlayer.m_oStats[stat] !== badgeKey) {
@@ -43,6 +56,46 @@ INJECT = '''
 '''
 
 
+ROW_ANCHOR = re.compile(r"(function _GetPlayerRowForGameMode\(\)\s*\{\s*let mode = MockAdapter\.GetGameModeInternalName\(false\);\s*let skirmish = MockAdapter\.GetGameModeInternalName\(true\);)")
+ROW_INJECT = '''
+        // cs2_gc: offline Competitive uses the row layout that holds the native rating emblem (the Premier row).
+        if ((mode === 'competitive' || mode === 'premier') && !GameStateAPI.IsDemoOrHltv())
+            return 'snippet_scoreboard-classic__row--premier';'''
+
+
+PING_ANCHOR = ("                    oPlayer.m_elPlayer?.SetHasClass('bot', oPlayer.GetGameStat('is_fake_player'));\n"
+               "                    let szCustomLabel = _GetCustomStatTextValue('ping', oPlayer);\n")
+PING_INJECT = (
+    "                    // cs2_gc: bots show a steady fake ping instead of the BOT tag.\n"
+    "                    oPlayer.m_elPlayer?.SetHasClass('bot', false);\n"
+    "                    let szCustomLabel = _GetCustomStatTextValue('ping', oPlayer);\n"
+    "                    if (!szCustomLabel && oPlayer.GetGameStat('is_fake_player')) {\n"
+    "                        elLabel.SetHasClass('sb-row__cell--ping__label--bot', false);\n"
+    "                        _GenericUpdateStatDirect(oPlayer, stat, _LocalBotPing(oPlayer), true);\n"
+    "                        break;\n"
+    "                    }\n")
+PING_HELPER = '''
+    const m_localBotPings = {};
+    function _LocalBotPing(oPlayer) {
+        // A per-bot base of 15-75 ms that moves by at most 2 ms every few seconds and stays within 5 ms of it.
+        const identity = String(oPlayer.m_xuid) + ':' + oPlayer.GetGameStat('slot');
+        const now = Date.now();
+        let ping = m_localBotPings[identity];
+        if (ping === undefined) {
+            let hash = 2166136261;
+            for (let i = 0; i < identity.length; ++i) hash = Math.imul(hash ^ identity.charCodeAt(i), 16777619) >>> 0;
+            const base = 15 + ((hash ^ m_localBotSeed) >>> 0) % 61;
+            ping = m_localBotPings[identity] = {base: base, value: base, next: now + 3000 + Math.random() * 5000};
+        }
+        else if (now >= ping.next) {
+            ping.value = Math.max(ping.base - 5, Math.min(ping.base + 5, ping.value + Math.floor(Math.random() * 5) - 2));
+            ping.next = now + 3000 + Math.random() * 5000;
+        }
+        return ping.value;
+    }
+'''
+
+
 def patch(source, config):
     if 'cs2_gc native Premier badges' in source: raise ValueError('Scoreboard is already patched')
     # Require the actual inspected API shape; fail without affecting native files if it changes.
@@ -51,8 +104,17 @@ def patch(source, config):
     if not all(anchor in source for anchor in required): raise ValueError('Installed scoreboard API layout has changed')
     anchor = re.compile(r"(case\s+'skillgroup'\s*:\s*\{)")
     if len(anchor.findall(source)) != 1: raise ValueError('Ambiguous scoreboard skillgroup branch')
+    if len(ROW_ANCHOR.findall(source)) != 1: raise ValueError('Ambiguous scoreboard row selector')
+    source = source.replace('function _GetPlayerRowForGameMode()', 'const m_localBotRatings = {};\n    const m_localBotSeed = Math.floor(Math.random() * 4294967296) >>> 0;\n    function _GetPlayerRowForGameMode()', 1)
+    source = ROW_ANCHOR.sub(lambda match: match.group(0) + ROW_INJECT, source, count=1)
+    if config.get('bot_fake_ping', 1):
+        if source.count(PING_ANCHOR) != 1: raise ValueError('Installed scoreboard ping layout has changed')
+        source = source.replace(PING_ANCHOR, PING_INJECT, 1)
+        source = source.replace('    function _GetPlayerRowForGameMode()', PING_HELPER + '    function _GetPlayerRowForGameMode()', 1)
     insert = INJECT.replace('__BOTS__', 'true' if config['premier_bot_badges'] else 'false')
     insert = insert.replace('__PLACEMENTS__', str(config['premier_placement_wins']))
+    insert = insert.replace('__MAX__', str(config['premier_max_rating']))
+    insert = insert.replace('__SPREAD__', str(config.get('premier_bot_spread', 0)))
     return anchor.sub(lambda match: match.group(0) + insert, source, count=1)
 
 

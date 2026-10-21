@@ -55,6 +55,10 @@ InventoryItem MakeLootItem(const LootItem &drop, std::uint32_t rarity, const Ran
     case LootKind::Keychain:
         item.keychain = drop.keychainIndex;
         break;
+    case LootKind::MusicKit:
+        item.musicKit = drop.musicKitIndex;
+        item.statTrak = statTrakPerMille == 1000;
+        break;
     case LootKind::Plain:
         break;
     }
@@ -172,7 +176,13 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
         }
     }
     else
-        rolled = RollLootList(schema, crate->lootListName, random, odds);
+    {
+        auto openingOdds = odds;
+        if (crateItem->statTrak || schema.ProducesStatTrak(crate->defIndex)) openingOdds.statTrakPerMille = 1000;
+        rolled = RollLootList(schema, crate->lootListName, random, openingOdds);
+        // A knife in a case's own loot list (the knife-only Black Market Case) is a ★ item like any case gold.
+        if (rolled && schema.IsKnife(rolled->defIndex)) rolled->unusual = true;
+    }
     if (!rolled)
     {
         result.error = OpenError::EmptyLootList;
@@ -184,7 +194,7 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
 
     // Nothing above mutated the inventory; consume and grant together.
     inventory.Remove(crateId);
-    if (!keyless)
+    if (!keyless && !inventory.Gameplay().free_case_keys)
         inventory.Remove(keyId);
     item.id = inventory.Add(item);
     result.item = item;
@@ -201,7 +211,7 @@ std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, c
     for (const auto &crate : schema.Crates())
         if (crate.kind == CrateKind::Case && crate.keyDefIndex && !schema.LootTiers(crate.lootListName).empty())
             cases.push_back(crate.defIndex);
-    auto skins = schema.MatchRewardSkins();
+    auto skins = schema.MatchRewardSkins(config.match_weekly_pool_only != 0);
     std::erase_if(skins, [&](const auto &skin) {
         return schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex).value_or(0) < config.match_skin_min_rarity;
     });

@@ -56,7 +56,7 @@ def vpk_file(directory, wanted, *, aliases=False, with_path=False):
                     if name.lower() == Path(wanted).stem.lower(): nearby.append(path)
                     match = path.lower() == wanted.lower()
                     alias = (aliases and path.rsplit('.', 1)[0].lower() == wanted.rsplit('.', 1)[0].lower()
-                             and extension.lower() in ('js', 'vjs', 'vjs_c', 'js_c'))
+                             and extension.lower() in ('js', 'vjs', 'vjs_c', 'js_c', 'vts_c'))
                     if match or alias:
                         if found is not None: raise ValueError('Ambiguous VPK script assets: ' + found[5] + ', ' + path)
                         if length + preload > MAX_ASSET: raise ValueError('VPK asset too large')
@@ -79,8 +79,10 @@ def vpk_file(directory, wanted, *, aliases=False, with_path=False):
 def script_blocks(resource):
     if len(resource) < 16 or len(resource) > MAX_ASSET: raise ValueError('Invalid Panorama resource size')
     size, header, version, offset, count = struct.unpack_from('<IHHII', resource)
-    if size != len(resource) or header != 12 or version != 4 or not 1 <= count <= 32:
-        raise ValueError('Unsupported Panorama script resource; expected plaintext header12/version4')
+    # The installed game's compiled scripts (.vts_c) are header 12 / version 2: a RED2 block, the plaintext
+    # DATA block and a STAT block. Version 4 is accepted too (what the older notes assumed).
+    if size != len(resource) or header != 12 or version not in (2, 4) or not 1 <= count <= 32:
+        raise ValueError('Unsupported Panorama script resource; expected plaintext header12/version2 or 4')
     table = 8 + offset
     if table < 16 or table + 12 * count > size: raise ValueError('Invalid Panorama block table')
     blocks, spans = [], []
@@ -98,12 +100,13 @@ def script_blocks(resource):
 
 def rewrite_script(resource, patch):
     blocks = script_blocks(resource)
+    version = struct.unpack_from('<H', resource, 6)[0]
     original = next(data for kind, data in blocks if kind == b'DATA')
     source = original.rstrip(b'\0').decode('utf-8')
     changed = patch(source).encode('utf-8') + (b'\0' if original.endswith(b'\0') else b'')
     # Debug source maps refer to the original line/column positions. Preserve other metadata.
     blocks = [(kind, changed if kind == b'DATA' else data) for kind, data in blocks if kind != b'SrMa']
-    result = bytearray(struct.pack('<IHHII', 0, 12, 4, 8, len(blocks)) + b'\0' * (len(blocks) * 12))
+    result = bytearray(struct.pack('<IHHII', 0, 12, version, 8, len(blocks)) + b'\0' * (len(blocks) * 12))
     for i, (kind, data) in enumerate(blocks):
         result.extend(b'\0' * (-len(result) % 16))
         entry = 16 + i * 12
@@ -118,7 +121,7 @@ def rewrite_script(resource, patch):
 def patch_installed_script(resource, actual_path, patch):
     # CS2 can store ordinary Panorama .js assets rather than a compiled .vjs_c.
     # Match the installed filename and representation; never wrap raw JS as a resource.
-    if actual_path.endswith(('.js', '.vjs')):
+    if actual_path.endswith(('.js', '.vjs', '.db')):
         return patch(resource.decode('utf-8')).encode('utf-8')
     return rewrite_script(resource, patch)
 
@@ -158,6 +161,8 @@ def install_override(proxy_directory, *, enabled, folder, comment, owner, asset,
         target.parent.mkdir(parents=True, exist_ok=True)
         temp = target.with_name(target.name + '.tmp')
         temp.write_bytes(result); temp.replace(target)
+    from vpk_pack import pack
+    changed = pack(mod) or changed  # loose files lose to pak01 VPKs; a VPK in our own folder wins
     if mounted != current:
         backup = info.with_name(info.name + '.' + folder + '_backup')
         if not backup.exists():
@@ -165,3 +170,41 @@ def install_override(proxy_directory, *, enabled, folder, comment, owner, asset,
         atomic_write(info, mounted)
     return (f'prepared from {actual}; RESTART CS2 ONCE to load native UI override' if changed else
             f'installed: {actual}; live verification needed')
+
+
+WRITE_FOLDER = 'cs2_gc_first'
+WRITE_COMMENT = 'cs2_gc empty write-path placeholder'
+WRITE_OWNER = 'cs2-gc-write-path-v1'
+
+
+def ensure_first_game_path(proxy_directory):
+    """Keep an empty folder as the first Game search path.
+
+    The first Game path is the engine's DEFAULT_WRITE_PATH. A pak01 VPK in that folder made CS2 stop with
+    'Failed to load file (unexpected)', so the folders that hold VPKs must not be first.
+    """
+    from native_tradeups import parse
+    proxy = Path(proxy_directory).resolve()
+    game = proxy.parent.parent
+    info = game / 'csgo/gameinfo.gi'
+    mod = game / WRITE_FOLDER
+    manifest_path = mod / 'cs2_gc_write_manifest.json'
+    if not info.is_file(): return 'unavailable: installed gameinfo.gi not found'
+    if manifest_path.exists():
+        if json.loads(read_text(manifest_path)).get('owner') != WRITE_OWNER:
+            raise ValueError('Write-path folder is not owned by this feature')
+    elif mod.exists() and any(mod.iterdir()):
+        raise ValueError('Write-path folder contains unowned files')
+    current = read_text(info)
+    search = parse(current).one('GameInfo').one('FileSystem').one('SearchPaths')
+    first = next((node for node in search.children or [] if node.key == 'Game'), None)
+    if first is not None and first.value == WRITE_FOLDER:
+        return 'installed: ' + WRITE_FOLDER + ' is the first Game path'
+    atomic_write(manifest_path, json.dumps(dict(owner=WRITE_OWNER), indent=2) + '\n')
+    updated = mount_gameinfo(current, False, WRITE_FOLDER, WRITE_COMMENT)
+    updated = mount_gameinfo(updated, True, WRITE_FOLDER, WRITE_COMMENT)
+    backup = info.with_name(info.name + '.' + WRITE_FOLDER + '_backup')
+    if not backup.exists():
+        with backup.open('x', encoding='utf-8', newline='') as output: output.write(current)
+    atomic_write(info, updated)
+    return 'prepared; RESTART CS2 ONCE so the placeholder becomes the first Game path'

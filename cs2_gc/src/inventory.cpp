@@ -173,6 +173,7 @@ std::string Inventory::ToText() const
             << "\t\t\t\"stattrak\"\t\"" << (item.statTrak ? 1 : 0) << "\"\n"
             << "\t\t\t\"rarity\"\t\"" << item.rarity << "\"\n"
             << "\t\t\t\"sticker_kit\"\t\"" << item.stickerKit << "\"\n"
+            << "\t\t\t\"music_kit\"\t\"" << item.musicKit << "\"\n"
             << "\t\t\t\"keychain\"\t\"" << item.keychain << "\"\n";
         if (!item.customName.empty())
             out << "\t\t\t\"custom_name\"\t\"" << item.customName << "\"\n";
@@ -186,6 +187,8 @@ std::string Inventory::ToText() const
             out << "\t\t\t\"expiration\"\t\"" << item.expiration << "\"\n";
         if (item.purchasePrice)
             out << "\t\t\t\"purchase_price\"\t\"" << *item.purchasePrice << "\"\n";
+        if (item.ownerCertificate)
+            out << "\t\t\t\"owner_certificate\"\t\"1\"\n";
         if (item.slabSticker)
             out << "\t\t\t\"slab_sticker\"\t\"" << item.slabSticker << "\"\n";
         if (item.storedIn)
@@ -318,6 +321,7 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
         // Optional so files written before the field existed still load.
         if (entry.Find("rarity") && (!ParseNumber(entry.Value("rarity"), item.rarity) || item.rarity > 99))
             return std::nullopt;
+        if (entry.Find("music_kit") && !ParseNumber(entry.Value("music_kit"), item.musicKit)) return std::nullopt;
         if ((entry.Find("sticker_kit") && !ParseNumber(entry.Value("sticker_kit"), item.stickerKit)) ||
             (entry.Find("keychain") && !ParseNumber(entry.Value("keychain"), item.keychain)))
             return std::nullopt;
@@ -389,6 +393,12 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
                     return std::nullopt;
                 *target = value;
             }
+        if (const auto *certificate = entry.Find("owner_certificate"))
+        {
+            if (certificate->block || (certificate->value != "0" && certificate->value != "1"))
+                return std::nullopt;
+            item.ownerCertificate = certificate->value == "1";
+        }
         if (const auto *unusual = entry.Find("unusual"))
         {
             if (unusual->block || unusual->value != "1")

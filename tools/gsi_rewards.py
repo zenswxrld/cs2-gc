@@ -23,6 +23,14 @@ from rotate_armory import prepare as prepare_armory_rotation
 from native_scoreboard import prepare as prepare_native_scoreboard
 from native_store import prepare as prepare_native_store
 from skip_container_confirm import prepare as prepare_container_confirm
+from native_endmatch import prepare as prepare_endmatch
+from native_item_sales import prepare as prepare_item_sales
+from native_offer_numbers import prepare as prepare_offer_numbers
+from native_bot_names import prepare as prepare_bot_names
+from skip_key_select import prepare as prepare_key_select
+from native_endmatch_stock import prepare as prepare_stock_results
+from native_knife_reel import prepare as prepare_knife_reel
+from native_resources import ensure_first_game_path
 from rewards_runtime import InstanceLock, ParentProcess, serve_until_parent_exits
 import contextlib
 import traceback
@@ -72,6 +80,19 @@ class Rewards:
         if not isinstance(premier, dict) or any(type(premier.get(key)) is not int or premier[key] < 0
                 for key in ('rating', 'wins', 'losses', 'ties')) or premier['rating'] > 99999:
             raise ValueError('Invalid local Premier state')
+        # premier_bonus_wins is the total number of extra wins this setting has ever granted. Raising it adds the
+        # difference once (each counts as a normal win, with its rating gain); lowering it removes nothing.
+        applied = self.state.setdefault('premier_bonus_applied', 0)
+        if type(applied) is not int or not 0 <= applied <= 100:
+            raise ValueError('Invalid Premier bonus-win counter')
+        wanted = self.config['premier_bonus_wins']
+        if self.config['premier_enabled'] and wanted > applied:
+            for _ in range(wanted - applied):
+                premier = premier_rating.apply(premier, 'wins', self.config)
+            self.state['premier'] = premier
+            self.state['premier_bonus_applied'] = wanted
+            print(f"Granted {wanted - applied} bonus Premier wins from premier_bonus_wins. "
+                  f"{premier_rating.status(premier, self.config)}", flush=True)
         self.last_received = None
         self.save()
 
@@ -267,6 +288,36 @@ def run_with_parent(args, parent):
             print('Native container confirmation: ' + prepare_container_confirm(args.proxy_dir, rewards.config), flush=True)
         except (OSError, ValueError, KeyError) as error:
             print('Native container confirmation setup skipped: ' + str(error), flush=True)
+        for name, prepare in [('Native item sales', prepare_item_sales), ('Native match results', prepare_endmatch),
+                              ('Native key picker skip', prepare_key_select),
+                              ('Native stock XP/rating panels', prepare_stock_results),
+                              ('Native Black Market reel', prepare_knife_reel)]:
+            try:
+                print(name + ': ' + prepare(args.proxy_dir, rewards.config), flush=True)
+            except (OSError, ValueError, KeyError) as error:
+                print(name + ' setup skipped: ' + str(error), flush=True)
+        try:
+            print('Native terminal offer numbers: ' + prepare_offer_numbers(args.proxy_dir, rewards.config), flush=True)
+        except (OSError, ValueError, KeyError) as error:
+            print('Native terminal offer numbers setup skipped: ' + str(error), flush=True)
+        try:
+            print('Native bot names: ' + prepare_bot_names(args.proxy_dir, rewards.config), flush=True)
+        except (OSError, ValueError, KeyError) as error:
+            print('Native bot names setup skipped: ' + str(error), flush=True)
+        try:
+            print('Native write-path placeholder: ' + ensure_first_game_path(args.proxy_dir), flush=True)
+        except (OSError, ValueError, KeyError) as error:
+            print('Native write-path placeholder setup skipped: ' + str(error), flush=True)
+        try:
+            from vpk_signatures import update as update_vpk_signatures
+            print('Native VPK signatures: ' + update_vpk_signatures(args.proxy_dir), flush=True)
+        except (OSError, ValueError, struct.error) as error:
+            print('Native VPK signatures setup skipped: ' + str(error), flush=True)
+        try:
+            from vpk_pack import status as vpk_status
+            print('Native VPK overrides: ' + vpk_status(args.proxy_dir), flush=True)
+        except OSError as error:
+            print('Native VPK overrides: status unavailable: ' + str(error), flush=True)
         server.RequestHandlerClass = handler_for(rewards)
         if args.cfg_dir and rewards.config['premier_enabled']:
             difficulty_path = args.cfg_dir / 'cs2_gc_premier_bots.cfg'
@@ -275,7 +326,7 @@ def run_with_parent(args, parent):
                 difficulty = premier_rating.bot_difficulty(rewards.state['premier'])
                 if difficulty == last_difficulty[0]: return
                 atomic_text(difficulty_path, '// Local Premier bot difficulty; execute before spawning bots.\n'
-                            + f'bot_difficulty {difficulty}\n')
+                            + f'bot_difficulty {difficulty}\nbot_prefix ""\n')
                 last_difficulty[0] = difficulty
             write_difficulty()
             print('Local Premier bot config prepared. In the local server console: exec cs2_gc_premier_bots', flush=True)

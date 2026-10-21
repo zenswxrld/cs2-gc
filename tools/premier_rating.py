@@ -1,4 +1,5 @@
 """Local bot-match rating rules, separate from profile XP and Valve matchmaking."""
+import secrets
 
 def initial(config):
     return {'rating': config['premier_start_rating'], 'wins': 0, 'losses': 0, 'ties': 0, 'last_change': 0}
@@ -14,11 +15,15 @@ def outcome(game_map, team):
     return 'wins' if own > other else 'losses' if own < other else 'ties'
 
 
-def apply(state, result, config):
+def apply(state, result, config, randbelow=None):
     if result not in ('wins', 'losses', 'ties') or not config['premier_enabled']: return state.copy()
     updated = state.copy()
     updated[result] += 1
     delta = config['premier_win_rating'] if result == 'wins' else -config['premier_loss_rating'] if result == 'losses' else 0
+    variation = config.get('premier_rating_variation', 0)
+    if delta and variation:
+        jitter = (randbelow or secrets.randbelow)(variation * 2 + 1) - variation
+        delta = max(1, delta + jitter) if delta > 0 else min(-1, delta + jitter)
     previous = updated['rating']
     updated['rating'] = max(0, min(config['premier_max_rating'], previous + delta))
     updated['last_change'] = updated['rating'] - previous

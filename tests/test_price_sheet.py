@@ -72,6 +72,33 @@ class PriceSheetTests(unittest.TestCase):
         self.assertEqual(container[12:17].hex(), "5d00000400")
         self.assertEqual(tool.decompress(container), raw)
 
+    def test_older_liblzma_that_rejects_known_size_plus_end_marker_still_decodes(self):
+        # The game's streams carry their size and an end-of-data marker. Some liblzma builds reject that
+        # combination ("Corrupt input data"); the decoder must fall back to the other header forms.
+        raw = tool.encode_kv(SHEET) * 20
+        container = tool.compress(raw)
+        real = tool.lzma.decompress
+
+        def strict(data, format=None, **kwargs):
+            if struct.unpack_from("<Q", data, 5)[0] != tool.UNKNOWN_SIZE:   # known-size header: refuse
+                raise tool.lzma.LZMAError("Corrupt input data")
+            return real(data, format=format, **kwargs)
+
+        tool.lzma.decompress = strict
+        try:
+            self.assertEqual(tool.decompress(container), raw)
+        finally:
+            tool.lzma.decompress = real
+
+        def strictest(data, format=None, **kwargs):
+            raise tool.lzma.LZMAError("Corrupt input data")                  # even the unknown-size form fails
+
+        tool.lzma.decompress = strictest
+        try:
+            self.assertEqual(tool.decompress(container), raw)                 # the raw decoder still works
+        finally:
+            tool.lzma.decompress = real
+
     def test_bad_containers_rejected(self):
         good = tool.compress(b"hello world" * 50)
         for bad in (b"", b"LZMA", b"NOPE" + good[4:], good[:20],

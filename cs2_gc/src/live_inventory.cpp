@@ -2,6 +2,7 @@
 #include "cs2_gc/econ_item.h"
 #include "cs2_gc/protobuf.h"
 #include <algorithm>
+#include <set>
 
 namespace cs2_gc
 {
@@ -14,6 +15,29 @@ InventoryItem LiveInventory::AddItem(InventoryItem item)
 {
     item.id = m_inventory.Add(item);
     return item;
+}
+
+std::vector<InventoryItem> LiveInventory::EnsureCaseKeys(const Schema &schema)
+{
+    std::vector<InventoryItem> added;
+    if (!m_inventory.Gameplay().free_case_keys)
+        return added;
+    std::set<std::uint32_t> owned, wanted;
+    for (const InventoryItem &item : m_inventory.Items())
+    {
+        owned.insert(item.defIndex);
+        if (const CrateInfo *crate = schema.FindCrate(item.defIndex); crate && crate->kind == CrateKind::Case && crate->keyDefIndex)
+            wanted.insert(crate->keyDefIndex);
+    }
+    for (const std::uint32_t key : wanted)
+        if (!owned.count(key))
+        {
+            InventoryItem item;
+            item.defIndex = key;
+            item.rarity = schema.ItemRarity(key);
+            added.push_back(AddItem(item));
+        }
+    return added;
 }
 
 bool LiveInventory::AddXpTrack(std::uint32_t xp)
@@ -44,6 +68,25 @@ std::optional<std::uint32_t> LiveInventory::DefinitionOf(std::uint64_t itemId) c
         return std::nullopt;
     const InventoryItem *item = m_inventory.Find(itemId - CustomItemIdBase);
     return item ? std::optional<std::uint32_t>{item->defIndex} : std::nullopt;
+}
+
+std::size_t LiveInventory::RepairStoreCoupons(const Schema &schema)
+{
+    std::size_t count = 0;
+    for (const auto &saved : m_inventory.Items()) {
+        const auto entries = schema.CouponEntries(saved.defIndex);
+        if (entries.size() > 1 || saved.musicKit) continue;
+        const auto loot = schema.ResolveLootItem(entries.empty() ? schema.ItemName(saved.defIndex) : entries.front());
+        if (entries.empty() && (!loot || loot->kind != LootKind::MusicKit)) continue;
+        if (!loot || loot->kind == LootKind::Skin) continue;
+        auto converted = MakeLootItem(*loot, schema.ItemRarity(loot->weaponDefIndex), [] {return 0ull;},
+            schema.ProducesStatTrak(saved.defIndex) ? 1000 : 0);
+        converted.id = saved.id; converted.storedIn = saved.storedIn;
+        converted.statTrak = converted.statTrak || saved.statTrak;
+        *m_inventory.Find(saved.id) = converted;
+        ++count;
+    }
+    return count;
 }
 
 std::size_t LiveInventory::RepairSlabs(const Schema &schema)
@@ -257,7 +300,7 @@ std::optional<LiveInventory::Opened> LiveInventory::Open(const Schema &schema, s
     opened.item = result.item;
     // Only a case consumes its key.
     const CrateInfo *info = schema.FindCrate(opened.crate.defIndex);
-    if (!info || info->kind != CrateKind::Case)
+    if (!info || info->kind != CrateKind::Case || m_inventory.Gameplay().free_case_keys)
         opened.key.reset();
     return opened;
 }

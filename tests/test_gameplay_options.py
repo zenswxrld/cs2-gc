@@ -66,16 +66,16 @@ class GameplayOptions(unittest.TestCase):
 
     def test_local_premier_placements_bounds_and_bot_skill(self):
         state = premier.initial(config.DEFAULTS)
-        for _ in range(9): state = premier.apply(state, 'wins', config.DEFAULTS)
+        for _ in range(9): state = premier.apply(state, 'wins', dict(config.DEFAULTS, premier_rating_variation=0))
         self.assertIsNone(premier.visible_rating(state, config.DEFAULTS))
-        state = premier.apply(state, 'wins', config.DEFAULTS)
+        state = premier.apply(state, 'wins', dict(config.DEFAULTS, premier_rating_variation=0))
         self.assertEqual(premier.visible_rating(state, config.DEFAULTS), 4000)
-        self.assertEqual(premier.apply(state, 'losses', config.DEFAULTS)['rating'], 3900)
-        self.assertEqual(premier.apply(state, 'ties', config.DEFAULTS)['rating'], 4000)
+        self.assertEqual(premier.apply(state, 'losses', dict(config.DEFAULTS, premier_rating_variation=0))['rating'], 3900)
+        self.assertEqual(premier.apply(state, 'ties', dict(config.DEFAULTS, premier_rating_variation=0))['rating'], 4000)
         state['rating'] = 0
-        self.assertEqual(premier.apply(state, 'losses', config.DEFAULTS)['rating'], 0)
+        self.assertEqual(premier.apply(state, 'losses', dict(config.DEFAULTS, premier_rating_variation=0))['rating'], 0)
         state['rating'] = 34999
-        self.assertEqual(premier.apply(state, 'wins', config.DEFAULTS)['rating'], 35000)
+        self.assertEqual(premier.apply(state, 'wins', dict(config.DEFAULTS, premier_rating_variation=0))['rating'], 35000)
         self.assertEqual(premier.bot_difficulty(state), 3)
         result = {'mode': 'competitive', 'team_t': {'score': 13}, 'team_ct': {'score': 0}}
         self.assertEqual(premier.outcome(result, 'T'), 'wins')

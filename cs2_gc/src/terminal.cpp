@@ -44,7 +44,8 @@ std::optional<LiveInventory::TerminalChange> LiveInventory::AdvanceTerminal(
         *request.pointsRemaining != terminal->terminalRemaining.value_or(0))
         return std::nullopt;
     const bool exhausted = terminal->terminalRemaining && *terminal->terminalRemaining == 0;
-    const auto limit = request.volatileLimit ? request.volatileLimit : m_inventory.Gameplay().terminal_default_offers;
+    // The laptop's volatile limit is a price cap, not an offer count: the number of offers is always local config.
+    const auto limit = m_inventory.Gameplay().terminal_default_offers;
     if (limit > 100)
         return std::nullopt;
     std::optional<InventoryItem> offer;
@@ -134,6 +135,7 @@ std::optional<LiveInventory::TerminalChange> LiveInventory::AcceptTerminal(const
     auto *item = m_inventory.Find(offer->id);
     item->storedIn = 0;
     item->purchasePrice.reset();
+    item->ownerCertificate = true;
     change.offer = *item;
     return change;
 }

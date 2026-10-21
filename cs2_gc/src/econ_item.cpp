@@ -126,10 +126,12 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
         AddIntegerAttribute(out, 183, item.expiration);
     if (item.purchasePrice)
         AddIntegerAttribute(out, 316, *item.purchasePrice);
+    if (item.ownerCertificate)
+        AddIntegerAttribute(out, 317, accountId);
     if (item.statTrak)
     {
         AddIntegerAttribute(out, AttributeKillEater, 0);
-        AddIntegerAttribute(out, AttributeKillEaterScoreType, 0);
+        AddIntegerAttribute(out, AttributeKillEaterScoreType, item.musicKit ? 1 : 0); // music kits count MVPs
     }
     if (item.paintKitIndex)
     {
@@ -137,6 +139,7 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
         AddFloatAttribute(out, AttributePaintSeed, static_cast<float>(item.seed));
         AddFloatAttribute(out, AttributePaintWear, item.wear);
     }
+    if (item.musicKit) AddIntegerAttribute(out, 166, item.musicKit); // schema music id
     if (item.stickerKit)
         AddIntegerAttribute(out, AttributeStickerKit, item.stickerKit);
     if (item.keychain)

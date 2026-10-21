@@ -1,5 +1,6 @@
 #include "cs2_gc/gc_endpoint.h"
 #include "cs2_gc/econ_item.h"
+#include "cs2_gc/item_sales.h"
 #include "cs2_gc/gc_msg_ids.h"
 #include "cs2_gc/protobuf.h"
 #include <utility>
@@ -82,15 +83,15 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
     }
 }
 
-void LocalGameCoordinator::ReplyLocalPremier()
+void LocalGameCoordinator::ReplyLocalPremier(std::int32_t change)
 {
     if (!m_premier || !m_config.owner.id) return;
     const auto id = gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientGCRankUpdate;
     std::span<const std::uint8_t> recorded;
     if (m_replay)
         if (const auto *body = m_replay->Find(id)) recorded = *body;
-    auto body = WithPremierRankUpdate(recorded, *m_premier, static_cast<std::uint32_t>(m_config.owner.id));
-    if (!body) body = WithPremierRankUpdate({}, *m_premier, static_cast<std::uint32_t>(m_config.owner.id));
+    auto body = WithPremierRankUpdate(recorded, *m_premier, static_cast<std::uint32_t>(m_config.owner.id), change);
+    if (!body) body = WithPremierRankUpdate({}, *m_premier, static_cast<std::uint32_t>(m_config.owner.id), change);
     Reply(id, *body);
 }
 
@@ -109,8 +110,10 @@ bool LocalGameCoordinator::SetLocalPremier(const LocalPremier &rank)
     std::lock_guard lock(m_mutex);
     if (!m_premier || *m_premier == rank || rank.rating > 99999 || rank.placementWins < 1 || rank.placementWins > 100)
         return false;
+    const auto old = m_premier->wins >= m_premier->placementWins ? m_premier->rating : 0;
+    const auto next = rank.wins >= rank.placementWins ? rank.rating : 0;
     m_premier = rank;
-    ReplyLocalPremier();
+    ReplyLocalPremier(old && next ? static_cast<std::int32_t>(next) - static_cast<std::int32_t>(old) : 0);
     if (m_config.diagnostic) m_config.diagnostic("Premier: local rating/placement update queued for native rank cache");
     return true;
 }
@@ -128,9 +131,10 @@ void LocalGameCoordinator::EnableServerInventory(std::shared_ptr<LiveInventory> 
         gc.Reply(gc_msg::EGCBaseClientMsg::k_EMsgGCServerWelcome, welcome.bytes());
         gc.m_serverReady = true;
         gc.m_serverItems.clear();
+        gc.m_serverSlots.clear();
     });
     SetHandler(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_Server2GCClientValidate,
-               [](const FrameView &, LocalGameCoordinator &gc) { gc.m_serverItems.clear(); });
+               [](const FrameView &, LocalGameCoordinator &gc) { gc.m_serverItems.clear(); gc.m_serverSlots.clear(); });
 }
 
 void LocalGameCoordinator::RefreshServerInventory()
@@ -138,10 +142,13 @@ void LocalGameCoordinator::RefreshServerInventory()
     std::lock_guard lock(m_mutex);
     if (!m_serverReady || !m_live || !m_config.owner.id)
         return;
-    auto items = m_live->EncodedServerItems(static_cast<std::uint32_t>(m_config.owner.id));
-    if (items == m_serverItems)
+    const auto accountId = static_cast<std::uint32_t>(m_config.owner.id);
+    auto items = m_live->EncodedServerItems(accountId);
+    auto slots = m_live->EncodedSlots(accountId);
+    if (items == m_serverItems && slots == m_serverSlots)
         return;
     m_serverItems = items;
+    m_serverSlots = slots;
     PbWriter type;
     type.Varint(1, ItemTypeId);
     for (const auto &item : items)
@@ -151,6 +158,13 @@ void LocalGameCoordinator::RefreshServerInventory()
     owner.Varint(2, m_config.owner.id);
     PbWriter cache;
     cache.Message(2, type);
+    // The game server library registers CSOEconEquipSlot (type 3) beside items, as the client does.
+    PbWriter slotType;
+    slotType.Varint(1, EquipSlotTypeId);
+    for (const auto &slot : slots)
+        slotType.Bytes(2, slot);
+    if (!slots.empty())
+        cache.Message(2, slotType);
     cache.Fixed64(3, ++m_soVersion);
     cache.Message(4, owner);
     Reply(gc_msg::ESOMsg::k_ESOMsg_CacheSubscribed, cache.bytes());
@@ -268,6 +282,9 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                    if (result.status != Armory::Status::Ok)
                    {
                        ++gc.m_ignored;
+                       if (gc.m_config.diagnostic) gc.m_config.diagnostic("armory rejected: redeem=" + std::to_string(request->redeemId) +
+                           " cost=" + std::to_string(request->expectedCost) + " balance=" + std::to_string(armory->Balance()) +
+                           " status=" + std::to_string(static_cast<int>(result.status)));
                        return;
                    }
 
@@ -279,6 +296,7 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                    created.version = ++gc.m_soVersion;
                    created.owner = gc.m_config.owner;
                    gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
+                   gc.SendMissingCaseKeys();
 
                    std::optional<std::vector<std::uint8_t>> pass;
                    {
@@ -463,15 +481,16 @@ void LocalGameCoordinator::EnableStorePurchases(std::shared_ptr<LiveInventory> i
                            }
                            InventoryItem item;
                            item.defIndex = line.defIndex;
-                           // Deliver a coupon's guaranteed item directly, including capsules and packages.
-                           // Do not roll/open that container or guess at unresolved/bundle coupon contents.
+                           // Resolve guaranteed offers and fixed music definitions; never roll a container here.
                            if (schema)
-                               if (const auto entries = schema->CouponEntries(line.defIndex); entries.size() == 1)
-                                   if (const auto loot = schema->ResolveLootItem(entries[0]);
-                                       loot && (loot->kind == LootKind::Sticker || loot->kind == LootKind::Keychain ||
-                                                loot->kind == LootKind::Plain))
-                                       item = MakeLootItem(*loot, schema->ItemRarity(loot->weaponDefIndex),
-                                                           [] { return std::uint64_t{0}; });
+                           {
+                               const auto entries = schema->CouponEntries(line.defIndex);
+                               const auto name = entries.size() == 1 ? entries.front() : schema->ItemName(line.defIndex);
+                               if (const auto loot = schema->ResolveLootItem(name); loot && loot->kind != LootKind::Skin)
+                                   item = MakeLootItem(*loot, schema->ItemRarity(loot->weaponDefIndex),
+                                       [] { return std::uint64_t{0}; }, schema->ProducesStatTrak(line.defIndex) ? 1000 : 0);
+                           }
+                           if (schema && schema->ProducesStatTrak(line.defIndex)) item.statTrak = true;
                            item = inventory->AddItem(item);
                            SoSingleObject created;
                            created.typeId = static_cast<std::int32_t>(ItemTypeId);
@@ -482,6 +501,7 @@ void LocalGameCoordinator::EnableStorePurchases(std::shared_ptr<LiveInventory> i
                            gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(created));
                            itemIds.push_back(CustomItemIdBase + item.id);
                        }
+                   gc.SendMissingCaseKeys();
                    response.Varint(1, ResultOk);
                    for (const std::uint64_t id : itemIds)
                        response.Varint(2, id);
@@ -504,6 +524,39 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
         m_schema = schema;
         m_rewardRandom = random;
     }
+    SetHandler(gc_msg::EGCItemMsg::k_EMsgGCDelete,
+               [inventory, schema, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
+                   PbReader reader(frame.body); PbField field;
+                   std::uint64_t id = 0; bool valid = true;
+                   while (reader.Next(field)) {
+                       if (field.number == 1 && field.wire == 0 && !id) id = field.value;
+                       else valid = false;
+                   }
+                   const auto *item = id > CustomItemIdBase && id < 2 * CustomItemIdBase ? inventory->Items().Find(id - CustomItemIdBase) : nullptr;
+                   const auto value = item && valid && !reader.Failed() ? ItemSaleValue(*schema, inventory->Items().Gameplay(), *item) : 0;
+                   const auto balance = inventory->Items().ArmoryCredits().value_or(0);
+                   if (!value || value > UINT32_MAX - balance) { ++gc.m_ignored; return; }
+                   SoSingleObject removed;
+                   removed.typeId = static_cast<std::int32_t>(ItemTypeId);
+                   removed.data = BuildEconItem(*item, static_cast<std::uint32_t>(gc.m_config.owner.id), id, ItemPositionBase);
+                   if (!inventory->RemoveItem(id)) { ++gc.m_ignored; return; }
+                   inventory->SetArmoryCredits(balance + value);
+                   gc.m_armoryCredits = balance + value;
+                   if (gc.m_armory) gc.m_armory->SetBalance(balance + value);
+                   removed.version = ++gc.m_soVersion; removed.owner = gc.m_config.owner;
+                   gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy, EncodeSoSingleObject(removed));
+                   {
+                       std::lock_guard lock(gc.m_txnMutex);
+                       if (auto pass = WithXpShopBalance(gc.m_xpShop, balance + value)) {
+                           gc.m_xpShop = *pass;
+                           SoSingleObject updated; updated.typeId = static_cast<std::int32_t>(XpShopTypeId);
+                           updated.data = *pass; updated.version = ++gc.m_soVersion; updated.owner = gc.m_config.owner;
+                           gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+                       }
+                   }
+                   if (afterChange) afterChange();
+                   if (gc.m_config.diagnostic) gc.m_config.diagnostic("item sold: +" + std::to_string(value) + " stars; item and balance saved together");
+               });
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCOpenCrate,
                [inventory, schema, random, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
                    const auto request = DecodeOpenCrateRequest(frame.body);
@@ -1167,6 +1220,27 @@ bool LocalGameCoordinator::ApplyLevelRewards(const std::function<void()> &afterC
     return true;
 }
 
+void LocalGameCoordinator::SendMissingCaseKeys()
+{
+    std::shared_ptr<const Schema> schema;
+    {
+        std::lock_guard lock(m_txnMutex);
+        schema = m_schema;
+    }
+    if (!m_live || !schema)
+        return;
+    const auto account = static_cast<std::uint32_t>(m_config.owner.id & 0xFFFFFFFFull);
+    for (const auto &key : m_live->EnsureCaseKeys(*schema))
+    {
+        SoSingleObject object;
+        object.typeId = static_cast<std::int32_t>(ItemTypeId);
+        object.data = BuildEconItem(key, account, CustomItemIdBase + key.id, ItemPositionBase);
+        object.version = ++m_soVersion;
+        object.owner = m_config.owner;
+        Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(object));
+    }
+}
+
 void LocalGameCoordinator::NotifyRewardDrops(const std::vector<InventoryItem> &drops)
 {
     const auto account = static_cast<std::uint32_t>(m_config.owner.id);
@@ -1186,6 +1260,6 @@ void LocalGameCoordinator::NotifyRewardDrops(const std::vector<InventoryItem> &d
         preview.Varint(7, std::bit_cast<std::uint32_t>(item.wear)); preview.Varint(8, item.seed);
         PbWriter notification; notification.Message(6, preview);
         Reply(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification, notification.bytes());
-    }
+    }    SendMissingCaseKeys();
 }
 }

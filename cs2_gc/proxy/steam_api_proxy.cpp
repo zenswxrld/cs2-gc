@@ -17,6 +17,7 @@
 //
 // It only activates when the game was launched with -insecure; otherwise every call goes to
 // the real library untouched and nothing is written. Windows x64 only.
+#include "viewmodel_range.h"
 #include "cs2_gc/client_fingerprint.h"
 #include "cs2_gc/econ_item.h"
 #include "cs2_gc/gc_endpoint.h"
@@ -821,6 +822,12 @@ State &Init()
             }
             else s.log->Write("gameplay: no cs2_gc_gameplay.cfg; using documented defaults");
             s.autoRewards = loaded->Gameplay().rewards_auto_start != 0;
+            {
+                const auto &gameplay = loaded->Gameplay();
+                Logger *rangeLog = s.log;
+                StartViewmodelRange({gameplay.viewmodel_range_percent, gameplay.viewmodel_fov_min, gameplay.viewmodel_fov_max},
+                                    [rangeLog](const std::string &message) { rangeLog->Write(message); });
+            }
             if (loaded->Gameplay().premier_enabled)
                 s.coordinator->EnableLocalPremier({loaded->Gameplay().premier_start_rating, 0,
                                                    loaded->Gameplay().premier_placement_wins});
@@ -904,8 +911,19 @@ State &Init()
                         if (inventoryFileUsable && !live->Save(inventoryPath))
                             s.log->Write("could not save cs2_gc_inventory.txt");
                     }
+                    if (const auto keys = live->EnsureCaseKeys(*schema); !keys.empty())
+                    {
+                        s.log->Write("inventory: added " + std::to_string(keys.size()) +
+                                     " free case key(s) (free_case_keys = 1; keys are never used up)");
+                        if (inventoryFileUsable && !live->Save(inventoryPath)) s.log->Write("could not save cs2_gc_inventory.txt");
+                    }
                     // Store purchases are free and local: any item the schema defines can be bought, so the
                     // Store's own price sheet decides what is offered. The game checks the Armory pass etc. itself.
+                    if (const std::size_t repaired = live->RepairStoreCoupons(*schema))
+                    {
+                        s.log->Write("inventory: replaced " + std::to_string(repaired) + " guaranteed Store envelopes with their items");
+                        if (inventoryFileUsable && !live->Save(inventoryPath)) s.log->Write("could not save cs2_gc_inventory.txt");
+                    }
                     if (const std::size_t repaired = live->RepairSlabs(*schema))
                     {
                         s.log->Write("inventory: removed stickers or charms from " + std::to_string(repaired) +
@@ -968,7 +986,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: codex-20261020-05");
+        s.log->Write("test build: codex-20261020-17");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");

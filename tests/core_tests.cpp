@@ -14,6 +14,7 @@
 #include "cs2_gc/message_queue.h"
 #include "cs2_gc/progression.h"
 #include "cs2_gc/schema.h"
+#include "cs2_gc/item_sales.h"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -327,6 +328,20 @@ void CaseOpening()
     Check(OpenCase(inventory, *schema, crate, 999, random).error == OpenError::NoSuchKey, "unknown key");
     Check(OpenCase(inventory, *schema, crate, wrong, random).error == OpenError::WrongKey, "wrong key");
     Check(inventory.Items().size() == 4, "failed opens change nothing");
+    {
+        // free_case_keys (default): one key per case type is added and opening never uses it up.
+        LiveInventory live(Inventory{});
+        live.AddItem({0, 60});
+        live.AddItem({0, 60});
+        const auto keys = live.EnsureCaseKeys(*schema);
+        Check(keys.size() == 1 && keys.front().defIndex == 50 && live.EnsureCaseKeys(*schema).empty(),
+              "free_case_keys adds one matching key per case type, once");
+        Inventory inv;
+        const auto c = inv.Add({0, 60});
+        const auto k = inv.Add({0, 50});
+        Check(OpenCase(inv, *schema, c, k, random).error == OpenError::None && !inv.Find(c) && inv.Find(k),
+              "free_case_keys: the case is opened and the key is kept");
+    }
 
     // Statistical check on many opens, each with a fresh crate and key.
     std::array<int, 4> counts{};
@@ -335,6 +350,9 @@ void CaseOpening()
     for (int i = 0; i < Opens; ++i)
     {
         Inventory inv;
+        GameplayConfig paidKeys;
+        paidKeys.free_case_keys = 0;
+        inv.SetGameplay(paidKeys);
         const auto c = inv.Add({0, 60});
         const auto k = inv.Add({0, 50});
         const OpenResult result = OpenCase(inv, *schema, c, k, random);
@@ -1502,11 +1520,13 @@ constexpr const char *ArmoryFixture = R"("items_game"
         "weapon_case_base" { }
         "weapon_case" { "prefab" "weapon_case_base" "associated_item" "50" }
         "rifle" { "item_rarity" "uncommon" }
+        "sticker_capsule" { "prefab" "weapon_case_base" }
     }
     "items"
     {
         "50" { "name" "the_key" }
         "60" { "name" "the_case" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
+        "61" { "name" "crate_sticker_pack_test_capsule" "prefab" "sticker_capsule" "attributes" { "set supply crate series" { "value" "2" } } }
         "7" { "name" "weapon_rifle" "prefab" "rifle" }
         "1209" { "name" "sticker" }
         "1355" { "name" "keychain" }
@@ -1524,6 +1544,7 @@ constexpr const char *ArmoryFixture = R"("items_game"
         "kc_test" { "kc_test_rare" "1" }
         "kc_test_rare" { "[kc_a]keychain" "1" }
     }
+    "revolving_loot_lists" { "2" "stickers_test" }
     "seasonaloperations"
     {
         "11"
@@ -1534,6 +1555,7 @@ constexpr const char *ArmoryFixture = R"("items_game"
             "operational_point_redeemable" { "points" "1" "item_name" "lootlist:stickers_test" }
             "operational_point_redeemable" { "points" "3" "item_name" "lootlist:kc_test" }
             "operational_point_redeemable" { "points" "5" "item_name" "lootlist:missing_list" }
+            "operational_point_redeemable" { "points" "1" "item_name" "crate_sticker_pack_test_capsule" "local_rotation_slot" "capsule" }
             "operational_point_redeemable" { "item_name" "no_points_given" }
         }
         "12" { "redeemable_goods" "credits" "operational_point_redeemable" { "points" "1" "item_name" "ignored" } }
@@ -1548,7 +1570,7 @@ void ArmoryRedeems()
 
     const auto schema = Schema::Load(ArmoryFixture);
     Check(schema.has_value(), "armory fixture loads");
-    Check(schema->ArmoryRedeemables().size() == 5, "five usable tiles; the one without points and the credits campaign are skipped");
+    Check(schema->ArmoryRedeemables().size() == 6, "six usable tiles; the one without points and the credits campaign are skipped");
     const auto *collection = schema->FindRedeemable(11, Crc32("lootlist:set_test"));
     Check(collection && collection->points == 4 && collection->shopIndex == 0, "collection tile");
     const auto *theCase = schema->FindRedeemable(11, Crc32("the_case"));
@@ -1612,6 +1634,14 @@ void ArmoryRedeems()
     const auto charmRedeem = armory.Redeem(request("lootlist:kc_test", 3), live, random);
     Check(charmRedeem.status == Armory::Status::Ok && charmRedeem.item.defIndex == 1355 && charmRedeem.item.keychain == 17, "charm pack");
     Check(armory.Balance() == 40 && live.Items().Items().size() == 4, "balance and inventory after four redeems");
+    {
+        Armory capsules(*schema, 11, 1);
+        LiveInventory fresh(Inventory{});
+        const auto opened = capsules.Redeem(request("crate_sticker_pack_test_capsule", 1), fresh, random);
+        Check(opened.status == Armory::Status::Ok && opened.item.defIndex == 1209 &&
+                  (opened.item.stickerKit == 300 || opened.item.stickerKit == 301) && fresh.Items().Items().size() == 1,
+              "a capsule purchase grants one sticker from that capsule, not the capsule");
+    }
 
     // Every failure leaves the balance and the inventory exactly as they were.
     const auto unchanged = [&](Armory::Status want, const RedeemRequest &r, const char *what) {
@@ -3293,6 +3323,9 @@ void Terminals()
     Check(schema && schema->FindCrate(5176)->kind == CrateKind::Terminal, "volatile collection crate is a terminal");
     const auto shared = std::shared_ptr<const Schema>(&*schema, [](const Schema *) {});
     Inventory inventory;
+    GameplayConfig twoOffers;
+    twoOffers.terminal_default_offers = 2; // the offer count comes from local config
+    inventory.SetGameplay(twoOffers);
     InventoryItem terminal;
     terminal.defIndex = 5176;
     inventory.Add(terminal);
@@ -3331,7 +3364,7 @@ void Terminals()
     next.Varint(1, CustomItemIdBase + 1);
     next.Varint(2, CustomItemIdBase + 1);
     next.Varint(4, 0);
-    next.Varint(5, 2);
+    next.Varint(5, 99); // the laptop's "Offer limit" is a price cap and must not change the offer count
     request(gc_msg::EGCItemMsg::k_EMsgGCOpenCrate, next);
     replies = drain();
     auto offer = live->TerminalOffer(*schema, CustomItemIdBase + 1);
@@ -3390,6 +3423,7 @@ void Terminals()
     Check(replies.size() == 3 && !live->Items().Find(1) && live->Items().Items().size() == 1 &&
               live->Items().Find(finalOffer->id)->storedIn == 0 && !live->Items().Find(finalOffer->id)->purchasePrice,
           "accepting buys the displayed offer, consumes the terminal and does not reroll or grant another terminal");
+    Check(live->Items().Find(finalOffer->id)->ownerCertificate, "an accepted terminal offer carries the Original Owner Certificate");
     request(gc_msg::EGCItemMsg::k_EMsgGCStorePurchaseFinalize, finalize);
     drain();
     Check(live->Items().Items().size() == 1 && saves == 4, "repeated finalize cannot duplicate a terminal reward");
@@ -3409,6 +3443,10 @@ void NativeArmorySlotsAndConsoleStars()
     auto schema = Schema::Load(text);
     Check(schema && schema->ArmoryRedeemables().size() == 12, "generated native catalogue loads every row");
     GameplayConfig config;
+    Check(Armory(*schema, 11, 10).RotationAt(0, config).redeemIds.size() == 11,
+          "expanded default groups expose multiple goods per category");
+    config.armory_case_slots = config.armory_capsule_slots = config.armory_charm_slots =
+        config.armory_sticker_slots = config.armory_collection_slots = config.armory_limited_slots = 1;
     Armory armory(*schema, 11, 10);
     const auto first = armory.RotationAt(0, config), next = armory.RotationAt(900, config);
     Check(first.redeemIds.size() == 6 && next.redeemIds.size() == 6, "every category has its own active slot");
@@ -3416,11 +3454,21 @@ void NativeArmorySlotsAndConsoleStars()
         Check(std::find(next.redeemIds.begin(), next.redeemIds.end(), id) == next.redeemIds.end(), "each pool advances");
     armory.SetRotationOffset(1);
     Check(armory.RotationAt(0, config).redeemIds == next.redeemIds, "console force rotation advances all pools");
-    Inventory saved; saved.SetArmoryCredits(10); saved.SetGameplay(config);
+    auto strict = config; strict.armory_rotation_enforce = 1;
+    Inventory saved; saved.SetArmoryCredits(10); saved.SetGameplay(strict);
     LiveInventory live(saved);
     RedeemRequest request; request.campaignId = 11; request.expectedCost = 2; request.redeemId = first.redeemIds[0];
     Check(armory.Redeem(request, live, [] { return 0ull; }, {}, 0).status == Armory::Status::NotInRotation &&
-          live.Items().Items().empty() && armory.Balance() == 10, "stale native slot rejects without spending");
+          live.Items().Items().empty() && armory.Balance() == 10, "with armory_rotation_enforce a stale slot rejects without spending");
+    {
+        // Default: the page's rotation is trusted (the GC may not see its offset), so the same purchase succeeds.
+        Inventory relaxed; relaxed.SetArmoryCredits(10); relaxed.SetGameplay(config);
+        LiveInventory trusting(relaxed);
+        Armory other(*schema, 11, 10);
+        other.SetRotationOffset(1);
+        Check(other.Redeem(request, trusting, [] { return 0ull; }, {}, 0).status != Armory::Status::NotInRotation,
+              "by default a tile from another rotation offset is not refused");
+    }
     Check(saved.ApplyConsoleStars(100) && saved.ArmoryCredits() == 110, "test stars add to balance");
     auto restored = Inventory::FromText(saved.ToText());
     Check(restored && !restored->ApplyConsoleStars(100) && !restored->ApplyConsoleStars(99) &&
@@ -3448,7 +3496,8 @@ void HowlAndArmoryRotation()
           armory.RotationAt(900, config).redeemIds.front() != howl->redeemId &&
           armory.RotationAt(1800, config).redeemIds.front() == howl->redeemId,
           "Howl rotates in and out on 15-minute boundaries and returns");
-    Inventory saved; saved.SetGameplay(config); saved.SetArmoryCredits(100);
+    auto strict = config; strict.armory_rotation_enforce = 1;  // the default trusts the page's rotation
+    Inventory saved; saved.SetGameplay(strict); saved.SetArmoryCredits(100);
     LiveInventory inventory(saved);
     RedeemRequest request; request.campaignId = 11; request.redeemId = howl->redeemId; request.expectedCost = 40;
     const auto before = inventory.Items().ToText();
@@ -3456,7 +3505,7 @@ void HowlAndArmoryRotation()
           inventory.Items().ToText() == before && armory.Balance() == 100, "expired Howl offer cannot spend stars");
     const auto bought = armory.Redeem(request, inventory, [] { return 0ull; }, {}, 0);
     Check(bought.status == Armory::Status::Ok && bought.item.paintKitIndex == 309 && bought.item.rarity == 7 &&
-          !bought.item.statTrak && bought.item.wear <= .4f && armory.Balance() == 60 && inventory.Items().ArmoryCredits() == 60u,
+          !bought.item.statTrak && bought.item.ownerCertificate && bought.item.wear <= .4f && armory.Balance() == 60 && inventory.Items().ArmoryCredits() == 60u,
           "active Howl offer grants the existing skin and spends the configured stars");
     config.armory_howl_enabled = 0;
     Check(!armory.HowlOffer(config) && armory.RotationAt(0, config).redeemIds.size() == 1, "Howl can be disabled");
@@ -3512,7 +3561,7 @@ void ConfiguredRewardsAndPity()
       }
       "paint_kits" { "10" { "name" "blue" } "11" { "name" "red" } "20" { "name" "gold" } }
       "paint_kits_rarity" { "blue" "rare" "red" "ancient" }
-      "item_sets" { "set_test" { "items" { "[blue]weapon_test" "1" "[red]weapon_test" "1" } } }
+      "item_sets" { "set_timed_drops_test" { "items" { "[blue]weapon_test" "1" "[red]weapon_test" "1" } } }
       "revolving_loot_lists" { "1" "rewards" }
       "client_loot_lists" { "rewards" { "rewards_rare" "1" "rewards_ancient" "1" }
         "rewards_rare" { "[blue]weapon_test" "1" } "rewards_ancient" { "[red]weapon_test" "1" } }
@@ -3577,8 +3626,12 @@ void ConfiguredRewardsAndPity()
         std::vector<std::uint8_t> bytes(size); std::uint32_t type = 0, got = 0;
         endpoint.RetrieveMessage(&type, bytes.data(), size, &got); types.push_back(type & ~ProtobufMask);
     }
-    Check(types == std::vector<std::uint32_t>{21, 9137, 21, 9137, 21, 9137} && saves == 1,
-          "native match drop notifications follow each created item and save once");
+    // A dropped case also brings its free key (free_case_keys), created after the drop notifications.
+    const bool droppedCase = std::any_of(live->Items().Items().begin(), live->Items().Items().end(),
+                                         [](const InventoryItem &item) { return item.defIndex == 60; });
+    auto expectedTypes = std::vector<std::uint32_t>{21, 9137, 21, 9137, 21, 9137};
+    if (droppedCase) expectedTypes.push_back(21);
+    Check(types == expectedTypes && saves == 1, "native match drop notifications follow each created item and save once");
     Inventory levelInventory;
     GameplayConfig levelConfig;
     levelConfig.match_drops_enabled = 0;
@@ -3652,10 +3705,172 @@ void NativePremier()
           "native rank event uses the captured 9194 message");
 }
 
+void WeeklyPoolAndItemSales()
+{
+    auto schema = Schema::Load(R"("items_game" {
+      "rarities" { "common" { "value" "1" } "rare" { "value" "3" } "ancient" { "value" "6" } }
+      "prefabs" { "weapon_case_base" {} "weapon_case" { "prefab" "weapon_case_base" "associated_item" "50" }
+        "operator" { "flexible_loadout_category" "customplayer" "item_quality" "unique" "model_player" "official.vmdl" } }
+      "items" { "7" { "name" "weapon_test" "item_rarity" "common" } "8" { "name" "weapon_knife_test" "item_class" "weapon_knife" }
+        "50" { "name" "key" } "60" { "name" "crate_test" "prefab" "weapon_case"
+          "attributes" { "set supply crate series" { "value" "1" } } }
+        "100" { "name" "customplayer_test" "prefab" "operator" }
+        "1209" { "name" "sticker" } "1201" { "name" "coupon_test" } }
+      "paint_kits" { "10" { "name" "weekly_blue" } "11" { "name" "case_blue" } "12" { "name" "weekly_grey" } }
+      "paint_kits_rarity" { "weekly_blue" "rare" "case_blue" "rare" "weekly_grey" "common" }
+      "item_sets" { "set_timed_drops_test" { "items" { "[weekly_blue]weapon_test" "1" "[weekly_grey]weapon_test" "1" } }
+        "set_case_test" { "items" { "[case_blue]weapon_test" "1" } } }
+      "client_loot_lists" { "case_list" { "[case_blue]weapon_test" "1" } }
+      "revolving_loot_lists" { "1" "case_list" }
+    })");
+    Check(schema && schema->AgentDefinitions() == std::vector<std::uint32_t>{100}, "only official eligible agents resolve");
+    const auto weekly = schema->MatchRewardSkins();
+    Check(weekly.size() == 1 && weekly[0].paintKitIndex == 10 && schema->MatchRewardSkins(false).size() == 2,
+          "weekly-only pool excludes case collections and below-blue weekly finishes");
+    GameplayConfig config;
+    config.match_case_percent = 0;
+    for (unsigned i = 0; i < 20; ++i) {
+        const auto drops = RollMatchDrops(*schema, [i] { return std::uint64_t{i}; }, config);
+        Check(drops && drops->size() == 3 && (*drops)[0].paintKitIndex == 10,
+              "all-weapon rewards draw from the non-case weekly pool");
+    }
+    InventoryItem skin; skin.defIndex = 7; skin.paintKitIndex = 10; skin.rarity = 3;
+    Check(ItemSaleValue(*schema, config, skin) == 5, "OfflineCS blue sale price");
+    skin.statTrak = true;
+    Check(ItemSaleValue(*schema, config, skin) == 5, "StatTrak has the same OfflineCS base sale value");
+    InventoryItem agent; agent.defIndex = 100;
+    Check(ItemSaleValue(*schema, config, agent) == 25, "agent buyback uses half of configured price");
+    InventoryItem sticker; sticker.defIndex = 1209; sticker.stickerKit = 1; sticker.rarity = 6;
+    Check(ItemSaleValue(*schema, config, sticker) == 25, "sticker buyback uses half of rarity price");
+    InventoryItem crate; crate.defIndex = 60;
+    Check(ItemSaleValue(*schema, config, crate) == 1, "containers use percentage with minimum one star");
+    InventoryItem knife = skin; knife.defIndex = 8;
+    Check(ItemSaleValue(*schema, config, knife) == 72, "knife and glove sale price default (72)");
+    skin.storedIn = 8;
+    Check(ItemSaleValue(*schema, config, skin) == 0, "stored items cannot be sold separately");
+    skin.storedIn = 0;
+    Inventory saved; saved.SetArmoryCredits(7); saved.SetGameplay(config);
+    const auto id = saved.Add(skin);
+    saved.Loadout().push_back({2, 15, CustomItemIdBase + id, 7});
+    auto live = std::make_shared<LiveInventory>(saved);
+    auto shared = std::shared_ptr<const Schema>(&*schema, [](const Schema *) {});
+    LocalGameCoordinator endpoint({}); int saves = 0;
+    endpoint.EnableContainers(live, shared, [] { return 0ull; }, [&] { ++saves; });
+    const auto send = [&](const PbWriter &body) {
+        std::vector<std::uint8_t> bytes;
+        WriteProtobufFrame(gc_msg::EGCItemMsg::k_EMsgGCDelete, {}, body.bytes(), bytes);
+        endpoint.SendMessage(gc_msg::EGCItemMsg::k_EMsgGCDelete | ProtobufMask, bytes.data(), bytes.size());
+    };
+    PbWriter malformed; malformed.Varint(1, CustomItemIdBase + id); malformed.Varint(2, 50);
+    send(malformed);
+    Check(live->Items().Find(id) && live->Items().ArmoryCredits() == 7 && saves == 0, "malformed sale cannot remove or pay");
+    PbWriter sale; sale.Varint(1, CustomItemIdBase + id);
+    send(sale); send(sale);
+    Check(!live->Items().Find(id) && live->Items().Loadout().empty() && live->Items().ArmoryCredits() == 12 && saves == 1,
+          "native sale removes item and loadout, credits once and saves atomically");
+    auto restored = Inventory::FromText(live->Items().ToText());
+    Check(restored && restored->ArmoryCredits() == 12 && restored->Items().empty(), "sale balance and inventory survive restart");
+    const auto overflowItem = live->AddItem(skin);
+    live->SetArmoryCredits(UINT32_MAX);
+    PbWriter overflow; overflow.Varint(1, CustomItemIdBase + overflowItem.id); send(overflow);
+    Check(live->Items().Find(overflowItem.id) && saves == 1, "overflow sale retains item");
+}
+
+void MusicKitsAndCouponMigration()
+{
+    auto schema = Schema::Load(R"("items_game" {
+      "rarities" { "rare" { "value" "3" } }
+      "prefabs" { "weapon_case_base" {} "musickit_prefab" { "item_rarity" "rare" } }
+      "items" { "1314" { "name" "musickit" "prefab" "musickit_prefab" }
+        "88" { "name" "musickit_fixed" "prefab" "musickit_prefab" "attributes" { "music id" "42" } }
+        "1209" { "name" "sticker" "item_rarity" "rare" }
+        "20037" { "name" "coupon - sticker" "loot_list_name" "coupon loot list sticker" }
+        "20038" { "name" "coupon - music" "loot_list_name" "coupon loot list music" "will_produce_stattrak" "1" }
+        "60" { "name" "crate_musickit_test_capsule" "prefab" "weapon_case_base"
+          "attributes" { "set supply crate series" { "value" "1" } } }
+        "61" { "name" "crate_musickit_test_stattrak_capsule" "prefab" "weapon_case_base"
+          "attributes" { "set supply crate series" { "value" "2" } } } }
+      "music_definitions" { "42" { "name" "test_music" } }
+      "sticker_kits" { "260" { "name" "test_sticker" } }
+      "client_loot_lists" {
+        "music_flat" { "[test_music]musickit" "1" }
+        "music_stattrak" { "will_produce_stattrak" "1" "music_flat" "1" }
+        "coupon loot list music" { "public_list_contents" "1" "[test_music]musickit" "1" }
+        "coupon loot list sticker" { "public_list_contents" "1" "[test_sticker]sticker" "1" } }
+      "revolving_loot_lists" { "1" "music_flat" "2" "music_stattrak" }
+    })");
+    Check(schema.has_value(), "music schema loads");
+    Inventory saved;
+    const auto normal = saved.Add({0,60}), tracked = saved.Add({0,61});
+    const auto opened = OpenCase(saved,*schema,normal,0,[]{return 0ull;});
+    Check(opened.error == OpenError::None && opened.item.musicKit == 42 && !opened.item.statTrak,
+          "keyless flat music list grants a playable kit with its music id");
+    const auto stat = OpenCase(saved,*schema,tracked,0,[]{return 0ull;});
+    Check(stat.error == OpenError::None && stat.item.musicKit == 42 && stat.item.statTrak,
+          "StatTrak music capsules guarantee StatTrak rather than a weapon roll");
+    saved.Add({0,20037}); saved.Add({0,20038});
+    const auto fixedKit = saved.Add({0,88});
+    LiveInventory live(saved);
+    Check(live.RepairStoreCoupons(*schema) == 3 && live.RepairStoreCoupons(*schema) == 0,
+          "existing guaranteed envelopes convert once without granting duplicates");
+    bool sticker = false, music = false;
+    for (const auto &item : live.Items().Items()) {
+        sticker |= item.stickerKit == 260;
+        music |= item.musicKit == 42 && item.statTrak;
+    }
+    Check(sticker && music && live.Items().Find(fixedKit)->musicKit == 42, "converted offers include stickers, StatTrak music and fixed music definitions");
+    const auto restored = Inventory::FromText(live.Items().ToText());
+    Check(restored && restored->Find(stat.item.id)->musicKit == 42 && restored->Find(stat.item.id)->statTrak,
+          "music id and StatTrak survive a save and restart");
+    // Build owns the payload for the duration of parsing.
+    const auto encoded = BuildEconItem(stat.item,555,CustomItemIdBase+stat.item.id,1000);
+    PbReader reader(encoded); PbField field; bool musicAttribute = false;
+    while (reader.Next(field)) if (field.number == 12 && field.wire == 2) {
+        PbReader inner(field.bytes); PbField attribute;
+        while(inner.Next(attribute)) if(attribute.number == 1 && attribute.value == 166) musicAttribute = true;
+    }
+    Check(musicAttribute,"native econ item carries the schema music id attribute");
+}
+
+void ArmoryTerminals()
+{
+    auto schema = Schema::Load(R"("items_game" {
+      "prefabs" { "weapon_case_base" {} "volatile_pricing" {}
+        "weapon_case_selfopening_collection" { "prefab" "weapon_case_base" } }
+      "items" {
+        "77" { "name" "crate_terminal_a" "prefab" "volatile_pricing weapon_case_selfopening_collection"
+          "attributes" { "set supply crate series" { "value" "1" } } }
+        "78" { "name" "crate_terminal_b" "prefab" "volatile_pricing weapon_case_selfopening_collection"
+          "attributes" { "set supply crate series" { "value" "2" } } } }
+      "seasonaloperations" { "11" { "redeemable_goods" "xpshop"
+        "operational_point_redeemable" { "item_name" "crate_terminal_a" "points" "2" "local_rotation_slot" "terminal" }
+        "operational_point_redeemable" { "item_name" "crate_terminal_b" "points" "2" "local_rotation_slot" "terminal" } } }
+    })");
+    Check(schema && schema->FindCrate(77)->kind == CrateKind::Terminal,"Armory fixture uses real terminal definitions");
+    GameplayConfig config; Armory shop(*schema,11,10);
+    const auto first=shop.RotationAt(0,config), next=shop.RotationAt(900,config);
+    Check(first.redeemIds.size()==1 && next.redeemIds.size()==1 && first.redeemIds!=next.redeemIds,
+          "dedicated terminal slot rotates independently");
+    Inventory saved; saved.SetGameplay(config); saved.SetArmoryCredits(10); LiveInventory live(saved);
+    RedeemRequest request; request.campaignId=11;request.expectedCost=2;request.redeemId=first.redeemIds[0];
+    const auto bought=shop.Redeem(request,live,[]{return 0ull;},{},0);
+    Check(bought.status==Armory::Status::Ok && bought.item.defIndex==77 && !bought.item.expiration &&
+          !bought.item.terminalRemaining && live.Items().ArmoryCredits()==8,
+          "two stars buy an unopened terminal rather than an offer or weapon");
+    OpenCrateRequest open; open.crateItemId=CustomItemIdBase+bought.item.id;
+    Check(live.AdvanceTerminal(*schema,open,[]{return 0ull;},100).has_value(),
+          "Armory terminal follows the existing native unseal path");
+    config.terminals_enabled=0;
+    Check(shop.RotationAt(0,config).redeemIds.empty(),"disabled terminals disappear from Armory rotation");
+}
+
 int main()
 {
     try
     {
+        ArmoryTerminals(); std::cout << "PASS terminal Armory offers\n";
+        MusicKitsAndCouponMigration(); std::cout << "PASS music kits and coupon migration\n";
+        WeeklyPoolAndItemSales(); std::cout << "PASS weekly pool and native item sales\n";
         NativeArmorySlotsAndConsoleStars(); std::cout << "PASS native Armory slots and console stars\n";
         NativePremier(); std::cout << "PASS native Premier placement/rating cache\n";
         HowlAndArmoryRotation(); std::cout << "PASS limited Howl and Armory rotation policy\n";

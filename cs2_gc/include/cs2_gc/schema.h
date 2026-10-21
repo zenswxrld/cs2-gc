@@ -31,7 +31,7 @@ struct LootTier
     std::vector<std::string> items;  // "[paintkit]weapon_class" style entries, unexpanded
 };
 
-enum class LootKind { Skin, Sticker, Keychain, Plain }; // Plain: an item named as it is in the schema
+enum class LootKind { Skin, Sticker, Keychain, MusicKit, Plain }; // Plain: an item named as it is in the schema
 
 // One resolved "[name]class" loot entry: "[finish]weapon_x" is a skin, "[kit]sticker" a sticker and
 // "[charm]keychain" a charm.
@@ -41,6 +41,7 @@ struct LootItem
     std::uint32_t weaponDefIndex{};  // the item definition (the weapon, or the sticker / charm tool)
     std::uint32_t paintKitIndex{};   // skins
     std::uint32_t stickerKitIndex{}; // stickers
+    std::uint32_t musicKitIndex{};
     std::uint32_t keychainIndex{};   // charms
     std::string weaponClass;
     std::string paintKitName;
@@ -112,7 +113,10 @@ public:
     std::vector<SkinRef> GoldOutcomes(const std::string &collection, bool statTrak) const;
     std::vector<SkinRef> CrateGoldOutcomes(std::uint32_t defIndex) const;
     bool IsKnife(std::uint32_t defIndex) const;
-    std::vector<SkinRef> MatchRewardSkins() const;
+    std::vector<SkinRef> MatchRewardSkins(bool weeklyOnly = true) const;
+    std::vector<std::uint32_t> AgentDefinitions() const;
+    bool ProducesStatTrak(std::uint32_t definition) const;
+    std::string ItemName(std::uint32_t definition) const;
 
     // A skin as a loot entry (finish name and wear range) so a trade-up can mint it. Nothing if the
     // weapon or finish is unknown.
@@ -160,6 +164,7 @@ private:
     std::unordered_map<std::uint32_t, std::string> m_paintKitNames;      // kit index -> name
     std::unordered_map<std::uint32_t, const KvNode *> m_itemsByIndex;
     std::unordered_map<std::string, std::uint32_t> m_stickerKits;   // name -> index
+    std::unordered_map<std::string, std::uint32_t> m_musicKits;
     std::unordered_map<std::string, std::uint32_t> m_keychains;     // name -> index
     std::vector<ArmoryRedeemable> m_armoryRedeemables;
     std::unordered_map<std::string, const KvNode *> m_prefabs;

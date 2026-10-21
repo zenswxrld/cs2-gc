@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-echo Close CS2 before continuing. This adds 20 Custom Collections Test Cases (Doppler, Spectrum and Knife Classics colour families) and backs up your inventory.
+echo Close CS2 before continuing. This adds 20 Custom Collections Test Cases (rolls the 40 custom collections like a real case) and backs up your inventory.
 pause
 where py >nul 2>nul
 if %errorlevel% equ 0 (

@@ -1,3 +1,4 @@
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -35,25 +36,34 @@ class CustomSkins(unittest.TestCase):
         self.assertIn('[rk_am_gold_brick_lava]weapon_glock', items)
         self.assertTrue(skins.test2_case_spec(items)['name'].endswith('_test'))  # never a match drop
 
-    def test_collections_list_one_family_finish_per_gun_by_tier_and_families_hold_every_colour(self):
+    def test_collections_are_small_with_one_covert_chase_whose_family_holds_every_colour(self):
         kits = {'am_doppler_phase1': ('1', {'name': 'am_doppler_phase1', 'style': '5'}),
                 'am_doppler_phase2': ('2', {'name': 'am_doppler_phase2', 'style': '5', 'wear_default': '0.1'}),
-                'aa_fade': ('3', {'name': 'aa_fade', 'style': '6'})}
-        recolours = ['rk_am_doppler_phase1_lava', 'rk_aa_fade_ocean', 'rk_am_zebra_lime']
-        family_kits, sets, lists, families, names, items = skins.collections(
-            SCHEMA, kits, recolours, lambda name, values: 'weapons/paints/legacy/%s.vcompmat' % name)
-        self.assertEqual(names, ['set_cs2gc_doppler', 'set_cs2gc_spectrum'])  # classics: no finish in this schema
-        doppler = dict((n, v) for n, _, v in family_kits)['cgf_doppler_ancient']
-        self.assertEqual(doppler['composite_material_path'], 'weapons/paints/legacy/am_doppler_phase2.vcompmat')
-        self.assertEqual((doppler['_rarity'], doppler['wear_default']), ('ancient', '0.1'))
-        self.assertIn('[cgf_doppler_ancient]weapon_ak47', items)  # AK is a Covert gun
-        self.assertIn('[cgf_doppler_legendary]weapon_glock', items)
-        self.assertIn('"set_cs2gc_doppler_ancient"', lists)
-        self.assertIn('"The Doppler Collection"', sets)
-        self.assertIn('"cgf_doppler_ancient"\n\t{\n\t\t"am_doppler_phase1"\t"1"\n\t\t"am_doppler_phase2"\t"1"\n'
-                      '\t\t"rk_am_doppler_phase1_lava"\t"1"', families)
+                'hy_granite': ('3', {'name': 'hy_granite', 'style': '2'}),
+                'sp_palm': ('4', {'name': 'sp_palm', 'style': '3'}),
+                'hy_ak47lam': ('5', {'name': 'hy_ak47lam', 'style': '2'})}
+        titles = {'hy_granite': 'Granite', 'sp_palm': 'Palm', 'hy_ak47lam': 'Laminate'}
+        schema = SCHEMA.replace('"4" { "name" "weapon_glock" }', '"4" { "name" "weapon_glock" } "8" { "name" "weapon_aug" }'
+                                ' "9" { "name" "weapon_nova" }')
+        new, _, lists, families, names, items, chases = skins.collections(
+            schema, kits, ['rk_am_doppler_phase1_lava', 'rk_am_zebra_lime'],
+            lambda name, values: 'weapons/paints/legacy/%s.vcompmat' % name, titles)
+        self.assertIn('set_cs2gc_doppler_ak47', names)
+        self.assertEqual(chases[names.index('set_cs2gc_doppler_ak47')], '[cgf_doppler_ancient]weapon_ak47')
+        self.assertIn('"set_cs2gc_doppler_ak47_ancient"\n\t\t{\n\t\t\t"[cgf_doppler_ancient]weapon_ak47"\t\t"1"\n\t\t}', lists)
+        values = dict((n, v) for n, _, v in new)
+        self.assertEqual(values['cgf_doppler_ancient']['composite_material_path'],
+                         'weapons/paints/legacy/am_doppler_phase2.vcompmat')
+        self.assertFalse([n for n in values if 'ak47lam' in n])  # weapon-named patterns are not fillers
+        fillers = [i for i in items if i.startswith('[cga_')]
+        self.assertTrue(fillers and all(re.match(r'\[cga_(hy_granite|sp_palm)_(legendary|mythical|rare)\]', i) for i in fillers))
+        self.assertEqual({v['_rarity'] for n, v in values.items() if n.startswith('cga_')}, {'legendary', 'mythical', 'rare'})
+        self.assertEqual({t for n, t, _ in new if n.startswith('cga_hy_granite_')}, {'Granite'})
+        self.assertIn('"rk_am_doppler_phase1_lava"', families)
         self.assertNotIn('rk_am_zebra_lime', families)
-        self.assertTrue(skins.collections_test_spec(names)['name'].endswith('_test'))
+        self.assertEqual(len(skins.COLLECTIONS), skins.COLLECTION_COUNT)
+        self.assertEqual(skins.COLLECTIONS['set_cs2gc_doppler_ak47'][0], 'The AK-47 Doppler Collection')
+        self.assertTrue(skins.chase_test_spec(chases)['name'].endswith('_test'))
 
     def test_prepare_writes_families_collections_and_the_test_case(self):
         import json, tempfile
@@ -63,6 +73,7 @@ class CustomSkins(unittest.TestCase):
         from test_native_tradeups import GAMEINFO
         schema = KNIVES.replace('"500" { "name" "weapon_bayonet" "prefab" "melee_unusual" }',
                                 '"500" { "name" "weapon_bayonet" "prefab" "melee_unusual" }\n\t\t"7" { "name" "weapon_ak47" }'
+                                ' "9" { "name" "weapon_awp" } "10" { "name" "weapon_nova" }'
                                 ).replace('"paint_kits_rarity"', '"item_sets" { }\n\t"paint_kits_rarity"')
         with tempfile.TemporaryDirectory() as folder:
             game = Path(folder) / 'game'
@@ -76,8 +87,10 @@ class CustomSkins(unittest.TestCase):
             patched, _ = finishes.prepare(proxy, {'knife_finishes': 1}, schema)
             sections = collect(parse(patched))
             self.assertFalse(sections.get('item_sets'))  # an item_set without a #CSGO_ name token crashes CS2
-            self.assertIn('set_cs2gc_spectrum', sections['client_loot_lists'])
-            self.assertEqual(dict(sections['client_loot_lists'][skins.COLLECTIONS_TEST_NAME]), {'set_cs2gc_spectrum': '1', 'set_cs2gc_classics': '1'})  # Fade and Slaughter in the fixture
+            tests = dict(sections['client_loot_lists'][skins.COLLECTIONS_TEST_NAME])
+            self.assertIn('set_cs2gc_fade_awp', tests)
+            self.assertIn('set_cs2gc_fade_awp', sections['client_loot_lists'])
+            self.assertIn(skins.CHASE_TEST_NAME, sections['client_loot_lists'])
             kits = {as_dict(v)['name']: as_dict(v) for v in sections['paint_kits'].values()}
             self.assertEqual(sections['paint_kits_rarity']['cgf_fade_ancient'], 'ancient')
             self.assertEqual(kits['cgf_fade_ancient']['description_tag'], 'Fade')

@@ -1,3 +1,16 @@
+# Helper26o (Claude): 40 small custom collections with one Covert chase each
+
+User: collections like real ones — "a bunch of other skins, and then one red that's going to be an AK ...
+Doppler", unboxing it gives a colour of the family; same for Tiger Tooth, Twilight Galaxy, Case Hardened
+(patterns via seed, colourways via rk_ recolours) etc.; "like 40". native_skins.collection_specs(): 40 lists
+set_cs2gc_<family>_<gun> ("The AK-47 Doppler Collection"), chase = cgf_<family>_ancient on one of AK-47, M4A4,
+M4A1-S, AWP, USP-S, Desert Eagle, Glock-18 (each family on 2-3 guns). Each list: 1 Covert chase, 2 Classified,
+3 Restricted, 5 Mil-Spec ordinary skins = official generic patterns (styles 1/2/3/8, no weapon-named kits) on
+guns that never had them, via alias kits cga_<kit>_<tier> (official material, our rarity, official title).
+Families file unchanged in format (only cgf_*_ancient now). Test cases: crate_cs2gc_collections_test (all 40,
+real odds) and crate_cs2gc_chase_test (only the 40 chases, random colours); grant cmds for both.
+custom_collections = 1 puts the 40 in the Armory collection rotation (callout from COLLECTIONS). Same DLL 26m.
+
 # Helper26n (Claude): 26m crashed CS2's schema load — no item_sets
 
 User got "Assertion Failed in function CEconItemSystem::ParseItemSchemaFile(): false" with 26m. client.dll

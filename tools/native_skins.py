@@ -8,6 +8,8 @@ Armory collections. It never drops and is not sold. Nothing in the game's own fi
 import random
 import re
 
+from native_finishes import WEAPON_WORDS
+
 TEST_CASE_NAME = 'crate_cs2gc_custom_skins_test'
 TEST_CASE_TITLE = 'Custom Skins Test Case'
 CASE_BASE = '4003'  # Operation Bravo Case: model and key, like the Black Market Case
@@ -107,14 +109,7 @@ FAMILIES = {
     'bright_water': ('Bright Water', 'hy_ocean_knife', ('hy_ocean_knife',)),
     'freehand': ('Freehand', 'am_marked_up', ('am_marked_up',)),
 }
-COLLECTIONS = {
-    'set_cs2gc_doppler': ('The Doppler Collection', ('doppler', 'gamma', 'marble_fade')),
-    'set_cs2gc_spectrum': ('The Spectrum Collection', ('fade', 'twilight_galaxy', 'gold_brick', 'blue_phosphor',
-                                                       'ultraviolet')),
-    'set_cs2gc_classics': ('The Knife Classics Collection', ('tiger_tooth', 'slaughter', 'crimson_web', 'damascus',
-                                                             'case_hardened', 'blued', 'bright_water', 'freehand')),
-}
-# Rarity tier per gun, the same in every collection (paint kit rarity; guns are "common", so it is the skin's).
+# Gun classes used for the ordinary skins in the collections.
 TIERS = {'ancient': ('weapon_ak47', 'weapon_m4a1', 'weapon_m4a1_silencer', 'weapon_awp', 'weapon_deagle'),
          'legendary': ('weapon_usp_silencer', 'weapon_glock', 'weapon_aug', 'weapon_sg556', 'weapon_ssg08',
                        'weapon_p90', 'weapon_famas', 'weapon_galilar'),
@@ -124,6 +119,37 @@ TIERS = {'ancient': ('weapon_ak47', 'weapon_m4a1', 'weapon_m4a1_silencer', 'weap
          'rare': ('weapon_bizon', 'weapon_nova', 'weapon_xm1014', 'weapon_mag7', 'weapon_sawedoff', 'weapon_negev',
                   'weapon_m249', 'weapon_scar20', 'weapon_g3sg1')}
 COLLECTIONS_TEST_NAME = 'crate_cs2gc_collections_test'  # *_test: never a match drop
+# User (22 Oct): many small collections, each like a real one: a few ordinary skins and ONE Covert chase — a top
+# gun in a special finish family (e.g. AK-47 | Doppler). Unboxing the chase gives one colour of the family.
+CHASE_GUNS = ('weapon_ak47', 'weapon_m4a1', 'weapon_m4a1_silencer', 'weapon_awp', 'weapon_usp_silencer',
+              'weapon_deagle', 'weapon_glock')
+GUN_TITLES = {'weapon_ak47': 'AK-47', 'weapon_m4a1': 'M4A4', 'weapon_m4a1_silencer': 'M4A1-S', 'weapon_awp': 'AWP',
+              'weapon_usp_silencer': 'USP-S', 'weapon_deagle': 'Desert Eagle', 'weapon_glock': 'Glock-18'}
+COLLECTION_COUNT = 40
+# Ordinary skins per tier: official generic patterns (solid, hydrographic, spray, patina) on guns that never had
+# them, given the tier's rarity through alias paint kits cga_<finish>_<tier> that reuse the official material.
+FILLER_TIERS = (('legendary', 2), ('mythical', 3), ('rare', 5))
+FILLER_STYLES = ('1', '2', '3', '8')
+FILLER_GUNS = tuple(w for tier in TIERS.values() for w in tier)
+
+
+def collection_specs():
+    """[(list name, title, chase gun, family)] — deterministic; every family on several top guns."""
+    specs, used = [], set()
+    families = list(FAMILIES)
+    for index in range(COLLECTION_COUNT):
+        family = families[index % len(families)]
+        for step in range(len(CHASE_GUNS)):
+            gun = CHASE_GUNS[(index // len(families) * 3 + index + step) % len(CHASE_GUNS)]
+            if (gun, family) not in used: break
+        used.add((gun, family))
+        specs.append(('set_cs2gc_%s_%s' % (family, gun.removeprefix('weapon_')),
+                      'The %s %s Collection' % (GUN_TITLES[gun], FAMILIES[family][0]), gun, family))
+    return specs
+
+
+COLLECTIONS = {name: (title, family) for name, title, _, family in collection_specs()}
+CHASE_TEST_NAME = 'crate_cs2gc_chase_test'  # *_test: never a match drop
 FAMILIES_FILE = 'cs2_gc_skin_families.txt'
 
 
@@ -131,56 +157,74 @@ def _quote(value):
     return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"') + '"'
 
 
-def collections(source_text, kits, recolours, kit_path):
-    """(family kit entries [(name, title, values)], item_sets text, client_loot_lists text, families text,
-    [collection list names], [loot entries]).
+def collections(source_text, kits, recolours, kit_path, titles=None):
+    """(new kit entries [(name, title, values)], unused, client_loot_lists text, families text,
+    [collection list names], [loot entries], [chase entries]).
 
-    kits: {name: (id, values)} of the schema; recolours: rk_ kit names; kit_path(name, values) -> vcompmat."""
-    weapons = {w for tier in TIERS.values() for w in tier if re.search(r'"name"\s+"%s"' % w, source_text)}
-    family_kits, families, sets, lists, names, entries = [], {}, [], [], [], []
+    kits: {name: (id, values)}; recolours: rk_ kit names; kit_path(name, values) -> vcompmat; titles: finish
+    display names by kit name."""
+    titles = titles or {}
+    official = set(re.findall(r'"\[([^\]]+)\](weapon_[a-z0-9_]+)"', source_text))
+    weapons = {w for w in FILLER_GUNS if re.search(r'"name"\s+"%s"' % w, source_text)}
+    new_kits, families, lists, names, entries, chases, made = [], {}, [], [], [], [], set()
+
+    def copy_values(name):
+        values = {k: v for k, v in kits[name][1].items()
+                  if isinstance(v, str) and k not in ('name', 'description_string', 'description_tag')}
+        values['composite_material_path'] = kit_path(name, kits[name][1])
+        return values
+
     for family, (title, picture, bases) in FAMILIES.items():
         variants = [b for b in bases if b in kits]
         variants += sorted(r for r in recolours if any(r.startswith('rk_%s_' % b) for b in bases))
         if picture not in kits or not variants: continue
-        values = {k: v for k, v in kits[picture][1].items()
-                  if isinstance(v, str) and k not in ('name', 'description_string', 'description_tag')}
-        values['composite_material_path'] = kit_path(picture, kits[picture][1])
-        for rarity in TIERS:
-            name = 'cgf_%s_%s' % (family, rarity)
-            family_kits.append((name, title, dict(values, _rarity=rarity)))
-            families[name] = variants
-    present = {name for name, _, _ in family_kits}
-    for set_name, (title, members) in COLLECTIONS.items():
-        tiers = {}
-        for rarity, guns in TIERS.items():
-            for family in members:
-                kit = 'cgf_%s_%s' % (family, rarity)
-                found = ['[%s]%s' % (kit, w) for w in guns if w in weapons] if kit in present else []
-                if found: tiers.setdefault(rarity, []).extend(found)
-        if not tiers: continue
-        all_items = [item for rarity in TIERS for item in tiers.get(rarity, [])]
-        entries += all_items
-        names.append(set_name)
-        sets.append('\t\t%s\n\t\t{\n\t\t\t"name"\t\t%s\n\t\t\t"set_description"\t\t%s\n\t\t\t"is_collection"\t\t"1"\n'
-                    '\t\t\t"items"\n\t\t\t{\n%s\t\t\t}\n\t\t}' %
-                    (_quote(set_name), _quote(title), _quote('Custom colour families: every finish comes in a '
-                                                             'range of colours.'),
-                     ''.join('\t\t\t\t%s\t\t"1"\n' % _quote(i) for i in all_items)))
-        tier_lists = ['%s_%s' % (set_name, rarity) for rarity in TIERS if rarity in tiers]
-        lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote(set_name), ''.join('\t\t\t%s\t\t"1"\n' % _quote(t)
-                                                                        for t in tier_lists)))
-        for rarity in TIERS:
-            if rarity in tiers:
-                lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote('%s_%s' % (set_name, rarity)),
-                                                         ''.join('\t\t\t%s\t\t"1"\n' % _quote(i) for i in tiers[rarity])))
+        name = 'cgf_%s_ancient' % family
+        new_kits.append((name, title, dict(copy_values(picture), _rarity='ancient')))
+        families[name] = variants
+        made.add(name)
+    fillers = sorted(n for n, (_, v) in kits.items() if v.get('style') in FILLER_STYLES and n in titles
+                     and titles[n] and not any(word in n for word in WEAPON_WORDS))
+    for list_name, title, gun, family in collection_specs():
+        chase = 'cgf_%s_ancient' % family
+        if chase not in made or gun not in weapons: continue
+        rng = random.Random(list_name)
+        tiers = {'ancient': ['[%s]%s' % (chase, gun)]}
+        taken = {gun}
+        for tier, count in FILLER_TIERS:
+            picked = []
+            for _ in range(count * 20 if fillers else 0):
+                if len(picked) == count: break
+                kit, weapon = rng.choice(fillers), rng.choice(sorted(weapons - taken) or sorted(weapons))
+                if (kit, weapon) in official: continue
+                alias = 'cga_%s_%s' % (kit, tier)
+                if alias not in made:
+                    new_kits.append((alias, titles[kit], dict(copy_values(kit), _rarity=tier)))
+                    made.add(alias)
+                picked.append('[%s]%s' % (alias, weapon)); taken.add(weapon)
+            tiers[tier] = picked
+        order = [t for t in ('ancient', 'legendary', 'mythical', 'rare') if tiers.get(t)]
+        lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote(list_name), ''.join('\t\t\t%s\t\t"1"\n' % _quote(
+            '%s_%s' % (list_name, t)) for t in order)))
+        for t in order:
+            lists.append('\t\t%s\n\t\t{\n%s\t\t}' % (_quote('%s_%s' % (list_name, t)),
+                                                     ''.join('\t\t\t%s\t\t"1"\n' % _quote(i) for i in tiers[t])))
+        names.append(list_name)
+        entries += [i for t in order for i in tiers[t]]
+        chases.append(tiers['ancient'][0])
     family_text = '"skin_families"\n{\n' + ''.join(
         '\t%s\n\t{\n%s\t}\n' % (_quote(name), ''.join('\t\t%s\t"1"\n' % _quote(v) for v in variants))
         for name, variants in sorted(families.items())) + '}\n'
-    return family_kits, '\n'.join(sets), '\n'.join(lists), family_text, names, entries
+    return new_kits, '', '\n'.join(lists), family_text, names, entries, chases
 
 
 def collections_test_spec(list_names):
     return dict(name=COLLECTIONS_TEST_NAME, title='Custom Collections Test Case', base=CASE_BASE, items=[],
                 loot_lists=list_names,
-                description='Test case: rolls the custom Doppler, Spectrum and Knife Classics collections '
-                            '(one colour from each family). Only given by grant_custom_collections_test_cases.cmd.')
+                description='Test case: rolls the custom collections like a real case. Only given by '
+                            'grant_custom_collections_test_cases.cmd.')
+
+
+def chase_test_spec(chases):
+    return dict(name=CHASE_TEST_NAME, title='Custom Chase Test Case', base=CASE_BASE, items=chases,
+                description='Test case: only the Covert chase skin of every custom collection, each in a random '
+                            'colour of its family. Only given by grant_custom_chase_test_cases.cmd.')

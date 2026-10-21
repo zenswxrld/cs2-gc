@@ -630,8 +630,8 @@ def prepare(proxy_directory, config, items_game_text):
     sections_extra = {}
     if config.get('custom_skins_test', 1) or config.get('custom_collections', 0):
         import native_skins
-        family_kits, sets_text, lists_text, family_text, set_names, collection_items = native_skins.collections(
-            items_game_text, kits, [name for _, name, _, _ in entries if name.startswith('rk_')], kit_path)
+        family_kits, sets_text, lists_text, family_text, set_names, collection_items, chases = native_skins.collections(
+            items_game_text, kits, [name for _, name, _, _ in entries if name.startswith('rk_')], kit_path, titles)
         if set_names:
             next_id = max([FIRST_KIT_ID - 1] + [int(v) for v in known.values()] + [int(k) for k, _, _, _ in entries]) + 1
             for name, title, values in family_kits:
@@ -647,9 +647,11 @@ def prepare(proxy_directory, config, items_game_text):
             skins += collection_items
             if config.get('custom_skins_test', 1):
                 extra.append(native_skins.collections_test_spec(set_names))
+                extra.append(native_skins.chase_test_spec(chases))
                 if template is not None and ICON.is_file():
-                    files['panorama/images/econ/weapon_cases/' + native_skins.COLLECTIONS_TEST_NAME + '_png.vtex_c'] = \
-                        make_vtex(template, ICON.read_bytes())
+                    for name in (native_skins.COLLECTIONS_TEST_NAME, native_skins.CHASE_TEST_NAME):
+                        files['panorama/images/econ/weapon_cases/' + name + '_png.vtex_c'] = \
+                            make_vtex(template, ICON.read_bytes())
     patched, details = patch_items_game(items_game_text, entries, case, extra_cases=extra, extra_sections=sections_extra)
     atomic_write(proxy / REEL_FILE, json.dumps(reels, sort_keys=True) + '\n')
     atomic_write(manifest_path, json.dumps(dict(owner=OWNER, files=len(files), **details), indent=2) + '\n')

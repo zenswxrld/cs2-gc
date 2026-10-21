@@ -267,6 +267,26 @@ console.log('native badge fixture passed');
         self.assertIn('Name Tag',dict(price_sheet.section(changed,'store','entries')))
         self.assertEqual(native_store.patch(result,source,terminals_enabled=False),(result,0))
 
+    def test_store_removes_all_key_tools_and_their_banner_rows(self):
+        from test_price_sheet import ITEMS_GAME
+        source=ITEMS_GAME.replace('"prefabs"\n    {', '"prefabs"\n    { "key_alias" { "prefab" "weapon_case_key" }').replace(
+            '"items"\n    {','"items"\n    { "9900" { "name" "orphan_key" "prefab" "key_alias" }')
+        tree=copy.deepcopy(SHEET)
+        entries=price_sheet.section(tree,'store','entries')
+        entries.append(('unlinked',[('item_link','orphan_key'),('prices',[('USD',1)])]))
+        layout=price_sheet.section(tree,'store','store_banner_layout')
+        layout.extend([('1203',[('custom_format','single')]),('9900',[('custom_format','single')])])
+        original=fixture_sheet.build_message(fixture_sheet.encode_kv(tree))
+        result,_=native_store.patch(original,source,terminals_enabled=False)
+        changed=price_sheet.decode_kv(price_sheet.decompress(price_sheet.read_message(result)[2]))
+        remaining=dict(price_sheet.section(changed,'store','entries'))
+        self.assertNotIn('Weapon Case Key',remaining)
+        self.assertNotIn('unlinked',remaining)
+        self.assertIn('Name Tag',remaining)
+        banners=dict(price_sheet.section(changed,'store','store_banner_layout'))
+        self.assertNotIn('1203',banners);self.assertNotIn('9900',banners)
+        self.assertEqual(native_store.patch(result,source,terminals_enabled=False),(result,0))
+
     def test_native_terminal_store_adds_missing_schema_entries_preserves_message_and_is_idempotent(self):
         source = '''"items_game" { "items" {
          "5176" { "name" "terminal_one" "attributes" { "volatile container" { "value" "1" } } }

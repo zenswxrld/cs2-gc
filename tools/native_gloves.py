@@ -115,6 +115,23 @@ def _tints(root):
     return found if len(found) == len(TINTS) else None
 
 
+def diagnostic_node(node):
+    """Lossless structural inspection of a local composite, including typed override values.
+
+    Keep object fields as ordered pairs so repeated parameter names are not lost.
+    Do not export embedded binary/texture bytes.
+    """
+    if node.type == kv3.OBJECT:
+        value = [[key, diagnostic_node(child)] for key, child in node.value]
+    elif isinstance(node.value, list):
+        value = [diagnostic_node(child) for child in node.value]
+    elif isinstance(node.value, bytes):
+        value = {'binary_length':len(node.value)}
+    else:
+        value = node.value
+    return dict(type=node.type, flag=node.flag, subtype=node.subtype, value=value)
+
+
 def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels='original', report=None, inspection=None):
     """(vcompmat bytes, vmat bytes) for a recolour, or None when the finish is not an eight-tint glove material."""
     compmat = source.read(compmat_path + '_c')
@@ -127,6 +144,9 @@ def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels=
     if inspection is not None:
         inspection[compmat_path] = {'status':'unsupported composite layout',
             'root_fields':[key for key,_ in root.value] if root.type == kv3.OBJECT else []}
+        if '/volatile_02/' in compmat_path:
+            inspection[compmat_path]['composite_document'] = diagnostic_node(root)
+            inspection[compmat_path]['report_version'] = 2
     if specific is None: return None
     material = source.read(specific.value + '_c')
     if material is None: return None
@@ -144,7 +164,10 @@ def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels=
                 if vectors and isinstance(vectors.value,list) else {})
     if shader is None or shader.value != 'csgo_customglove.vfx': return None
     tints = _tints(m_root)
-    if tints is None: return None
+    if tints is None:
+        if inspection is not None:
+            inspection[compmat_path]['status']='composite overrides require inspection; template has no classic tints'
+        return None
     if inspection is not None: inspection[compmat_path]['status']='supported eight-tint material'
     current = [[item.value for item in tints[name].value] for name in TINTS]
     if any(len(color) != 4 for color in current): return None

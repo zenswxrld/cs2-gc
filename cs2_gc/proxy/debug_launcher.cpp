@@ -59,9 +59,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
            << "setinfo cs2_gc_rotation_offset 0\n"
            << "bot_prefix \"\"\n" // no "[BOT]" before bot names (bots that join afterwards)
            << "exec cs2_gc_premier_bots\n" // bot difficulty from the local rating (written by the helper last session)
-           << "alias cs2_gc_give_stars \"echo CS2GC_" << nonce << " stars 100\"\n"
-           << "alias cs2_gc_give_stars_1000 \"echo CS2GC_" << nonce << " stars 1000\"\n"
-           << "alias cs2_gc_force_rotation \"incrementvar cs2_gc_rotation_offset 0 1000000 1; echo CS2GC_" << nonce << " rotate\"\n"
+           // CS2 logs incrementvar results but not echo output, so the helper watches these per-launch variables.
+           << "setinfo cs2gc_" << nonce << "_s100 0\nsetinfo cs2gc_" << nonce << "_s1000 0\nsetinfo cs2gc_" << nonce << "_rot 0\n"
+           << "alias cs2_gc_give_stars \"incrementvar cs2gc_" << nonce << "_s100 0 1000000 1\"\n"
+           << "alias cs2_gc_give_stars_1000 \"incrementvar cs2gc_" << nonce << "_s1000 0 1000000 1\"\n"
+           << "alias cs2_gc_force_rotation \"incrementvar cs2_gc_rotation_offset 0 1000000 1; incrementvar cs2gc_" << nonce << "_rot 0 1000000 1\"\n"
            << "echo Local GC debug commands loaded\n";
     config.close();
     if (!boot || !config) return Fail(L"Could not prepare debug console controls. Check folder write permissions.");

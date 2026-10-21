@@ -262,6 +262,33 @@ class ConsoleControls(unittest.TestCase):
             self.assertEqual(rewards.state['console_stars'], 1100)
             self.assertEqual(control.offset, 1)
 
+    def test_logged_variable_lines_grant_because_echo_never_reaches_console_log(self):
+        # The user's console.log (21 Oct) has no echo output, but logs incrementvar results like this.
+        import tempfile
+        from console_controls import ConsoleControls
+        from gsi_rewards import Rewards
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            proxy = root / 'bin'; proxy.mkdir()
+            cfg = root / 'csgo/cfg'; cfg.mkdir(parents=True)
+            log = cfg.parent / 'console.log'
+            rewards = Rewards(proxy)
+            control = ConsoleControls(rewards, cfg, 100)
+            text = (cfg / 'cs2_gc_console.cfg').read_text()
+            self.assertIn('alias cs2_gc_give_stars "incrementvar cs2gc_' + control.nonce + '_s100 0 1000000 1"', text)
+            self.assertIn('setinfo cs2gc_' + control.nonce + '_rot 0', text)
+            code = 'cs2gc_' + control.nonce
+            with log.open('ab') as output:
+                output.write(('10/21 17:44:03 ' + code + '_s100 1.000000\r\n' +
+                              '10/21 17:44:04 ' + code + '_s100 1.000000\r\n' +          # repeated presses all count
+                              '10/21 17:44:05 ' + code + '_s1000 1.000000\r\n' +
+                              '10/21 17:44:06 ' + code + '_rot 1.000000\r\n' +
+                              '10/21 17:44:07 cs2gc_' + 'f' * 32 + '_s1000 1.000000\r\n' +  # another launch
+                              '10/21 17:44:08 ' + code + '_s100 1.000000 extra\r\n').encode())
+            control.poll()
+            self.assertEqual(rewards.state['console_stars'], 1200)
+            self.assertEqual(control.offset, 1)
+
     def test_exact_session_lines_partial_reads_and_restart_do_not_replay_grants(self):
         import tempfile
         from console_controls import ConsoleControls

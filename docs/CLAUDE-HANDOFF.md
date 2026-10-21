@@ -488,3 +488,7 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   rotation offset stayed 0 while the page advanced. Armory::Redeem now only checks the rotation when
   armory_rotation_enforce = 1 (default 0, also for the Howl); the page decides what is shown. Bot names were
   skipped because CS2's botprofile.db repeats names; that check is removed.
+- 17s: the user's console.log proves CS2 does NOT write `echo` output to console.log (zero "[Console]" lines),
+  so stars/rotate never reached the helper. It does log incrementvar results ("<var> 1.000000"). Commands now
+  `incrementvar cs2gc_<nonce>_s100|_s1000|_rot 0 1000000 1` (variables setinfo'd per launch by the launcher cfg and
+  the helper cfg); console_controls counts each logged line (old echo form still accepted).

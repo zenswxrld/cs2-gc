@@ -62,6 +62,9 @@ DEAD_HAND_SHADERS = ('csgo_customglove_preview.vfx', 'csgo_customglove.vfx')
 DEAD_HAND_COLOURS = re.compile(r'^g_v(?:Id[1-8]Color|(?:Surface|Substrate|Burnishing|DamageBevel)ColorTint[1-4])$')
 DEAD_HAND_IDS = ['g_vId%dColor' % i for i in range(1, 9)]
 DEAD_HAND_FAMILY_DEGREES = 25
+# Burnishing and damage-bevel tints only colour worn edges. A finish whose only accents are those (Pillow
+# Punchers: an all-white glove with orange scuffs) would look unchanged, so it is not offered as a recolour.
+WEAR_ONLY = re.compile(r'^g_v(?:Burnishing|DamageBevel)ColorTint')
 DEAD_HAND_FAMILY_SATURATION = .18
 
 
@@ -244,7 +247,7 @@ def make_dead_hand_finish(source, compmat_path, new_name, theme, report=None, in
     accents = [names[i] for i in sorted(accents)]
     if report is not None:
         report[compmat_path] = {'original_colours': dict(zip(names, current)), 'accent_vectors': accents,
-                                'accent_channels': accents, 'policy': 'dead-hand-accent-only-v1',
+                                'accent_channels': [n for n in accents if not WEAR_ONLY.match(n)], 'policy': 'dead-hand-accent-only-v1',
                                 'family_rule': [DEAD_HAND_FAMILY_DEGREES, DEAD_HAND_FAMILY_SATURATION],
                                 'material': paint.value}
     if inspection is not None:

@@ -258,6 +258,21 @@ class NativeGloves(unittest.TestCase):
                     for k, v in gloves._tints(kv3.read_kv3(dict(blocks)['DATA'])[1]).items()}
         self.assertEqual(tints(owned), tints(original))  # same colours as the original panels
 
+    def test_dead_hand_finish_with_only_wear_edge_accents_is_not_offered(self):
+        files = glove_files(); files.update(dead_hand_files())
+        _, blocks = kv3.read_resource(files[DEAD_HAND_VMAT + '_c'])
+        guid, root = kv3.read_kv3(dict(blocks)['DATA'])
+        for entry in root.get('m_vectorParams').value:
+            if entry.get('m_name').value.startswith(('g_vId', 'g_vSurface')):
+                for channel in entry.get('m_value').value[:3]: channel.value = .9
+        root.get('m_vectorParams').value.append(vector('g_vDamageBevelColorTint1', [.8, .4, .2, 0]))
+        files[DEAD_HAND_VMAT + '_c'] = kv3.write_resource(0, [['DATA', kv3.write_kv3(GUID, root)]])
+        source = finishes.Source(folder=None); source.read = files.get; source.exists = lambda name: name in files
+        report = {}
+        self.assertIsNotNone(gloves.make_dead_hand_finish(source, DEAD_HAND, 'rg_x', 'Teal', report=report))
+        self.assertEqual(report[DEAD_HAND]['accent_channels'], [])  # wear-edge tint only: not sold as a recolour
+        self.assertEqual(report[DEAD_HAND]['accent_vectors'], ['g_vDamageBevelColorTint1'])
+
     def test_dead_hand_muted_shades_of_an_accent_follow_it_but_cream_and_grey_stay(self):
         # Plum Quill: strong purple accents, muted purples (~.3) on the ostrich, plus cream and white.
         colours = [[.20, .08, .33, .7], [.16, .05, .38, 1], [.47, .41, .58, .5], [.43, .35, .52, .6],

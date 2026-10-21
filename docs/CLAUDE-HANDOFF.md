@@ -1,3 +1,12 @@
+# Helper26g (Claude): wear-edge-only Dead Hand accents are not recolours
+
+User: Pillow Punchers Teal (glove_specialist_quilted_white) looks unchanged — its only accents are
+DamageBevel/Burnishing tints (worn edges). Report accent_channels now excludes those (WEAR_ONLY), so such
+finishes are not offered (owned ids still render). Occult Ash (glove_sport_velvet_red) also looked unchanged:
+the red velvet and gold are most likely colour textures; awaiting the user's list of Dead Hand finishes that
+barely change before excluding them individually. Chesterfield's gold TORTUE plate/studs, brocade/wave/
+Seigaiha prints are texture colour too (user offered texture recolouring as a later option).
+
 # Helper26f (Claude): Dead Hand muted shades, two missed Dead Hand gloves, camo hand-wrap panels
 
 From the user's cs2_gc_glove_palettes.json / cs2_gc_glove_materials.json (26e):

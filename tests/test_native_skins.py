@@ -59,8 +59,13 @@ class CustomSkins(unittest.TestCase):
         self.assertTrue(fillers and all(re.match(r'\[cga_(hy_granite|sp_palm)_(legendary|mythical|rare)\]', i) for i in fillers))
         self.assertEqual({v['_rarity'] for n, v in values.items() if n.startswith('cga_')}, {'legendary', 'mythical', 'rare'})
         self.assertEqual({t for n, t, _ in new if n.startswith('cga_hy_granite_')}, {'Granite'})
-        self.assertIn('"rk_am_doppler_phase1_lava"', families)
-        self.assertNotIn('rk_am_zebra_lime', families)
+        # Only our colours, each named like the family, at the chase's rarity.
+        self.assertIn('"cgf_doppler_ancient"\n\t{\n\t\t"cgv_am_doppler_phase1_lava_ancient"\t"1"\n\t}', families)
+        self.assertNotIn('"am_doppler_phase1"', families)
+        self.assertEqual(dict((n, t) for n, t, _ in new)['cgv_am_doppler_phase1_lava_ancient'], 'Doppler')
+        self.assertEqual(values['cgv_am_doppler_phase1_lava_ancient']['composite_material_path'],
+                         'weapons/paints/cs2_gc/rk_am_doppler_phase1_lava.vcompmat')
+        self.assertNotIn('am_zebra', families)
         self.assertEqual(len(skins.COLLECTIONS), skins.COLLECTION_COUNT)
         self.assertEqual(skins.COLLECTIONS['set_cs2gc_doppler_ak47'][0], 'The AK-47 Doppler Collection')
         self.assertTrue(skins.chase_test_spec(chases)['name'].endswith('_test'))
@@ -95,8 +100,9 @@ class CustomSkins(unittest.TestCase):
             self.assertEqual(sections['paint_kits_rarity']['cgf_fade_ancient'], 'ancient')
             self.assertEqual(kits['cgf_fade_ancient']['description_tag'], 'Fade')
             families = (proxy / skins.FAMILIES_FILE).read_text()
-            self.assertIn('"aa_fade"', families)
-            self.assertIn('"rk_aa_fade_crimson"', families)
+            self.assertNotIn('"aa_fade"', families)  # not the plain Fade: only Fade colours of ours
+            self.assertIn('"cgv_aa_fade_crimson_ancient"', families)
+            self.assertEqual(kits['cgv_aa_fade_crimson_ancient']['description_tag'], 'Fade')
             ids = json.loads((proxy / 'cs2_gc_finish_ids.json').read_text())
             self.assertIn('cgf_fade_ancient', ids)
             again, _ = finishes.prepare(proxy, {'knife_finishes': 1}, schema)

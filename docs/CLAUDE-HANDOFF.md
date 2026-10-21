@@ -1,3 +1,12 @@
+# Helper26p (Claude): chase rarity by gun, families = our colours only, one name per family
+
+User clarifications: the chase rarity follows the gun (AK red, USP purple: CHASE_TIERS — USP-S and Glock
+Classified, others Covert; fillers only below the chase); a family holds only our colours, not the official
+original ("not the normal fade"); every colour is named just like the family ("when you unbox a marble fade,
+it's just marble fade, but different colour"). Variant kits cgv_<recolour>_<tier> reuse the rk_ material
+(weapons/paints/cs2_gc/<rk>.vcompmat) with the family title and the chase tier; cgf_<family>_<tier> families map
+to them. Black Market knives keep their own rk_ names. Room for more colours/skins later.
+
 # Helper26o (Claude): 40 small custom collections with one Covert chase each
 
 User: collections like real ones — "a bunch of other skins, and then one red that's going to be an AK ...

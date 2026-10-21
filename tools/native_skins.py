@@ -126,6 +126,8 @@ CHASE_GUNS = ('weapon_ak47', 'weapon_m4a1', 'weapon_m4a1_silencer', 'weapon_awp'
 GUN_TITLES = {'weapon_ak47': 'AK-47', 'weapon_m4a1': 'M4A4', 'weapon_m4a1_silencer': 'M4A1-S', 'weapon_awp': 'AWP',
               'weapon_usp_silencer': 'USP-S', 'weapon_deagle': 'Desert Eagle', 'weapon_glock': 'Glock-18'}
 COLLECTION_COUNT = 40
+# The chase skin's rarity follows its gun (user: "if it's an AK, have it be a red. If it's a USP ... a purple").
+CHASE_TIERS = {'weapon_usp_silencer': 'legendary', 'weapon_glock': 'legendary'}
 # Ordinary skins per tier: official generic patterns (solid, hydrographic, spray, patina) on guns that never had
 # them, given the tier's rarity through alias paint kits cga_<finish>_<tier> that reuse the official material.
 FILLER_TIERS = (('legendary', 2), ('mythical', 3), ('rare', 5))
@@ -174,23 +176,43 @@ def collections(source_text, kits, recolours, kit_path, titles=None):
         values['composite_material_path'] = kit_path(name, kits[name][1])
         return values
 
+    # User: a family is only our colours (not the official original, e.g. no plain Fade), and every colour is
+    # named just like the family ("Marble Fade", not "Marble Fade Galaxy"): variant kits cgv_<colour>_<tier>
+    # reuse the recolour's material under the family title.
+    from native_finishes import COMPMAT_DIR
+    chase_tiers = {gun: CHASE_TIERS.get(gun, 'ancient') for gun in CHASE_GUNS}
     for family, (title, picture, bases) in FAMILIES.items():
-        variants = [b for b in bases if b in kits]
-        variants += sorted(r for r in recolours if any(r.startswith('rk_%s_' % b) for b in bases))
-        if picture not in kits or not variants: continue
-        name = 'cgf_%s_ancient' % family
-        new_kits.append((name, title, dict(copy_values(picture), _rarity='ancient')))
-        families[name] = variants
-        made.add(name)
+        colours = sorted(r for r in recolours if any(r.startswith('rk_%s_' % b) for b in bases))
+        if not colours: colours = [b for b in bases if b in kits]  # a family with no colours of ours yet
+        if picture not in kits or not colours: continue
+        for tier in sorted(set(chase_tiers.values())):
+            name = 'cgf_%s_%s' % (family, tier)
+            new_kits.append((name, title, dict(copy_values(picture), _rarity=tier)))
+            made.add(name)
+            variants = []
+            for colour in colours:
+                if colour in kits:  # an official finish used as is
+                    variants.append(colour); continue
+                base = max((b for b in bases if colour.startswith('rk_%s_' % b) and b in kits), key=len, default=None)
+                if base is None: continue
+                variant = 'cgv_%s_%s' % (colour.removeprefix('rk_'), tier)
+                values = dict(copy_values(base), _rarity=tier)
+                values['composite_material_path'] = COMPMAT_DIR + colour + '.vcompmat'
+                new_kits.append((variant, title, values))
+                variants.append(variant)
+            if variants: families[name] = variants
     fillers = sorted(n for n, (_, v) in kits.items() if v.get('style') in FILLER_STYLES and n in titles
                      and titles[n] and not any(word in n for word in WEAPON_WORDS))
     for list_name, title, gun, family in collection_specs():
-        chase = 'cgf_%s_ancient' % family
-        if chase not in made or gun not in weapons: continue
+        top = chase_tiers[gun]
+        chase = 'cgf_%s_%s' % (family, top)
+        if chase not in families or gun not in weapons: continue
         rng = random.Random(list_name)
-        tiers = {'ancient': ['[%s]%s' % (chase, gun)]}
+        tiers = {top: ['[%s]%s' % (chase, gun)]}
         taken = {gun}
+        rank = ('rare', 'mythical', 'legendary', 'ancient')
         for tier, count in FILLER_TIERS:
+            if rank.index(tier) >= rank.index(top): continue  # the chase is the collection's top skin
             picked = []
             for _ in range(count * 20 if fillers else 0):
                 if len(picked) == count: break
@@ -210,7 +232,7 @@ def collections(source_text, kits, recolours, kit_path, titles=None):
                                                      ''.join('\t\t\t%s\t\t"1"\n' % _quote(i) for i in tiers[t])))
         names.append(list_name)
         entries += [i for t in order for i in tiers[t]]
-        chases.append(tiers['ancient'][0])
+        chases.append(tiers[top][0])
     family_text = '"skin_families"\n{\n' + ''.join(
         '\t%s\n\t{\n%s\t}\n' % (_quote(name), ''.join('\t\t%s\t"1"\n' % _quote(v) for v in variants))
         for name, variants in sorted(families.items())) + '}\n'

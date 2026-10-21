@@ -3454,11 +3454,21 @@ void NativeArmorySlotsAndConsoleStars()
         Check(std::find(next.redeemIds.begin(), next.redeemIds.end(), id) == next.redeemIds.end(), "each pool advances");
     armory.SetRotationOffset(1);
     Check(armory.RotationAt(0, config).redeemIds == next.redeemIds, "console force rotation advances all pools");
-    Inventory saved; saved.SetArmoryCredits(10); saved.SetGameplay(config);
+    auto strict = config; strict.armory_rotation_enforce = 1;
+    Inventory saved; saved.SetArmoryCredits(10); saved.SetGameplay(strict);
     LiveInventory live(saved);
     RedeemRequest request; request.campaignId = 11; request.expectedCost = 2; request.redeemId = first.redeemIds[0];
     Check(armory.Redeem(request, live, [] { return 0ull; }, {}, 0).status == Armory::Status::NotInRotation &&
-          live.Items().Items().empty() && armory.Balance() == 10, "stale native slot rejects without spending");
+          live.Items().Items().empty() && armory.Balance() == 10, "with armory_rotation_enforce a stale slot rejects without spending");
+    {
+        // Default: the page's rotation is trusted (the GC may not see its offset), so the same purchase succeeds.
+        Inventory relaxed; relaxed.SetArmoryCredits(10); relaxed.SetGameplay(config);
+        LiveInventory trusting(relaxed);
+        Armory other(*schema, 11, 10);
+        other.SetRotationOffset(1);
+        Check(other.Redeem(request, trusting, [] { return 0ull; }, {}, 0).status != Armory::Status::NotInRotation,
+              "by default a tile from another rotation offset is not refused");
+    }
     Check(saved.ApplyConsoleStars(100) && saved.ArmoryCredits() == 110, "test stars add to balance");
     auto restored = Inventory::FromText(saved.ToText());
     Check(restored && !restored->ApplyConsoleStars(100) && !restored->ApplyConsoleStars(99) &&
@@ -3486,7 +3496,8 @@ void HowlAndArmoryRotation()
           armory.RotationAt(900, config).redeemIds.front() != howl->redeemId &&
           armory.RotationAt(1800, config).redeemIds.front() == howl->redeemId,
           "Howl rotates in and out on 15-minute boundaries and returns");
-    Inventory saved; saved.SetGameplay(config); saved.SetArmoryCredits(100);
+    auto strict = config; strict.armory_rotation_enforce = 1;  // the default trusts the page's rotation
+    Inventory saved; saved.SetGameplay(strict); saved.SetArmoryCredits(100);
     LiveInventory inventory(saved);
     RedeemRequest request; request.campaignId = 11; request.redeemId = howl->redeemId; request.expectedCost = 40;
     const auto before = inventory.Items().ToText();

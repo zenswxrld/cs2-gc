@@ -34,7 +34,9 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
         return result;
     }
     const auto &config = inventory.Items().Gameplay();
-    if (isHowl || (config.armory_rotation_enabled && (config.armory_rotation_enforce || !goods->rotationSlot.empty())))
+    // Only checked when asked: the page rotates by itself (and by the Refresh button) and the GC cannot see that offset
+    // unless the helper reads console.log, so a strict check refused valid purchases (17n: status NotInRotation).
+    if (config.armory_rotation_enabled && config.armory_rotation_enforce)
     {
         const auto rotation = RotationAt(unixSeconds.value_or(static_cast<std::uint64_t>(std::time(nullptr))), config);
         if (std::find(rotation.redeemIds.begin(), rotation.redeemIds.end(), request.redeemId) == rotation.redeemIds.end())

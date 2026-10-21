@@ -67,9 +67,7 @@ def patch(text, seed):
         headers.append((index, match)); depth = True
     if depth: raise ValueError('botprofile.db layout changed: missing End')
     if len(headers) < 10: raise ValueError('botprofile.db has too few bot profiles to rename')
-    originals = [match.group(3) for _, match in headers]
-    if len({name.lower() for name in originals}) != len(originals):
-        raise ValueError('botprofile.db has duplicate bot names')
+    # CS2's own file repeats some names across difficulty tiers; every header gets a fresh unique name anyway.
     for (index, match), name in zip(headers, _names(len(headers), seed)):
         ending = lines[index][len(lines[index].rstrip('\r\n')):]
         lines[index] = match.group(1) + match.group(2) + name + match.group(4) + ending

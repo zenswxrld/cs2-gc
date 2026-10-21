@@ -483,3 +483,8 @@ command (no default RCON exposure). Still open: random bot names did not apply (
 - 17l: 17k's `resource/csgo_english.txt` override in the cs2_gc_finishes VPK broke ALL game text (raw #tokens
   everywhere). Removed; never override the language file. Finish and case names are now literal text in
   description_string/description_tag/item_name; the old file is deleted on the next prepare (stale cleanup).
+- 17q: user's logs: knife finishes built (704 recolours, 4285 case knives). New collections/capsules failed with
+  status 5 NotInRotation: the helper never saw console.log (game not started with -condebug), so the GC's
+  rotation offset stayed 0 while the page advanced. Armory::Redeem now only checks the rotation when
+  armory_rotation_enforce = 1 (default 0, also for the Howl); the page decides what is shown. Bot names were
+  skipped because CS2's botprofile.db repeats names; that check is removed.

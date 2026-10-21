@@ -61,6 +61,10 @@ def material(name, colors):
                    ('m_value', Node(kv3.ARRAY_TYPE_BYTE_LENGTH, [Node(kv3.FLOAT, v) for v in c], 0, kv3.FLOAT)))
                for i, c in enumerate(colors)]
     root = obj(('m_materialName', string(name)), ('m_shaderName', string('csgo_customweapon.vfx')),
+               ('m_textureParams', Node(kv3.ARRAY, [obj(('m_name',string('g_tPattern')),
+                                                      ('m_pValue',string('textures/source_pattern.vtex')))])),
+               ('m_floatParams', Node(kv3.ARRAY, [obj(('m_name',string('g_flRoughness')),
+                                                    ('m_flValue',Node(kv3.FLOAT,.42)))])),
                ('m_vectorParams', Node(kv3.ARRAY_TYPE_BYTE_LENGTH, vectors, 0, kv3.OBJECT)))
     return kv3.write_resource(0, [['RERL', b'refs'], ['DATA', kv3.write_kv3(GUID, root)], ['INSG', b'sig']])
 
@@ -99,8 +103,10 @@ def vpk_files():
 class NativeFinishes(unittest.TestCase):
     def test_recolour_changes_only_colours_and_names(self):
         source = finishes.Source(folder=None)
-        source.read = vpk_files().get
-        made = finishes.make_finish(source, 'aa_fade', 'weapons/paints/legacy/aa_fade.vcompmat', 'rk_aa_fade_violet', 'Violet')
+        originals = vpk_files()
+        source.read = originals.get
+        report = {}
+        made = finishes.make_finish(source, 'aa_fade', 'weapons/paints/legacy/aa_fade.vcompmat', 'rk_aa_fade_violet', 'Violet',report=report)
         vcompmat, vmat = made
         _, blocks = kv3.read_resource(vmat)
         self.assertEqual([name for name, _ in blocks], ['RERL', 'DATA', 'INSG'])
@@ -108,6 +114,22 @@ class NativeFinishes(unittest.TestCase):
         self.assertEqual(root.get('m_materialName').value, finishes.VMAT_DIR + 'rk_aa_fade_violet.vmat')
         colours = finishes._vector_params(root)
         self.assertNotEqual([round(v.value, 3) for v in colours['g_vColor0'].value][:3], [0.9, 0.8, 0.7])
+        self.assertEqual(report['aa_fade']['source_material'],
+                         'materials/models/weapons/customization/paints/vmats/aa_fade.vmat')
+        self.assertEqual(report['aa_fade']['shader'],'csgo_customweapon.vfx')
+        for index in range(4):
+            for actual,expected in zip(colours['g_vColor%d'%index].value,report['aa_fade']['themes']['Violet'][index]):
+                self.assertAlmostEqual(actual.value,expected,places=6)
+        # Restore the only allowed edits and compare the entire material DATA: textures,
+        # shader, roughness and all other source properties must remain byte-identical.
+        _,original_blocks=kv3.read_resource(originals[report['aa_fade']['source_material']+'_c'])
+        original_data=dict(original_blocks)['DATA']
+        guid,original_root=kv3.read_kv3(original_data)
+        root.get('m_materialName').value=original_root.get('m_materialName').value
+        original_colours=finishes._vector_params(original_root)
+        for name,nodes in colours.items():
+            for value,original in zip(nodes.value,original_colours[name].value):value.value=original.value
+        self.assertEqual(kv3.write_kv3(guid,root),original_data)
         _, blocks = kv3.read_resource(vcompmat)
         self.assertEqual(finishes._specific_material(kv3.read_kv3(dict(blocks)['DATA'])[1]).value,
                          finishes.VMAT_DIR + 'rk_aa_fade_violet.vmat')
@@ -124,6 +146,9 @@ class NativeFinishes(unittest.TestCase):
             (game / 'csgo/pak01_000.vpk').write_bytes(archive)
             patched, status = finishes.prepare(proxy, {'knife_finishes': 1}, SCHEMA)
             self.assertIn('Black Market Case', status)
+            palettes=json.loads((proxy/finishes.PALETTE_REPORT).read_text())
+            self.assertIn('aa_fade',palettes)
+            self.assertIn('Violet',palettes['aa_fade']['themes'])
             self.assertIn('Game\tcs2_gc_finishes', native_tradeups.read_text(info))
             sections = collect(parse(patched))
             case = [as_dict(v) for v in sections['items'].values() if as_dict(v).get('name') == finishes.CASE_NAME][0]

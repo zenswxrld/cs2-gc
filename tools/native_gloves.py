@@ -63,8 +63,8 @@ def recolor_accents(colors, theme, fade=False, panels='original'):
             color[:3] = colorsys.hsv_to_rgb(hue, min(saturation, target_saturation), value)
         elif panels != 'original' and (saturation <= .2 or value <= .12):
             if panels == 'white': tone = .82 + .10 * math.sqrt(value)
-            elif panels == 'black': tone = .025 + .075 * math.sqrt(value)
-            else: tone = .04 + .88 * (1 - value)
+            elif panels == 'black': tone = .12 + .08 * math.sqrt(value)
+            else: tone = .12 + .78 * (1 - value)
             color[:3] = [tone] * 3
         result.append(color)
     return result
@@ -185,7 +185,8 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
                                              panels=panels, report=report)
                     if not made: continue
                     files[COMPMAT_DIR + name + '.vcompmat_c'], files[VMAT_DIR + name + '.vmat_c'] = made
-                    title = '%s %s%s' % (base_title, theme, ' — ' + panel_title if panel_title else '')
+                    # Panel style remains in the stable kit identity, not the player-facing name.
+                    title = '%s %s' % (base_title, theme)
                     entries.append((kit_id(name), name, title,
                                     {'composite_material_path': COMPMAT_DIR + name + '.vcompmat'}))
                     if panel_variants or panels == 'original': case.append('[%s]%s' % (name, glove))

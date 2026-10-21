@@ -78,6 +78,10 @@ class NativeGloves(unittest.TestCase):
             self.assertEqual(kits['ug_glove_specialist_dragon_red']['description_tag'], 'Fire Chaser')
             name = recolours[0][1:recolours[0].index(']')]
             self.assertTrue(kits[name]['description_tag'].startswith("Pandora's Box "))
+            for style in ('white','black','inverted'):
+                variant_name = name + '_panels_' + style
+                self.assertEqual(kits[variant_name]['description_tag'], kits[name]['description_tag'])
+                self.assertNotEqual(kits[variant_name]['name'], kits[name]['name'])
             self.assertEqual(sections['paint_kits_rarity'][name], 'ancient')
             source = finishes.Source(vpk=game / finishes.FOLDER / 'pak01_dir.vpk')
             _, blocks = kv3.read_resource(source.read(gloves.VMAT_DIR + name + '.vmat_c'))
@@ -134,9 +138,11 @@ class NativeGloves(unittest.TestCase):
         black=gloves.recolor_accents(colors,'Magenta',panels='black')
         inverted=gloves.recolor_accents(colors,'Magenta',panels='inverted')
         self.assertGreater(min(white[0][:3]),.8)
-        self.assertLess(max(black[1][:3]),.11)
+        self.assertGreaterEqual(min(black[0][:3]),.12)
+        self.assertLessEqual(max(black[1][:3]),.20)
+        self.assertGreater(black[1][0],black[0][0], 'charcoal retains source tonal ordering')
         self.assertGreater(inverted[0][0],.8)
-        self.assertLess(inverted[1][0],.15)
+        self.assertLess(inverted[1][0],.21)
         self.assertNotEqual(white[0][:3],white[1][:3], 'preserve tonal differences instead of a flat white')
 
     def test_neutral_palettes_are_not_given_an_all_over_hue_and_bad_vectors_reject(self):

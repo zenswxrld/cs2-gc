@@ -1,3 +1,15 @@
+# Helper/material update24b: charcoal and clean inverted names
+
+User confirms many Sport glove recolours look excellent; black panels too crushed. Changed black neutral tint transfer from .025+.075*sqrt(v) to .12+.08*sqrt(v); inverted endpoints from .04/.92 to .12/.90. Other panels, accents, approved legacy palettes and all texture/wear/roughness/reflection properties unchanged. Values are material tints, not screen RGB or a validated leather calibration. Target-client comparison pending.
+
+User clarified all variants need clean names. Omit White/Black/Inverted Panels suffixes; all _panels_* internal names/IDs remain distinct and stable. Different panel variants now share the base+theme display name. Regression checks all three styles.
+
+Gold Brick Toxic screenshot is mostly purple rather than gold. Code audit: Toxic replaces original colour channels with lime/purple, assigning brightness-ranked middle channels purple. Cannot infer knife texture/channel coverage from this screenshot. No knife appearance fix claimed or new guessed texture controls. native_finishes.prepare now writes cs2_gc_knife_palettes.json with actual source paths/shader/original+themed vectors. Ask user for it to investigate Gold Brick against actual installed materials. Regression verifies complete material DATA equals the original after undoing only name/colour edits, including texture and roughness fixture fields.
+
+All26 suites pass after changes. Python/material-only update uses existing24 Windows DLL; no new binary rebuild required. Keep inventory/config/finish-ID map. Care-package claim, economics and mission progression remain pending as below.
+
+---
+
 # UI hotfix24a: restore case display, keep direct rewards
 
 User explicitly rejected the finish gallery. Removed custom_rewards preview expansion and random-reward callout changes from rotate_armory.py. Black Market/Gauntlet retain the original crate entry type, single case model, names, native contents and layout. local_direct_case is retained only to hide the irrelevant key warning. Backend direct grants from build24 are unchanged. UI-only patch uses the same build24 DLL; native_resources rebuilds the script override on launcher preparation. Test asserts both custom entries remain cases and their original loot lists/suffixes remain intact. Do not reintroduce the finish gallery.

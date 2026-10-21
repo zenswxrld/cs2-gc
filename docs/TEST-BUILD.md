@@ -1,6 +1,6 @@
-# CS2-GC test build 24a — glove accents and panel variants
+# CS2-GC test build 24b — charcoal panels and cleaner names
 
-UI hotfix24a; DLL build tag: `codex-20261021-24`. Includes build22 fixes. Client build25966348.
+Material/helper update24b; DLL build tag: `codex-20261021-24`. Includes build22 fixes. Client build25966348.
 
 ## Install
 
@@ -10,6 +10,10 @@ UI hotfix24a; DLL build tag: `codex-20261021-24`. Includes build22 fixes. Client
 4. Confirm preparation completes in cs2_gc_prepare.log and the proxy logs the build tag above. Do not replace native packs while CS2 is running.
 
 ## Changed in this build
+
+- Black Panels now use a lighter charcoal tint range (.12–.20 rather than .025–.10), retaining source tonal ordering. The dark end of Inverted Panels is raised to.12. Textures, masks, wear, roughness and reflections are unchanged. Exact perceived darkness needs in-game checking.
+- All panel variants use clean base+theme display names: White/Black/Inverted Panels suffixes are removed. Internal variant names and saved IDs remain distinct and unchanged. Different colour variants may share a displayed name.
+- Preparation writes **cs2_gc_knife_palettes.json** with actual source material paths, shaders, original colours and themed colours. Gold Brick Toxic has NOT been declared fixed: the Toxic recolour replaces gold with purple/green and may distribute them poorly over a particular knife. Send this report for the next finish-specific check. No knife colour algorithm change in24b.
 
 - Armory Black Market and Gauntlet purchases immediately roll one knife or glove from the full corresponding custom pool, charge the displayed price once, and grant the finished item with its owner certificate. No case or key is minted. Existing inventory cases and rare case drops still open normally.
 - Their native Armory pages retain the previous case model/layout and case names. Buying still grants the finished glove/knife immediately; the key warning stays hidden. The oversized finish gallery from build24 is removed. Native page rendering still needs testing.
@@ -25,11 +29,12 @@ This is material-palette classification, not texture segmentation. It preserves 
 
 ## Test first
 
-1. Buy Black Market and Gauntlet from the Armory: exactly one knife/glove, one star deduction, no case/key. Inspect/equip/restart. Confirm old cases still open.
-2. Confirm Forest DDPAT Toxic still looks the same. Inspect your existing Superconductor Magenta: dark/neutral sections should remain structural, with the coloured accents changed. Equip it in a bot match and check both palms and backs at your existing wear.
-3. Open Gauntlet cases and inspect White/Black/Inverted Panels variants. Compare the same accent theme across panel variants. Test hand wraps, driver, specialist and other glove types too.
-4. Restart and confirm IDs, finishes, wear, seeds and loadout persist. Keep cs2_gc_finish_ids.json.
-5. If a glove still looks flat, unchanged or changes the wrong region, send its exact name, screenshot and cs2_gc_glove_palettes.json. Do not reset the inventory or finish IDs.
+1. Compare the same Black Panels gloves after launcher preparation: look for clearer seams and surface detail in inspect and a bot match. Check unchanged wear/seed. Confirm all panel variants have cleaner display names.
+2. Buy Black Market and Gauntlet from the Armory: exactly one knife/glove, one star deduction, no case/key. Inspect/equip/restart. Confirm old cases still open.
+3. Confirm Forest DDPAT Toxic still looks the same. Inspect your existing Superconductor Magenta: dark/neutral sections should remain structural, with the coloured accents changed. Equip it in a bot match and check both palms and backs at your existing wear.
+4. Open Gauntlet cases and inspect White/Black/Inverted Panels variants. Compare the same accent theme across panel variants. Test hand wraps, driver, specialist and other glove types too.
+5. Restart and confirm IDs, finishes, wear, seeds and loadout persist. Keep cs2_gc_finish_ids.json.
+6. If a glove still looks flat, unchanged or changes the wrong region, send its exact name, screenshot and cs2_gc_glove_palettes.json. Do not reset the inventory or finish IDs.
 
 ## Current status
 

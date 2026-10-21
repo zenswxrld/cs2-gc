@@ -1,3 +1,17 @@
+# Helper/material update24c: findings from supplied palettes
+
+User supplied knife85/glove72 palette reports. Gold Brick has four related gold source tones; previous rank-based Toxic assigns its neighbouring shades unrelated lime/purple hues. recolor_gold_brick now rotates the related palette to the theme primary hue, preserving circular hue differences/value/alpha and capping saturation. Applied only to am_gold_brick recolours (existing rk identities); official gold base and other knife algorithms unchanged. Supplied Toxic output hues now82–87.8 degrees, values1/1/.937/.733. This fixes the palette relationship, not a verified model UV/material rendering issue. Need live test before claiming appearance fixed.
+
+Bronzed (bloodhound_metallic) has two identical muted bronze vectors (channels1/6) below global saturation.20/.35 boundary; specific threshold.20 recognises only these two, leaving six neutral tints. Supplied palette evaluation confirms changes exactly1/6, with original saturation/value retained. No arbitrary anatomical channel mapping introduced.
+
+Five supplied glove palettes have no detected accents: bloodhound_metallic (now addressed), handwrap_leathery_ducttape, motorcycle_smoke, operation10_snakeskin_black and sporty_jaguar (Nocts). No-accent themes are excluded from Gauntlet instead of advertising colours that do not apply; known saved variants still get definitions/materials under same IDs. Source reports still generated. Do not drop owned definitions or reset IDs. Tests cover retention and exclusion together.
+
+Latest user screenshot: Racing Green Sunset still mostly green. slick_stitched_green_grey actual green/teal channels1/5 are muted (saturation~.298/.224) and skipped by.35, while7/8 are brown and were coloured. Added finish-specific.20 threshold plus hue75–180 degree filter, which supplied-palette evaluation confirms targets exactly1/5. Original-panel brown accents remain, while explicit neutral-panel variants keep their panel behaviour. Display base title Racing replaces Racing Green, yielding Racing Sunset etc. Internal kit names/IDs unchanged. Other glove policies unchanged. User confirms MANY existing recolours look excellent; avoid broad resets.
+
+Includes24b charcoal and clean names for ALL panel variants and24a case presentation/direct grants. All changes are Python/material preparation; same24 DLL. All26 suites and new targeted tests must pass before packaging. Original user reports stay private/uncommitted. Exact24c appearance unverified.
+
+---
+
 # Helper/material update24b: charcoal and clean inverted names
 
 User confirms many Sport glove recolours look excellent; black panels too crushed. Changed black neutral tint transfer from .025+.075*sqrt(v) to .12+.08*sqrt(v); inverted endpoints from .04/.92 to .12/.90. Other panels, accents, approved legacy palettes and all texture/wear/roughness/reflection properties unchanged. Values are material tints, not screen RGB or a validated leather calibration. Target-client comparison pending.

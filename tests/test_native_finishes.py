@@ -1,4 +1,5 @@
 import json
+import colorsys
 import struct
 import sys
 import tempfile
@@ -101,6 +102,26 @@ def vpk_files():
 
 
 class NativeFinishes(unittest.TestCase):
+    def test_gold_brick_keeps_related_metal_tones_instead_of_ranked_two_tone(self):
+        colors=[[1,.88,.5,1],[.98,.9,.6,.8],[.8,.7,.4,.5],[.7,.55,.15,0]]
+        result=finishes.recolor_gold_brick(colors,'Toxic')
+        original_hsv=[colorsys.rgb_to_hsv(*c[:3]) for c in colors]
+        changed_hsv=[colorsys.rgb_to_hsv(*c[:3]) for c in result]
+        for original,changed in zip(original_hsv,changed_hsv):
+            self.assertAlmostEqual(original[2],changed[2])
+            self.assertLessEqual(changed[1],original[1]+1e-8)
+            self.assertTrue(60 < changed[0]*360 < 100, 'related lime tones, no unrelated purple field')
+        self.assertEqual([c[3] for c in colors],[c[3] for c in result])
+        for index in range(1,4):
+            self.assertAlmostEqual(changed_hsv[index][0]-changed_hsv[0][0],
+                                   original_hsv[index][0]-original_hsv[0][0])
+        source=finishes.Source(folder=None); source.read=vpk_files().get
+        report={}
+        made=finishes.make_finish(source,'am_gold_brick','weapons/paints/legacy/aa_fade.vcompmat',
+                                  'rk_am_gold_brick_toxic','Toxic',report=report)
+        self.assertIsNotNone(made)
+        self.assertEqual(report['am_gold_brick']['policy'],'related-metal-tones-v1')
+
     def test_recolour_changes_only_colours_and_names(self):
         source = finishes.Source(folder=None)
         originals = vpk_files()

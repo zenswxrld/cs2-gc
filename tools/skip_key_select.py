@@ -1,8 +1,6 @@
-"""Open local GC cases straight into the unlock screen when exactly one matching key is owned.
+"""Open local GC cases directly with one matching key, or keylessly in free mode.
 
-With free_case_keys every local case has one key, so the stock "Select an item to use with ..." page only ever
-offers that key. Patches the user's own item_context_entries script: the open_package action passes the single
-key as tool_id to the stock popup_capability_decodable, exactly as picking it on that page would.
+Patches the native context action; stock case animations remain in the decodable popup.
 """
 from native_resources import install_override
 
@@ -32,13 +30,27 @@ INSERT = """                    $.DispatchEvent('ContextMenuEvent', '');
                 $.DispatchEvent('ShowSelectItemForCapabilityPopup', id, '', 'decodable');"""
 
 
-def patch(source):
+def patch(source, keyless=False):
     if 'cs2_gc: a local case' in source: raise ValueError('Script is already patched')
     if source.count(ANCHOR) != 1 or 'InventoryAPI.GetChosenActionItemIDByIndex(' not in source:
         raise ValueError('Installed item_context_entries layout has changed; no patch was written')
-    return source.replace(ANCHOR, INSERT, 1)
+    result = source.replace(ANCHOR, INSERT, 1)
+    if keyless:
+        branch = "                if (InventoryAPI.GetChosenActionItemsCount(id, 'decodable') === 0) {"
+        if result.count(branch) != 1: raise ValueError('Installed keyless opening branch changed')
+        direct = """                // cs2_gc free-case mode: native unlock popup with no key tool, even if old keys remain.
+                const localFreeId = Number(id);
+                if (!InventoryAPI.IsTool(id) && localFreeId > 1000000000000 && localFreeId < 2000000000000 &&
+                    !InventoryAPI.GetItemAttributeValue(id, '{uint32}volatile container')) {
+                    const popup = UiToolkitAPI.ShowCustomLayoutPopup('popup-inspect-' + id, 'file://{resources}/layout/popups/popup_capability_decodable.xml');
+                    popup.Data().oSettings = {item_id:id, work_type:'decodeable'};
+                    return;
+                }
+"""
+        result = result.replace(branch,direct+branch,1)
+    return result
 
 
 def prepare(proxy_directory, config):
     return install_override(proxy_directory, enabled=bool(config.get('skip_key_selection', 1)),
-                            folder=FOLDER, comment=COMMENT, owner=OWNER, asset=ASSET, patch=patch)
+                            folder=FOLDER, comment=COMMENT, owner=OWNER, asset=ASSET, patch=lambda source: patch(source, bool(config.get('free_case_keys', 1))))

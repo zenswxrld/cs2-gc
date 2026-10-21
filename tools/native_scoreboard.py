@@ -96,6 +96,25 @@ PING_HELPER = '''
 '''
 
 
+NAME_ANCHOR = "                    oPlayer.m_elPlayer.SetDialogVariableInt('player_slot', oPlayer.GetGameStat('slot'));"
+NAME_INJECT = r"""
+                    // cs2_gc: the stock {g:player_name:player_slot} formatter adds [BOT] independently of bot_prefix.
+                    const stockName = elPanel.FindChildTraverse('name');
+                    let plainName = elPanel.FindChildTraverse('cs2gc-bot-name');
+                    const localBot = oPlayer.GetGameStat('is_fake_player') &&
+                        !GameStateAPI.IsDemoOrHltv() && !GameStateAPI.IsQueuedMatchmakingMode_Team();
+                    const rawName = localBot ? MockAdapter.GetPlayerName(oPlayer.m_xuid) : '';
+                    if (stockName && rawName) {
+                        if (!plainName) plainName = $.CreatePanel('Label', elPanel, 'cs2gc-bot-name',
+                            {html:false, class:'sb-team-tint stratum-medium'});
+                        plainName.text = String(rawName).replace(/^\s*(?:\[BOT\]|BOT)\s+/i, '');
+                        plainName.visible = true; stockName.visible = false;
+                    } else {
+                        if (stockName) stockName.visible = true;
+                        if (plainName) plainName.visible = false;
+                    }
+"""
+
 def patch(source, config):
     if 'cs2_gc native Premier badges' in source: raise ValueError('Scoreboard is already patched')
     # Require the actual inspected API shape; fail without affecting native files if it changes.
@@ -111,6 +130,8 @@ def patch(source, config):
         if source.count(PING_ANCHOR) != 1: raise ValueError('Installed scoreboard ping layout has changed')
         source = source.replace(PING_ANCHOR, PING_INJECT, 1)
         source = source.replace('    function _GetPlayerRowForGameMode()', PING_HELPER + '    function _GetPlayerRowForGameMode()', 1)
+    if config.get('bot_hide_tag', 1) and source.count(NAME_ANCHOR) == 1:
+        source = source.replace(NAME_ANCHOR, NAME_ANCHOR + NAME_INJECT, 1)
     insert = INJECT.replace('__BOTS__', 'true' if config['premier_bot_badges'] else 'false')
     insert = insert.replace('__PLACEMENTS__', str(config['premier_placement_wins']))
     insert = insert.replace('__MAX__', str(config['premier_max_rating']))

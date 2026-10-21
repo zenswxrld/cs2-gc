@@ -907,7 +907,7 @@ State &Init()
                     if (const std::size_t repaired = live->RepairCollectionStatTrak(*schema))
                     {
                         s.log->Write("inventory: cleared invalid StatTrak flags on " + std::to_string(repaired) +
-                                     " collection skin(s) from earlier Armory rolls");
+                                     " glove(s) or collection skin(s) from earlier rolls");
                         if (inventoryFileUsable && !live->Save(inventoryPath))
                             s.log->Write("could not save cs2_gc_inventory.txt");
                     }
@@ -986,7 +986,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: codex-20261020-17");
+        s.log->Write("test build: codex-20261021-19");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");

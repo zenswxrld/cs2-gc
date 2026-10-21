@@ -17,27 +17,10 @@ InventoryItem LiveInventory::AddItem(InventoryItem item)
     return item;
 }
 
-std::vector<InventoryItem> LiveInventory::EnsureCaseKeys(const Schema &schema)
+std::vector<InventoryItem> LiveInventory::EnsureCaseKeys(const Schema &)
 {
-    std::vector<InventoryItem> added;
-    if (!m_inventory.Gameplay().free_case_keys)
-        return added;
-    std::set<std::uint32_t> owned, wanted;
-    for (const InventoryItem &item : m_inventory.Items())
-    {
-        owned.insert(item.defIndex);
-        if (const CrateInfo *crate = schema.FindCrate(item.defIndex); crate && crate->kind == CrateKind::Case && crate->keyDefIndex)
-            wanted.insert(crate->keyDefIndex);
-    }
-    for (const std::uint32_t key : wanted)
-        if (!owned.count(key))
-        {
-            InventoryItem item;
-            item.defIndex = key;
-            item.rarity = schema.ItemRarity(key);
-            added.push_back(AddItem(item));
-        }
-    return added;
+    // Free opening no longer mints inventory clutter. Existing keys can still be used or sold.
+    return {};
 }
 
 bool LiveInventory::AddXpTrack(std::uint32_t xp)
@@ -108,10 +91,12 @@ std::size_t LiveInventory::RepairCollectionStatTrak(const Schema &schema)
 {
     std::size_t repaired = 0;
     for (const InventoryItem &item : m_inventory.Items())
-        if (item.statTrak && !item.statTrakFromContract && !schema.CollectionsOf(item.defIndex, item.paintKitIndex).empty() &&
-            !schema.CanBeStatTrak(item.defIndex, item.paintKitIndex))
+        if (item.statTrak && (schema.IsGlove(item.defIndex) || item.souvenir ||
+            (!item.statTrakFromContract && !schema.CollectionsOf(item.defIndex, item.paintKitIndex).empty() &&
+             !schema.CanBeStatTrak(item.defIndex, item.paintKitIndex))))
         {
             m_inventory.Find(item.id)->statTrak = false;
+            m_inventory.Find(item.id)->statTrakFromContract = false;
             ++repaired;
         }
     return repaired;

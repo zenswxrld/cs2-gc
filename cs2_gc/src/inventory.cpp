@@ -9,6 +9,8 @@
 #include <sstream>
 #include <limits>
 #include <iomanip>
+#include <ctime>
+#include <functional>
 
 namespace cs2_gc
 {
@@ -123,6 +125,19 @@ std::string Inventory::ToText() const
 {
     std::ostringstream out;
     out << "\"inventory\"\n{\n\t\"next_id\"\t\"" << m_nextId << "\"\n";
+    out << "\t\"last_care_generation\" \"" << m_lastCareGeneration << "\"\n";
+    if (!m_carePackages.empty())
+    {
+        out << "\t\"care_packages\" {\n";
+        for (const auto &package : m_carePackages)
+        {
+            Inventory preview; preview.m_items = package.offers; preview.m_nextId = m_nextId;
+            const auto text = preview.ToText();
+            out << "\t\t\"" << package.generation << "\" {\n\"next_id\" \"" << m_nextId << "\"\n"
+                << text.substr(text.find("\t\"items\""));
+        }
+        out << "\t}\n";
+    }
     out << "\t\"case_pity\"\t\"" << m_casePity << "\"\n";
     out << "\t\"match_reward_total\" \"" << m_matchRewardTotal << "\"\n";
     out << "\t\"console_star_total\" \"" << m_consoleStarTotal << "\"\n";
@@ -177,6 +192,13 @@ std::string Inventory::ToText() const
             << "\t\t\t\"keychain\"\t\"" << item.keychain << "\"\n";
         if (!item.customName.empty())
             out << "\t\t\t\"custom_name\"\t\"" << item.customName << "\"\n";
+        if (item.souvenir)
+            out << "\t\t\t\"souvenir\"\t\"1\"\n";
+        if (item.tournamentEvent)
+            out << "\t\t\t\"tournament_event\"\t\"" << item.tournamentEvent << "\"\n"
+                << "\t\t\t\"tournament_team0\"\t\"" << item.tournamentTeam0 << "\"\n"
+                << "\t\t\t\"tournament_team1\"\t\"" << item.tournamentTeam1 << "\"\n"
+                << "\t\t\t\"tournament_player\"\t\"" << item.tournamentPlayer << "\"\n";
         if (item.statTrakFromContract)
             out << "\t\t\t\"contract_stattrak\"\t\"1\"\n";
         if (item.unusual)
@@ -313,6 +335,15 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             item.wear > 1.0f || !ParseNumber(entry.Value("seed"), item.seed) || item.seed > 1000 ||
             !ParseNumber(entry.Value("stattrak"), statTrak) || statTrak > 1)
             return std::nullopt;
+        if (const auto *souvenir = entry.Find("souvenir"))
+        {
+            if (souvenir->block || souvenir->value != "1" || statTrak) return std::nullopt;
+            item.souvenir = true;
+        }
+        for (const auto &[name, value] : {std::pair{"tournament_event", &item.tournamentEvent},
+             std::pair{"tournament_team0", &item.tournamentTeam0}, std::pair{"tournament_team1", &item.tournamentTeam1},
+             std::pair{"tournament_player", &item.tournamentPlayer}})
+            if (entry.Find(name) && !ParseNumber(entry.Value(name), *value)) return std::nullopt;
         if (const auto *contract = entry.Find("contract_stattrak"))
         {
             if (contract->block || contract->value != "1" || statTrak != 1) return std::nullopt;
@@ -435,6 +466,35 @@ std::optional<Inventory> Inventory::FromText(std::string_view text)
             inventory.m_loadout.push_back(slot);
         }
     }
+    if (root->Find("last_care_generation") &&
+        !ParseNumber(root->Value("last_care_generation"), inventory.m_lastCareGeneration)) return std::nullopt;
+    if (const auto *packages = root->Find("care_packages"))
+    {
+        if (!packages->block || packages->children.size() > 256) return std::nullopt;
+        std::uint32_t previous = 0;
+        for (const auto &node : packages->children)
+        {
+            std::uint32_t generation = 0;
+            if (!node.block || !ParseNumber(node.key, generation) || !generation || generation <= previous ||
+                generation > inventory.m_lastCareGeneration || node.Find("care_packages")) return std::nullopt;
+            previous = generation;
+            std::ostringstream text;
+            std::function<void(const KvNode &)> write = [&](const KvNode &entry) {
+                text << std::quoted(entry.key) << ' ';
+                if (entry.block) { text << "{\n"; for (const auto &child : entry.children) write(child); text << "}\n"; }
+                else text << std::quoted(entry.value) << '\n';
+            };
+            text << "\"inventory\" {\n";
+            for (const auto &entry : node.children) write(entry);
+            text << "}\n";
+            const auto preview = Inventory::FromText(text.str());
+            if (!preview || preview->m_items.size() != 4 || preview->m_nextId != inventory.m_nextId ||
+                !preview->m_loadout.empty()) return std::nullopt;
+            for (const auto &item : preview->m_items)
+                if (!seen.insert(item.id).second || item.storedIn || item.casketCount) return std::nullopt;
+            inventory.m_carePackages.push_back({generation, preview->m_items});
+        }
+    }
     return inventory;
 }
 
@@ -486,4 +546,34 @@ bool Inventory::ApplyConsoleStars(std::uint64_t cumulative)
     m_consoleStarTotal = cumulative;
     return true;
 }
+
+bool Inventory::QueueCarePackage(std::vector<InventoryItem> offers)
+{
+    if (offers.size() != 4 || m_carePackages.size() >= 256 || m_lastCareGeneration == UINT32_MAX) return false;
+    const auto now = static_cast<std::uint64_t>(std::time(nullptr));
+    const auto generation = std::max(m_lastCareGeneration + 1, static_cast<std::uint32_t>(std::min<std::uint64_t>(now, UINT32_MAX)));
+    for (auto &item : offers) { item.id = Add(item); Remove(item.id); }
+    m_carePackages.push_back({generation,std::move(offers)});
+    m_lastCareGeneration = generation;
+    return true;
+}
+
+std::optional<std::vector<InventoryItem>> Inventory::ClaimCarePackage(std::uint32_t generation,
+                                                                    const std::vector<std::uint64_t> &ids)
+{
+    if (m_carePackages.empty() || m_carePackages.front().generation != generation || ids.size() != 3) return std::nullopt;
+    const auto &offers = m_carePackages.front().offers;
+    std::set<std::uint64_t> unique;
+    std::vector<InventoryItem> chosen;
+    for (const auto id : ids)
+    {
+        const auto found = std::find_if(offers.begin(),offers.end(),[&](const auto &item){return item.id==id;});
+        if (!unique.insert(id).second || found==offers.end()) return std::nullopt;
+        chosen.push_back(*found);
+    }
+    m_items.insert(m_items.end(),chosen.begin(),chosen.end());
+    m_carePackages.erase(m_carePackages.begin());
+    return chosen;
+}
+
 }

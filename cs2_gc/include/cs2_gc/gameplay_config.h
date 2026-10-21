@@ -9,7 +9,7 @@ namespace cs2_gc
 struct GameplayConfig
 {
     std::uint32_t armory_collection_slots{3};
-    std::uint32_t armory_charm_slots{3};
+    std::uint32_t armory_charm_slots{2};
     std::uint32_t free_case_keys{1}, skip_key_selection{1};
     std::uint32_t knife_finishes{1}, glove_finishes{1}, black_market_price{100};
     std::uint32_t viewmodel_range_percent{250}, viewmodel_fov_min{40}, viewmodel_fov_max{90}; // wider viewmodel limits // knife recolours + Black Market Case (helper-generated) // keep one never-consumed key for every case type owned
@@ -19,6 +19,10 @@ struct GameplayConfig
     std::uint32_t armory_limited_slots{1};
     std::uint32_t armory_agent_slots{1};
     std::uint32_t armory_agent_price{50};
+    std::uint32_t reward_rare_case_per_10000{100}; // combined Black Market/Gauntlet chance within case offers
+    std::uint32_t care_packages_enabled{1}; // four reserved offers, claim exactly three
+    std::uint32_t bot_hide_tag{1}, hide_mainmenu_promo{1};
+    std::uint32_t armory_souvenir_slots{1}, armory_souvenir_price{5};
     std::uint32_t armory_terminal_slots{1};
     std::uint32_t armory_terminal_price{10}, armory_case_price{5};
     std::uint32_t match_weekly_pool_only{1};

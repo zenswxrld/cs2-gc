@@ -220,6 +220,45 @@ assert.equal(cards.filter(p=>p.visible).length,4);
         self.assertEqual(result.returncode,0,result.stderr)
 
 
+    def test_souvenirs_use_only_resolvable_official_packages_and_new_row(self):
+        extra = SCHEMA.replace('"volatile_pricing" {}', '"volatile_pricing" {} "weapon_case_souvenirpkg" { "prefab" "weapon_case_base" }')
+        extra = extra.replace('"3" { "name" "key" }', '''"3" { "name" "key" }
+          "20" { "name" "crate_souvenir_test" "prefab" "weapon_case_souvenirpkg"
+            "attributes" { "set supply crate series" { "value" "20" } } }
+          "21" { "name" "crate_souvenir_server_only" "prefab" "weapon_case_souvenirpkg"
+            "attributes" { "set supply crate series" { "value" "21" } } }''')
+        extra = extra.replace('"client_loot_lists" {', '''"revolving_loot_lists" { "20" "souvenir_pool" "21" "missing" }
+          "client_loot_lists" { "souvenir_pool" { "souvenir_pool_common" "1" }
+          "souvenir_pool_common" { "[paint]weapon_test" "1" }''')
+        goods = catalog.catalogue(extra, gameplay_config.DEFAULTS)
+        self.assertEqual(catalog.souvenir_names(extra), ['crate_souvenir_test'])
+        self.assertEqual(goods['crate_souvenir_test']['local_rotation_slot'], 'souvenir')
+        self.assertEqual(goods['crate_souvenir_test']['points'], '5')
+        self.assertEqual(goods['crate_souvenir_test']['ui_order'], '3')
+        self.assertEqual(goods['lootlist:sticker_pack_a_lootlist']['ui_order'], '1')
+        self.assertNotIn('crate_souvenir_server_only', goods)
+        self.assertEqual(catalog.patch_catalogue(catalog.patch_catalogue(extra, gameplay_config.DEFAULTS)[0],
+                                               gameplay_config.DEFAULTS)[1]['crate_souvenir_test'], 'souvenir')
+
+    @unittest.skipUnless(shutil.which('node'), 'Node required for layout fixture')
+    def test_fixed_slot_layout_even_with_old_config_excess(self):
+        import json
+        entries = [{'item_name': kind+str(i), 'ui_order': row} for kind,row,count in
+                   [('charm','1',3),('sticker','1',2),('agent','1',1),('souvenir','3',2),('case','3',2),
+                    ('terminal','3',1),('capsule','3',2),('collection','2',3),('limited','2',1)] for i in range(count)]
+        categories={e['item_name']:e['item_name'].rstrip('0123456789') for e in entries}
+        script='const assert=require("assert"); const m_elContentPanel={};\n'
+        script+=rotate_armory.INSERT.replace('__SETTINGS__',json.dumps({'categories':categories}))
+        script+='\nconst entries='+json.dumps(entries)+'; const view=_LocalCataloguePage(entries,entries.map(e=>e.item_name),0);\n'
+        script+='''const row=id=>view.filter(name=>entries.find(e=>e.item_name===name).ui_order===id);
+assert.deepEqual(row('1'),['charm0','charm1','sticker0','agent0']);
+assert.deepEqual(row('3'),['souvenir0','case0','terminal0','capsule0']);
+assert.equal(row('2').length,3);assert.ok(row('2').includes('limited0'));
+const next=_LocalCataloguePage(entries,entries.map(e=>e.item_name),1); assert.ok(next.includes('charm2')); assert.ok(next.includes('souvenir1'));
+'''
+        result=subprocess.run(['node','-e',script],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
 class ConsoleControls(unittest.TestCase):
     def test_launcher_nonce_is_reused_and_helper_restart_keeps_rotation(self):
         import tempfile

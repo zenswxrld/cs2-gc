@@ -100,6 +100,8 @@ bool ChainContains(const KvNode &item, std::string_view fragment, const ItemMap 
 
 CrateKind Classify(const KvNode &item, std::uint32_t keyDefIndex, const ItemMap &prefabs)
 {
+    if (HasPrefab(item, "weapon_case_souvenirpkg", prefabs))
+        return CrateKind::Souvenir;
     if (ChainContains(item, "volatile_pricing", prefabs) && ChainContains(item, "weapon_case_selfopening_collection", prefabs))
         return CrateKind::Terminal;
     if (item.Value("name").starts_with("crate_musickit_") || ChainContains(item, "_capsule", prefabs))
@@ -127,6 +129,30 @@ std::uint32_t CrateSeries(const KvNode &item, const ItemMap &prefabs)
     if (!series || !ParseU32(series->Value("value"), value))
         return 0;
     return value;
+}
+
+std::uint32_t InheritedAttribute(const KvNode &item, std::string_view name, const ItemMap &prefabs, int depth = 0)
+{
+    if (const auto *attributes = item.Find("attributes"))
+        if (const auto *attribute = attributes->Find(name))
+        {
+            std::uint32_t value = 0;
+            ParseU32(attribute->block ? attribute->Value("value") : attribute->value, value);
+            return value;
+        }
+    if (depth >= 8) return 0;
+    std::string_view list = item.Value("prefab");
+    while (!list.empty())
+    {
+        const auto split = list.rfind(' ');
+        const auto namePart = split == std::string_view::npos ? list : list.substr(split + 1);
+        const auto parent = prefabs.find(std::string{namePart});
+        if (parent != prefabs.end())
+            if (const auto value = InheritedAttribute(*parent->second, name, prefabs, depth + 1)) return value;
+        if (split == std::string_view::npos) break;
+        list = list.substr(0, split);
+    }
+    return 0;
 }
 
 std::uint32_t KeyDefIndex(const KvNode &item, const ItemMap &prefabs)
@@ -233,6 +259,21 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
     }
 
     schema.m_prefabs = prefabs;
+    for (const auto &section : root.children)
+        if (section.key == "sticker_kits")
+            for (const auto &kit : section.children)
+            {
+                SouvenirSticker sticker;
+                if (!ParseU32(kit.key, sticker.kit) ||
+                    !ParseU32(kit.Value("tournament_event_id"), sticker.event)) continue;
+                ParseU32(kit.Value("tournament_team_id"), sticker.team);
+                ParseU32(kit.Value("tournament_player_id"), sticker.player);
+                sticker.gold = kit.Value("name").find("_gold") != std::string_view::npos;
+                // Older events have foil souvenir decals, rather than modern gold sticker kits.
+                if (sticker.gold || kit.Value("name").find("_foil") != std::string_view::npos || (!sticker.team && !sticker.player))
+                    schema.m_souvenirStickers.push_back(sticker);
+            }
+
     for (const KvNode *item : itemNodes)
     {
         std::uint32_t defIndex = 0;
@@ -247,8 +288,7 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
     for (const KvNode *item : itemNodes)
     {
         std::uint32_t defIndex = 0;
-        if (!ParseU32(item->key, defIndex) || !HasPrefab(*item, "weapon_case_base", prefabs) ||
-            HasPrefab(*item, "weapon_case_souvenirpkg", prefabs))
+        if (!ParseU32(item->key, defIndex) || !HasPrefab(*item, "weapon_case_base", prefabs))
             continue;
         const std::uint32_t series = CrateSeries(*item, prefabs);
         if (series == 0)
@@ -264,6 +304,11 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
         crate.series = series;
         crate.keyDefIndex = KeyDefIndex(*item, prefabs);
         crate.kind = Classify(*item, crate.keyDefIndex, prefabs);
+        if (crate.kind == CrateKind::Souvenir)
+        {
+            crate.keyDefIndex = 0;
+            crate.tournamentEvent = InheritedAttribute(*item, "tournament event id", prefabs);
+        }
         const auto list = revolving.find(std::to_string(series));
         if (list != revolving.end())
             crate.lootListName = list->second->value;
@@ -320,6 +365,33 @@ bool Schema::IsGlove(std::uint32_t defIndex) const
 {
     const auto item = m_itemsByIndex.find(defIndex);
     return item != m_itemsByIndex.end() && HasPrefab(*item->second, "hands_paintable", m_prefabs);
+}
+
+std::vector<SouvenirSticker> Schema::SouvenirStickers(std::uint32_t event) const
+{
+    std::vector<SouvenirSticker> result;
+    for (const auto &sticker : m_souvenirStickers)
+        if (event && sticker.event == event) result.push_back(sticker);
+    const bool hasGold=std::any_of(result.begin(),result.end(),[](const auto &sticker){return sticker.gold;});
+    if(hasGold) std::erase_if(result,[](const auto &sticker){return !sticker.gold;});
+    return result;
+}
+
+std::uint32_t Schema::SouvenirMapSticker(std::uint32_t crateDefinition) const
+{
+    const auto *crate = FindCrate(crateDefinition);
+    if (!crate || crate->kind != CrateKind::Souvenir) return 0;
+    // Contemporary packages use map golds; older packages use event/team/signature decals.
+    bool contemporary = false;
+    for (std::size_t i=0; i+4<=crate->name.size(); ++i) {
+        std::uint32_t year=0;
+        if (ParseU32(std::string_view{crate->name}.substr(i,4),year) && year>=2021 && year<=2100) contemporary=true;
+    }
+    if (!contemporary) return 0;
+    const auto map = crate->name.rfind("_de_");
+    if (map == std::string::npos) return 0;
+    const auto found = m_stickerKits.find(crate->name.substr(map + 1) + "_gold");
+    return found == m_stickerKits.end() ? 0 : found->second;
 }
 
 bool Schema::LoadGoldPools(std::string_view text)

@@ -45,7 +45,7 @@ TILE_INSERT = ("        if (($.GetContextPanel().Data().localKnifeReel || Invent
                " $.GetContextPanel().Data().unusualItemImagePath) {")
 
 
-def patch(source, reel):
+def patch(source, reel, keyless=False):
     if '_LocalKnifeReel' in source: raise ValueError('Script is already patched')
     if (source.count(ANCHOR) != 1 or source.count(FUNCTION) != 1 or source.count(TILE) != 1
             or '_SetUpCaseOpeningScroll()' not in source):
@@ -53,7 +53,15 @@ def patch(source, reel):
     if isinstance(reel, list): reel = {'crate_cs2gc_black_market': reel}  # reel file from before the Gauntlet Case
     helper = HELPER.replace('__REEL__', json.dumps({name: [[int(a), int(b)] for a, b in pairs]
                                                    for name, pairs in sorted(reel.items())}, sort_keys=True))
-    return source.replace(ANCHOR, INSERT, 1).replace(FUNCTION, helper + FUNCTION, 1).replace(TILE, TILE_INSERT, 1)
+    result = source.replace(ANCHOR, INSERT, 1).replace(FUNCTION, helper + FUNCTION, 1).replace(TILE, TILE_INSERT, 1)
+    if keyless:
+        anchor = '            const associatedItemCount = InventoryAPI.GetAssociatedItemsCount(caseId);'
+        if result.count(anchor) != 1: raise ValueError('Installed unlock key branch changed; no patch written')
+        result = result.replace(anchor,"""            // cs2_gc: local free cases use the native keyless opening path; never offer to buy a key.
+            const localCase = Number(caseId) > 1000000000000 && Number(caseId) < 2000000000000 &&
+                !InventoryAPI.GetItemAttributeValue(caseId, '{uint32}volatile container');
+            const associatedItemCount = localCase ? 0 : InventoryAPI.GetAssociatedItemsCount(caseId);""",1)
+    return result
 
 
 def prepare(proxy_directory, config):
@@ -61,6 +69,6 @@ def prepare(proxy_directory, config):
     reel = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
     if isinstance(reel, list): reel = {'crate_cs2gc_black_market': reel}
     reel = {name: pairs for name, pairs in reel.items() if pairs}
-    return install_override(proxy_directory, enabled=bool(config.get('knife_finishes', 1)) and bool(reel),
+    return install_override(proxy_directory, enabled=bool(config.get('free_case_keys', 1)) or (bool(config.get('knife_finishes', 1)) and bool(reel)),
                             folder=FOLDER, comment=COMMENT, owner=OWNER, asset=ASSET,
-                            patch=lambda source: patch(source, reel))
+                            patch=lambda source: patch(source, reel if config.get('knife_finishes', 1) else {}, bool(config.get('free_case_keys', 1))))

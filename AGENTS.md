@@ -15,7 +15,7 @@ qualities and disable their duplicate StatTrak recipes; do not edit original ite
 paint-kit, collection or case definitions. Additional user-authorised exception:
 generate native Armory catalogue rows referencing existing official items and
 loot lists, for per-category rotation of Armory collections, charms, stickers,
-limited items, cases, terminals, curated capsules and official tradable agents. Do not create
+limited items, cases, souvenir packages, terminals, curated capsules and official tradable agents. Do not create
 or alter item/loot-list definitions. Load the same generated catalogue in the client and local GC.
 Additional user-authorised exception (21 October 2026): knife-only custom finishes and one custom case, as
 in OfflineCS. Generate recoloured copies of existing finish materials (new g_vColor values only) and new
@@ -25,8 +25,7 @@ files or existing definitions; knife_finishes = 0 removes everything. Extended b
 gloves: recoloured copies of classic glove materials (new g_vColorTint values only), paint_kits for the four
 shipped glove finishes no paint kit uses, and one glove-only "Gauntlet Case" in the Armory limited rotation;
 glove_finishes = 0 removes the gloves and their case. Back up gameinfo.gi before adding the
-owned native search path and preserve other addons. The store must live in CS2's native Armory page with arrow pagination for the
-catalogue. The user requested removing the text category tabs on 20 October 2026. Do not bring back the legacy Riptide store.
+owned native search path and preserve other addons. The store must live in CS2's native Armory page with the user's stock 4/3/4 catalogue layout. The user requested removing the text category tabs on 20 October 2026. Do not bring back the legacy Riptide store.
 Do not claim the Armory UI works until mounted and verified in the target client.
 
 Build and test with:

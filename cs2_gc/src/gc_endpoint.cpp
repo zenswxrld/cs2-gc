@@ -15,6 +15,17 @@ namespace
 // CMsgGCItemCustomizationNotification: item_id (1), request (2). The game waits for it to finish
 // an unlock, sticker or naming screen. The request values are the client's own
 // k_EGCItemCustomizationNotification_* enum, read from its descriptors.
+std::vector<std::uint8_t> EncodeCareStore(const Inventory &inventory)
+{
+    PbWriter out;
+    const auto &queue = inventory.CarePackages();
+    if (queue.empty()) { out.Varint(1,0); out.Varint(2,0); }
+    else {
+        out.Varint(1,queue.front().generation); out.Varint(2,3);
+        for (const auto &item : queue.front().offers) out.Varint(3,CustomItemIdBase+item.id);
+    }
+    return out.bytes();
+}
 constexpr std::uint32_t NotificationNameItem = 1006;
 constexpr std::uint32_t NotificationUnlockCrate = 1007;
 constexpr std::uint32_t NotificationApplySticker = 1086;
@@ -524,6 +535,49 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
         m_schema = schema;
         m_rewardRandom = random;
     }
+    SetHandler(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemFreeReward,
+        [inventory,afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
+            PbReader reader(frame.body); PbField field;
+            std::optional<std::uint32_t> generation,balance; std::vector<std::uint64_t> ids; bool valid=true;
+            while (reader.Next(field)) {
+                if (field.number==1 && field.wire==0 && !generation && field.value<=UINT32_MAX) generation=static_cast<std::uint32_t>(field.value);
+                else if (field.number==2 && field.wire==0 && !balance && field.value<=UINT32_MAX) balance=static_cast<std::uint32_t>(field.value);
+                else if (field.number==3 && field.wire==0 && ids.size()<4 && field.value>CustomItemIdBase && field.value<2*CustomItemIdBase)
+                    ids.push_back(field.value-CustomItemIdBase);
+                else if (field.number==3 && field.wire==2) {
+                    // proto2 repeated uint64 normally arrives unpacked; accept packed encoding too.
+                    std::uint64_t value=0; unsigned shift=0;
+                    for (const auto byte : field.bytes) {
+                        if (shift>=64 || (shift==63 && byte>1)) {valid=false;break;}
+                        value|=std::uint64_t{byte&127u}<<shift;
+                        if (byte&128u) shift+=7;
+                        else {
+                            if (value<=CustomItemIdBase || value>=2*CustomItemIdBase || ids.size()>=4) {valid=false;break;}
+                            ids.push_back(value-CustomItemIdBase); value=0;shift=0;
+                        }
+                    }
+                    if (shift) valid=false;
+                }
+                else valid=false;
+            }
+            if (!valid || reader.Failed() || !generation || balance!=3 || inventory->Items().CarePackages().empty()) {++gc.m_ignored;return;}
+            const auto offers=inventory->Items().CarePackages().front().offers;
+            const auto chosen=inventory->ClaimCarePackage(*generation,ids);
+            if (!chosen) {++gc.m_ignored;return;}
+            // Persist ownership and queue advancement before notifying the UI.
+            if (afterChange) afterChange();
+            for (const auto &item : offers) {
+                SoSingleObject removed;removed.typeId=static_cast<std::int32_t>(ItemTypeId);removed.owner=gc.m_config.owner;
+                removed.version=++gc.m_soVersion;removed.data=BuildEconItem(item,0,CustomItemIdBase+item.id,0);
+                gc.Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy,EncodeSoSingleObject(removed));
+            }
+            gc.NotifyRewardDrops(*chosen); gc.NotifyCarePackage();
+            PbWriter notification;
+            for(const auto &item:*chosen) notification.Varint(1,CustomItemIdBase+item.id);
+            notification.Varint(2,gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemFreeReward);
+            gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,notification.bytes());
+            if(gc.m_config.diagnostic)gc.m_config.diagnostic("care package: three chosen rewards granted and saved");
+        });
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCDelete,
                [inventory, schema, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
                    PbReader reader(frame.body); PbField field;
@@ -1125,6 +1179,16 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
                 else
                     ++m_patchFailures;
             }
+            if (m_live && m_live->Items().Gameplay().care_packages_enabled) {
+                std::vector<std::vector<std::uint8_t>> previews;
+                const auto &queue=m_live->Items().CarePackages();
+                if (!queue.empty()) for (const auto &item:queue.front().offers)
+                    previews.push_back(BuildEconItem(item,0,CustomItemIdBase+item.id,0));
+                if (auto result=AppendObjectsToWelcome(patched,ItemTypeId,previews,false)) patched=std::move(*result);
+                const std::vector<std::vector<std::uint8_t>> store{EncodeCareStore(m_live->Items())};
+                if(auto result=AppendObjectsToWelcome(patched,PersonalStoreTypeId,store,true)) patched=std::move(*result);
+                m_sentCareStore=store.front();m_sentCareGeneration=queue.empty()?0:queue.front().generation;
+            }
             if (m_armory || m_armoryCredits)
             {
                 std::vector<std::uint8_t> livePass;
@@ -1161,6 +1225,18 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
     ClientWelcome welcome;
     welcome.version = m_config.welcomeVersion;
     welcome.outOfDateCaches.push_back({m_config.owner, m_config.cacheVersion, m_config.cacheTypes});
+    if (m_live && m_live->Items().Gameplay().care_packages_enabled) {
+        auto &types=welcome.outOfDateCaches.front().types;
+        types.erase(std::remove_if(types.begin(),types.end(),[](const auto &type){return type.typeId==static_cast<std::int32_t>(PersonalStoreTypeId);}),types.end());
+        types.push_back({static_cast<std::int32_t>(PersonalStoreTypeId),{EncodeCareStore(m_live->Items())}});
+        const auto &queue=m_live->Items().CarePackages();
+        if (!queue.empty()) {
+            SoObjectType previews;previews.typeId=static_cast<std::int32_t>(ItemTypeId);
+            for(const auto &item:queue.front().offers)previews.objects.push_back(BuildEconItem(item,0,CustomItemIdBase+item.id,0));
+            types.push_back(std::move(previews));
+        }
+        m_sentCareStore=EncodeCareStore(m_live->Items());m_sentCareGeneration=queue.empty()?0:queue.front().generation;
+    }
     Reply(gc_msg::EGCBaseClientMsg::k_EMsgGCClientWelcome, EncodeClientWelcome(welcome));
     ReplyLocalPremier();
 }
@@ -1202,9 +1278,10 @@ bool LocalGameCoordinator::ApplyMatchRewards(std::uint64_t completed, const std:
     if (!m_live || !m_schema || !m_rewardRandom) return false;
     const auto drops = m_live->GrantMatchRewards(*m_schema, completed, m_rewardRandom);
     if (!drops) return false;
-    NotifyRewardDrops(*drops);
     if (afterChange) afterChange();
-    if (m_config.diagnostic) m_config.diagnostic("match rewards: " + std::to_string(drops->size()) + " drops granted and saved");
+    if (m_live->Items().Gameplay().care_packages_enabled) NotifyCarePackage();
+    else NotifyRewardDrops(*drops);
+    if (m_config.diagnostic) m_config.diagnostic("match rewards: " + std::to_string(drops->size()) + " direct drops; care-package queue saved");
     return true;
 }
 
@@ -1214,9 +1291,10 @@ bool LocalGameCoordinator::ApplyLevelRewards(const std::function<void()> &afterC
     if (!m_live || !m_schema || !m_rewardRandom) return false;
     const auto drops = m_live->GrantLevelRewards(*m_schema, m_rewardRandom);
     if (!drops) return false;
-    NotifyRewardDrops(*drops);
     if (afterChange) afterChange();
-    if (m_config.diagnostic) m_config.diagnostic("level rewards: " + std::to_string(drops->size()) + " drops granted and saved; no weekly cooldown");
+    if (m_live->Items().Gameplay().care_packages_enabled) NotifyCarePackage();
+    else NotifyRewardDrops(*drops);
+    if (m_config.diagnostic) m_config.diagnostic("level rewards: " + std::to_string(drops->size()) + " direct drops; care-package queue saved; no weekly cooldown");
     return true;
 }
 
@@ -1241,6 +1319,28 @@ void LocalGameCoordinator::SendMissingCaseKeys()
     }
 }
 
+void LocalGameCoordinator::NotifyCarePackage()
+{
+    if (!m_live) return;
+    const auto &queue=m_live->Items().CarePackages();
+    const auto generation=queue.empty()?0:queue.front().generation;
+    if (generation==m_sentCareGeneration && !m_sentCareStore.empty()) return;
+    if (!m_sentCareStore.empty()) {
+        SoSingleObject removed;removed.typeId=static_cast<std::int32_t>(PersonalStoreTypeId);
+        removed.owner=m_config.owner;removed.version=++m_soVersion;removed.data=m_sentCareStore;
+        Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy,EncodeSoSingleObject(removed));
+    }
+    if (!queue.empty()) for(const auto &item:queue.front().offers) {
+        SoSingleObject preview;preview.typeId=static_cast<std::int32_t>(ItemTypeId);preview.owner=m_config.owner;
+        preview.version=++m_soVersion;preview.data=BuildEconItem(item,0,CustomItemIdBase+item.id,0);
+        Reply(gc_msg::ESOMsg::k_ESOMsg_Create,EncodeSoSingleObject(preview));
+    }
+    m_sentCareStore=EncodeCareStore(m_live->Items());m_sentCareGeneration=generation;
+    SoSingleObject store;store.typeId=static_cast<std::int32_t>(PersonalStoreTypeId);store.owner=m_config.owner;
+    store.version=++m_soVersion;store.data=m_sentCareStore;
+    Reply(gc_msg::ESOMsg::k_ESOMsg_Create,EncodeSoSingleObject(store));
+}
+
 void LocalGameCoordinator::NotifyRewardDrops(const std::vector<InventoryItem> &drops)
 {
     const auto account = static_cast<std::uint32_t>(m_config.owner.id);
@@ -1253,6 +1353,7 @@ void LocalGameCoordinator::NotifyRewardDrops(const std::vector<InventoryItem> &d
         object.version = ++m_soVersion;
         object.data = BuildEconItem(item, account, id, InventoryUnacknowledgedBit);
         Reply(gc_msg::ESOMsg::k_ESOMsg_Create, EncodeSoSingleObject(object));
+        if (m_live && m_live->Items().Gameplay().care_packages_enabled) continue;
         // CEconItemPreviewDataBlock and MatchEndRewardDropsNotification from the target protobuf.
         PbWriter preview;
         preview.Varint(1, account); preview.Varint(2, id); preview.Varint(3, item.defIndex);

@@ -54,6 +54,7 @@ inline constexpr std::uint32_t PickupXpShopRedeem = 23;
 // Quality "unique" from the same schema; the real item in the capture used it too.
 inline constexpr std::uint32_t QualityUnique = 4;
 inline constexpr std::uint32_t QualityStrange = 9;
+inline constexpr std::uint32_t QualityTournament = 12; // installed schema quality: tournament (Souvenir)
 
 // Encodes a CSOEconItem (base_gcmessages.proto of the target client) for a plain paint-kit
 // weapon. StatTrak is not encoded yet. `inventoryPosition` is the backpack slot.
@@ -105,6 +106,8 @@ std::optional<std::vector<std::uint8_t>> SetArmoryBalance(std::span<const std::u
 
 // SO object type of CSOEconItem, as seen in the capture.
 inline constexpr std::uint64_t ItemTypeId = 1;
+// Earlier supplied welcome capture: type 4, generation_time(1), balance(2), four repeated item ids(3).
+inline constexpr std::uint64_t PersonalStoreTypeId = 4;
 
 // Backpack position of the first of our items in a Welcome (clear of the account's own slots); the
 // rest follow in inventory order.

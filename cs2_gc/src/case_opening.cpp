@@ -129,7 +129,7 @@ std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view
     }
 
     const LootItem &drop = chosen->items[Below(random, chosen->items.size())];
-    return MakeLootItem(drop, chosen->rarity, random, odds.statTrakPerMille);
+    return MakeLootItem(drop, chosen->rarity, random, schema.IsGlove(drop.weaponDefIndex) ? 0 : odds.statTrakPerMille);
 }
 
 OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t crateId,
@@ -140,7 +140,8 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
     const InventoryItem *crateItem = inventory.Find(crateId);
     const CrateInfo *crate = crateItem ? schema.FindCrate(crateItem->defIndex) : nullptr;
     const bool keyless = crate && (crate->kind == CrateKind::Capsule || crate->kind == CrateKind::GraffitiBox ||
-                                   crate->kind == CrateKind::Pins);
+                                   crate->kind == CrateKind::Pins || crate->kind == CrateKind::Souvenir ||
+                                   (crate->kind == CrateKind::Case && inventory.Gameplay().free_case_keys && (keyId == 0 || keyId == crateId)));
     if (!crate || (crate->kind != CrateKind::Case && !keyless))
     {
         result.error = OpenError::NoSuchCrate;
@@ -178,7 +179,12 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
     else
     {
         auto openingOdds = odds;
-        if (crateItem->statTrak || schema.ProducesStatTrak(crate->defIndex)) openingOdds.statTrakPerMille = 1000;
+        if (crate->kind == CrateKind::Souvenir)
+        {
+            openingOdds.statTrakPerMille = 0;
+            openingOdds.fifthTier = 13; openingOdds.sixthTier = 3;
+        }
+        else if (crateItem->statTrak || schema.ProducesStatTrak(crate->defIndex)) openingOdds.statTrakPerMille = 1000;
         rolled = RollLootList(schema, crate->lootListName, random, openingOdds);
         // A knife or glove in a case's own loot list (the Black Market and Gauntlet Cases) is a ★ item like any
         // case gold.
@@ -190,6 +196,45 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
         return result;
     }
     InventoryItem item = *rolled;
+    if (crate->kind == CrateKind::Souvenir)
+    {
+        if (!item.paintKitIndex || schema.IsKnife(item.defIndex) || schema.IsGlove(item.defIndex))
+        { result.error = OpenError::EmptyLootList; return result; }
+        item.souvenir = true; item.statTrak = false; item.unusual = false;
+        item.tournamentEvent = crate->tournamentEvent;
+        // Local packages have no recorded match. Select same-event teams/decals without inventing a match stage.
+        auto stickers = schema.SouvenirStickers(crate->tournamentEvent);
+        std::vector<SouvenirSticker> logos, teams, signatures;
+        for (const auto &sticker : stickers)
+            if (sticker.player) signatures.push_back(sticker);
+            else if (sticker.team) teams.push_back(sticker);
+            else logos.push_back(sticker);
+        auto apply = [&](std::uint32_t kit) {
+            if (kit && item.stickers.size() < 4)
+            { AppliedSticker sticker; sticker.slot = static_cast<std::uint32_t>(item.stickers.size()); sticker.kit = kit; item.stickers.push_back(sticker); }
+        };
+        if (!logos.empty()) apply(logos[Below(random, logos.size())].kit);
+        for (unsigned i = 0; i < 2 && !teams.empty(); ++i)
+        {
+            const auto selected = teams[Below(random, teams.size())];
+            apply(selected.kit);
+            (i ? item.tournamentTeam1 : item.tournamentTeam0) = selected.team;
+            std::erase_if(teams, [&](const auto &sticker) { return sticker.team == selected.team; });
+        }
+        const auto map = schema.SouvenirMapSticker(crate->defIndex);
+        if (map) apply(map);
+        else
+        {
+            std::erase_if(signatures, [&](const auto &sticker) {
+                return sticker.team != item.tournamentTeam0 && sticker.team != item.tournamentTeam1;
+            });
+            if (!signatures.empty())
+            {
+                const auto &signature = signatures[Below(random, signatures.size())];
+                apply(signature.kit); item.tournamentPlayer = signature.player;
+            }
+        }
+    }
     if (!golds.empty())
         inventory.SetCasePity(item.unusual ? 0 : std::min(inventory.CasePity() + 1, 99u));
 
@@ -208,10 +253,16 @@ namespace cs2_gc
 std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, const RandomSource &random, const GameplayConfig &config)
 {
     if (!config.match_drops_enabled) return std::nullopt;
-    std::vector<std::uint32_t> cases;
+    std::vector<std::uint32_t> cases, rareCases;
     for (const auto &crate : schema.Crates())
         if (crate.kind == CrateKind::Case && crate.keyDefIndex && !schema.LootTiers(crate.lootListName).empty())
-            cases.push_back(crate.defIndex);
+        {
+            if (crate.name == "crate_cs2gc_black_market" || crate.name == "crate_cs2gc_gauntlet") {
+                if ((crate.name == "crate_cs2gc_black_market" && config.knife_finishes) ||
+                    (crate.name == "crate_cs2gc_gauntlet" && config.knife_finishes && config.glove_finishes))
+                    rareCases.push_back(crate.defIndex);
+            } else cases.push_back(crate.defIndex);
+        }
     auto skins = schema.MatchRewardSkins(config.match_weekly_pool_only != 0);
     std::erase_if(skins, [&](const auto &skin) {
         return schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex).value_or(0) < config.match_skin_min_rarity;
@@ -223,7 +274,11 @@ std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, c
     {
         InventoryItem item;
         if (Below(random, 100) < config.match_case_percent)
-            item.defIndex = cases[Below(random, cases.size())];
+        {
+            const bool rare = !rareCases.empty() && Below(random,10000) < config.reward_rare_case_per_10000;
+            const auto &pool=rare?rareCases:cases;
+            item.defIndex = pool[Below(random,pool.size())];
+        }
         else
         {
             const auto &skin = skins[Below(random, skins.size())];

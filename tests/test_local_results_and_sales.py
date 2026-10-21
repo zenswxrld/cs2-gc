@@ -39,7 +39,7 @@ const EndOfMatch = {SwitchToPanel:id=>assert.equal(id,'eom-local-results'),Start
 const GameInterfaceAPI = {ConsoleCommand:()=>{}};
 const $ = {RegisterForUnhandledEvent:()=>{}, Schedule:(delay,fn)=>{jobs.push({delay,fn});return jobs.length;},
  CreatePanel:(kind,parent,id,props)=>{const panel=make(id);panel.kind=kind;panel.props=props;parent.children.push(panel);return panel;}};
-''' + native_endmatch.SCRIPT.replace('__PLACEMENTS__', '10').replace('__DURATION__','20').replace('__DELAY__','45') + '''
+''' + native_endmatch.SCRIPT.replace('__CARE_PACKAGES__','false').replace('__PLACEMENTS__', '10').replace('__DURATION__','20').replace('__DELAY__','45') + '''
 _LocalResultsInitialize();
 jobs.find(job=>job.delay===0).fn();
 assert.equal(_m_data._m_arrPanelObjects[1].name,'eom-local-results');
@@ -84,6 +84,16 @@ _PopulateContextMenu('1000000000001',''); assert.deepEqual(marketEntries,['inspe
 assert.equal(deleted,0); confirm.no(); assert.equal(deleted,0);
 assert.ok(confirm.text.includes('1 stars')); confirm.yes(); assert.equal(deleted,1);
 '''
+        self.run_js(script)
+
+    def test_handwrap_price_uses_installed_glove_definition_when_native_type_is_missing(self):
+        source = '    function _PopulateContextMenu(id, populateFilterText) {\n        let validEntries = ItemContextEntries.FilterEntries(id, populateFilterText);\n        if (!validEntries.length) {}\n}'
+        data = dict(enabled=True,flat={},rarity=[0,1,2,5,10,25,50],gold=72,stickerPercent=50,goldDefinitions=['5032'])
+        script = """const assert=require('assert');
+const InventoryAPI={GetItemDefinitionName:()=> 'leather_handwraps',GetItemDefinitionIndexFromDefinitionName:()=>5032,GetItemRarity:()=>6};
+const ItemInfo={IsSticker:()=>false,IsPatch:()=>false,IsSprayPaint:()=>false,IsSpraySealed:()=>false,IsKeychain:()=>false,
+IsMelee:()=>false,IsGloves:()=>false,IsWeapon:()=>false};
+"""+native_item_sales.patch(source,data)+"\nassert.equal(_LocalSalePrice('1000000000001'),72);"
         self.run_js(script)
 
     def test_changed_result_script_fails_closed(self):

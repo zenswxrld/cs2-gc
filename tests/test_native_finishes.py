@@ -135,9 +135,10 @@ class NativeFinishes(unittest.TestCase):
             self.assertEqual(kits['rk_am_zebra_crimson']['use_legacy_model'], '1')
             mod = game / finishes.FOLDER
             self.assertTrue((mod / 'pak01_dir.vpk').is_file())
-            english = (mod / 'resource/csgo_english.txt').read_text(encoding='utf-8')
-            self.assertIn('"PaintKit_rk_aa_fade_crimson_Tag"\t"Fade Crimson"', english)
-            self.assertIn('"CSGO_crate_cs2gc_black_market"\t"Black Market Case"', english)
+            # Never ship a language file: overriding csgo_english.txt broke every string in the game.
+            self.assertFalse((mod / 'resource').exists())
+            self.assertEqual(kits['rk_aa_fade_crimson']['description_tag'], 'Fade Crimson')
+            self.assertEqual(case['item_name'], 'Black Market Case')
             icon = (mod / ('panorama/images/' + finishes.CASE_IMAGE + '_png.vtex_c')).read_bytes()
             size = struct.unpack_from('<I', icon, 0)[0]
             self.assertEqual(len(icon) - size, 256 * 192 * 4)

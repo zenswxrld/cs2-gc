@@ -480,3 +480,6 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   cs2_gc_prepare.log and never blocks the launch. `knife_finishes = 0` unmounts everything.
 - NOT yet verified live: inventory icons for new combos (CS2 ships pre-rendered default_generated icons), the
   csgo_english override, the vtex icon, and the recolours rendering. Check these first.
+- 17l: 17k's `resource/csgo_english.txt` override in the cs2_gc_finishes VPK broke ALL game text (raw #tokens
+  everywhere). Removed; never override the language file. Finish and case names are now literal text in
+  description_string/description_tag/item_name; the old file is deleted on the next prepare (stale cleanup).

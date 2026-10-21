@@ -313,12 +313,13 @@ def patch_items_game(source_text, entries, case, case_price=None):
     series = max([int(k) for k in sections.get('revolving_loot_lists', {}) if k.isdigit()] + [0]) + 1
     for kit_id, _, _, _ in entries:
         if kit_id in sections.get('paint_kits', {}): raise ValueError('Paint kit id %s is taken' % kit_id)
-    kit_text = '\n'.join(_block(kit_id, [('name', name), ('description_string', '#PaintKit_' + name),
-                                         ('description_tag', '#PaintKit_' + name + '_Tag')] + sorted(values.items()) +
+    # Names are written as plain text: overriding the game's language file broke every other string (17k).
+    kit_text = '\n'.join(_block(kit_id, [('name', name), ('description_string', title),
+                                         ('description_tag', title)] + sorted(values.items()) +
                                 [('composite_material_path', COMPMAT_DIR + name + '.vcompmat')], 2)
-                         for kit_id, name, _, values in entries)
+                         for kit_id, name, title, values in entries)
     rarity_text = '\n'.join('\t\t' + _quote(name) + '\t\t"ancient"' for _, name, _, _ in entries)
-    case_def = [('item_name', '#CSGO_' + CASE_NAME), ('item_description', '#CSGO_' + CASE_NAME + '_desc'),
+    case_def = [('item_name', CASE_TITLE), ('item_description', CASE_DESCRIPTION),
                 ('name', CASE_NAME), ('image_inventory', CASE_IMAGE)]
     case_def += [(k, base[k]) for k in ('model_player', 'prefab') if k in base]
     for key in ('associated_items', 'tool'):
@@ -438,9 +439,6 @@ def prepare(proxy_directory, config, items_game_text):
     gold = (proxy / 'gold_pools.txt').read_text(encoding='utf-8')
     _, _, kits, _ = schema_info(items_game_text, gold)
     files, entries, case, tokens = plan(items_game_text, gold, titles_from(english, kits), source)
-    tokens['CSGO_' + CASE_NAME] = CASE_TITLE
-    tokens['CSGO_' + CASE_NAME + '_desc'] = CASE_DESCRIPTION
-    files['resource/csgo_english.txt'] = localization(english, tokens).encode('utf-8')
     template = source.read('panorama/images/econ/weapon_cases/crate_operation_ii_png.vtex_c')
     if template is not None and ICON.is_file():
         files['panorama/images/' + CASE_IMAGE + '_png.vtex_c'] = make_vtex(template, ICON.read_bytes())

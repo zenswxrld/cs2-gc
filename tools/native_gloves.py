@@ -65,9 +65,12 @@ DEAD_HAND_PRINT_HUES = {'glove_sport_beadwork_diamonds_purple': 265, 'glove_spor
 # Looked wrong in every colour (printed wave and blue leather; printed flames): no recolours (user's call).
 DEAD_HAND_SKIP = {'glove_specialist_wave_blue', 'glove_sport_flames_orange'}
 HARMONY_DEGREES = 60
-# Region colours just under the muted-shade threshold that the user wants changed: Red Racer's tan suede
-# (g_vId4Color, hue 49, saturation .179).
-DEAD_HAND_EXTRA_ACCENTS = {'glove_sport_racer_red': ('g_vId4Color',)}
+# Pale tint-ID regions (saturation .14-.18, so below the muted-shade threshold) that are whole panels, not
+# printed: Red Racer's tan suede (Id4, confirmed in game), Ultra Violent's pale violet base (Id2, Id3) and
+# Frosty's pale blue panel (Id7). Brocade Flowers' cream (Id4) stays cream on purpose.
+DEAD_HAND_EXTRA_ACCENTS = {'glove_sport_racer_red': ('g_vId4Color',),
+                           'glove_sport_tech_gradient_bright': ('g_vId2Color', 'g_vId3Color'),
+                           'glove_sport_camo_winter': ('g_vId7Color',)}
 # Colours the user approved on screen; always offered, even outside the glove's range.
 DEAD_HAND_EXTRA_THEMES = {'glove_driver_ostrich_purple': ['Sunset'], 'glove_specialist_dragon_blue': ['Inferno'],
                           'glove_specialist_quilted_black': ['Midnight'],

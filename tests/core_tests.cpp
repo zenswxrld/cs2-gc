@@ -1643,6 +1643,52 @@ void ArmoryRedeems()
               "a capsule purchase grants one sticker from that capsule, not the capsule");
     }
 
+    {
+        const auto custom = Schema::Load(R"("items_game" {
+          "rarities" { "ancient" { "value" "6" } }
+          "prefabs" { "weapon_case_base" {} "weapon_case" { "prefab" "weapon_case_base" "associated_item" "50" }
+            "hands_paintable" {} }
+          "items" { "50" { "name" "key" }
+            "500" { "name" "weapon_bayonet" "item_class" "weapon_knife" }
+            "5030" { "name" "gloves_test" "prefab" "hands_paintable" }
+            "60" { "name" "crate_cs2gc_black_market" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
+            "61" { "name" "crate_cs2gc_gauntlet" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "2" } } } }
+          "paint_kits" { "10" { "name" "knife_finish" } "11" { "name" "glove_finish" } }
+          "paint_kits_rarity" { "knife_finish" "ancient" "glove_finish" "ancient" }
+          "client_loot_lists" { "knives" { "knives_ancient" "1" } "knives_ancient" { "[knife_finish]weapon_bayonet" "1" }
+            "gloves" { "gloves_ancient" "1" } "gloves_ancient" { "[glove_finish]gloves_test" "1" } }
+          "revolving_loot_lists" { "1" "knives" "2" "gloves" }
+          "seasonaloperations" { "11" { "redeemable_goods" "xpshop"
+            "operational_point_redeemable" { "item_name" "crate_cs2gc_black_market" "points" "100" "local_rotation_slot" "limited" }
+            "operational_point_redeemable" { "item_name" "crate_cs2gc_gauntlet" "points" "100" "local_rotation_slot" "limited" } } }
+        })");
+        Check(custom.has_value(), "direct custom Armory fixture loads");
+        LiveInventory owned(Inventory{});
+        Armory shop(*custom,11,200);
+        CaseOdds forced; forced.statTrakPerMille = 1000;
+        for (const char *name : {"crate_cs2gc_black_market", "crate_cs2gc_gauntlet"})
+        {
+            const bool glove = std::string_view(name) == "crate_cs2gc_gauntlet";
+            const auto grant = shop.Redeem(request(name,100),owned,[] { return 0ull; },forced);
+            Check(grant.status == Armory::Status::Ok && grant.item.defIndex == (glove ? 5030u : 500u) &&
+                      grant.item.paintKitIndex == (glove ? 11u : 10u) && grant.item.unusual && grant.item.ownerCertificate &&
+                      grant.item.statTrak == !glove,
+                  "custom Armory purchase directly grants its own finished gold; gloves never StatTrak");
+        }
+        Check(shop.Balance() == 0 && owned.Items().Items().size() == 2,
+              "two purchases charge exactly twice and create no cases or keys");
+        const auto saved = Inventory::FromText(owned.Items().ToText());
+        Check(saved && saved->Items().size() == 2 && saved->ArmoryCredits() == 0u,
+              "direct custom rewards and spent stars survive reload");
+        Check(shop.Redeem(request("crate_cs2gc_gauntlet",100),owned,random).status == Armory::Status::NotEnoughCredits &&
+                  owned.Items().Items().size() == 2, "insufficient stars cannot mint another direct gold");
+        Inventory oldCases;
+        const auto oldCase = oldCases.Add({0,61});
+        const auto oldOpen = OpenCase(oldCases,*custom,oldCase,0,[] { return 0ull; },forced);
+        Check(oldOpen.error == OpenError::None && oldOpen.item.defIndex == 5030 && !oldOpen.item.statTrak,
+              "previously owned Gauntlet cases still open normally");
+    }
+
     // Every failure leaves the balance and the inventory exactly as they were.
     const auto unchanged = [&](Armory::Status want, const RedeemRequest &r, const char *what) {
         const auto before = live.Items().Items().size();

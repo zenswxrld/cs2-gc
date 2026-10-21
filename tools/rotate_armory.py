@@ -295,6 +295,18 @@ PREPARE = '''        // Resolve each tile from its own native row, without inher
             const slot = m_localRotation.categories[entry.item_name];
             entry.local_terminal = slot === 'terminal';
             entry.local_souvenir = slot === 'souvenir';
+            entry.local_direct_case = entry.item_name === 'crate_cs2gc_black_market' || entry.item_name === 'crate_cs2gc_gauntlet';
+            if (entry.local_direct_case) {
+                const rewards = m_localRotation.custom_rewards[entry.item_name] || [];
+                if (rewards.length) {
+                    entry.lootlist = rewards.map(pair => InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(pair[0],pair[1]));
+                    entry.entry_type = 'lootlist'; entry.lootlist_item_type = 'weapon';
+                    entry.tile_width = m_tileWidth; entry.tile_height = m_tileHeight;
+                    entry.on_item_activate = _OpenFullScreenInspectItem;
+                    delete entry.suffix_loc_string;
+                }
+                entry.callout = entry.item_name === 'crate_cs2gc_gauntlet' ? 'Random Gauntlet Gloves' : 'Random Black Market Knife';
+            }
             if (slot === 'agent') {
                 entry.lootlist = m_localRotation.agents.map(name => InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
                     InventoryAPI.GetItemDefinitionIndexFromDefinitionName(name), 0));
@@ -346,7 +358,7 @@ def patch_previews(source):
             return panel;
         }'''
     source = source.replace(create, create + agent, 1)
-    source = source.replace("if (ShopEntry.entry_type !== 'crate') {", "if (ShopEntry.local_terminal || ShopEntry.local_souvenir || ShopEntry.entry_type !== 'crate') {", 1)
+    source = source.replace("if (ShopEntry.entry_type !== 'crate') {", "if (ShopEntry.local_terminal || ShopEntry.local_souvenir || ShopEntry.local_direct_case || ShopEntry.entry_type !== 'crate') {", 1)
     placement = '    function PlaceTiles(elTilesContainer, ShopEntry) {'
     source = source.replace(placement, placement + "\n        if (ShopEntry.local_agent) { _LocalPlaceAgentTiles(elTilesContainer, ShopEntry); return; }", 1)
 
@@ -388,7 +400,7 @@ def patch_previews(source):
     return source
 
 
-def patch(source, config, categories=None, agents=None):
+def patch(source, config, categories=None, agents=None, custom_rewards=None):
     if config['armory_howl_enabled'] and not categories:
         raise ValueError('Howl requires the matching generated native catalogue')
     if source.count(ANCHOR) != 1 or source.count(END) != 1 or 'const m_elContentPanel =' not in source:
@@ -396,7 +408,7 @@ def patch(source, config, categories=None, agents=None):
     if 'm_localRotation' in source: raise ValueError('Source is already patched')
     settings = {'enabled': bool(config['armory_rotation_enabled']),
                 'seconds': config['armory_rotation_seconds'], 'slots': config['armory_rotation_slots'],
-                'categories': categories or {}, 'agents': agents or [],
+                'categories': categories or {}, 'agents': agents or [], 'custom_rewards': custom_rewards or {},
                 'counts': {slot: config.get('armory_' + slot + '_slots', 1) for slot in
                            ('collection', 'case', 'capsule', 'charm', 'sticker', 'limited', 'agent', 'terminal', 'souvenir')}}
     source = source.replace('    function _UpdateShopGoods(m_nTrack) {',
@@ -430,9 +442,16 @@ def prepare(proxy_directory, config):
         categories = data['armory_catalogue']
     from armory_rotation_catalog import agent_names
     agents = agent_names((proxy / 'items_game.txt').read_text(encoding='utf-8-sig')) if categories else []
+    reel_path = proxy / 'cs2_gc_black_market_reel.json'
+    reels = json.loads(reel_path.read_text(encoding='utf-8')) if categories and reel_path.exists() else {}
+    # A bounded, evenly spaced preview sample; the GC always rolls the complete case pool.
+    custom_rewards = {}
+    for name in ('crate_cs2gc_black_market','crate_cs2gc_gauntlet'):
+        pool = reels.get(name, [])
+        if pool: custom_rewards[name] = [pool[i*len(pool)//min(64,len(pool))] for i in range(min(64,len(pool)))]
     return install_override(proxy, enabled=config['armory_rotation_enabled'], folder='cs2_gc_armory',
         comment='cs2_gc native armory', owner='cs2-gc-armory-ui-v1',
-        asset='panorama/scripts/xpshop.vjs_c', patch=lambda source: patch(source, config, categories, agents))
+        asset='panorama/scripts/xpshop.vjs_c', patch=lambda source: patch(source, config, categories, agents, custom_rewards))
 
 
 if __name__ == '__main__':

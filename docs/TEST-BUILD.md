@@ -1,6 +1,6 @@
-# CS2-GC test build 23 — glove accents and panel variants
+# CS2-GC test build 24 — glove accents and panel variants
 
-Build tag: `codex-20261021-23`. Includes build22 fixes. Client build25966348.
+Build tag: `codex-20261021-24`. Includes build22 fixes. Client build25966348.
 
 ## Install
 
@@ -11,9 +11,12 @@ Build tag: `codex-20261021-23`. Includes build22 fixes. Client build25966348.
 
 ## Changed in this build
 
+- Armory Black Market and Gauntlet purchases immediately roll one knife or glove from the full corresponding custom pool, charge the displayed price once, and grant the finished item with its owner certificate. No case or key is minted. Existing inventory cases and rare case drops still open normally.
+- Their native Armory pages preview up to64 sampled finishes and hide the key warning; the purchase can roll any finish in the full pool. Native page rendering still needs testing.
+
 - Ordinary glove recolours now target chromatic accent tints instead of tinting every channel. Near-black, grey, white and ambiguous muted channels keep their original colours. Accent brightness/alpha are preserved and saturation is never increased beyond the original.
 - Separate **White Panels**, **Black Panels** and **Inverted Panels** variants recolour the structural neutral tints while keeping the same coloured accents. Small tonal differences are retained. These are named variants in the Gauntlet pool, not a skin-editing menu.
-- **Forest DDPAT Toxic** keeps its exact previous two-tone palette, as approved in your screenshot. Its existing name/ID stays unchanged; panel variants use the new accent policy. Other finishes still need individual live checks.
+- **Forest DDPAT Toxic** keeps its exact previous two-tone palette, as approved in your screenshot. Crimson Web Aurora also keeps its current baseline while its requested green web awaits verified material-mask mapping. Existing names/IDs stay unchanged; panel variants use the new accent policy. Other finishes still need individual live checks.
 - Existing `rg_` recolour names and saved paint-kit IDs are retained. Wear, seed and inventory ownership are not changed. The four shipped unreleased glove finishes are unchanged.
 - `glove_panel_variants=1` defaults on. Set0 to stop those variants dropping; previously generated known variants remain in the schema so owned items can still render. `glove_finishes=0` retains the existing full glove-feature disable; knife_finishes must remain enabled for the shared generated finish pack.
 - Preparation writes **cs2_gc_glove_palettes.json** containing original tint vectors and detected accent channels for diagnosis. A neutral-only palette keeps its original hue rather than guessing a tint channel and painting the whole glove.
@@ -22,10 +25,11 @@ This is material-palette classification, not texture segmentation. It preserves 
 
 ## Test first
 
-1. Confirm Forest DDPAT Toxic still looks the same. Inspect your existing Superconductor Magenta: dark/neutral sections should remain structural, with the coloured accents changed. Equip it in a bot match and check both palms and backs at your existing wear.
-2. Open Gauntlet cases and inspect White/Black/Inverted Panels variants. Compare the same accent theme across panel variants. Test hand wraps, driver, specialist and other glove types too.
-3. Restart and confirm IDs, finishes, wear, seeds and loadout persist. Keep cs2_gc_finish_ids.json.
-4. If a glove still looks flat, unchanged or changes the wrong region, send its exact name, screenshot and cs2_gc_glove_palettes.json. Do not reset the inventory or finish IDs.
+1. Buy Black Market and Gauntlet from the Armory: exactly one knife/glove, one star deduction, no case/key. Inspect/equip/restart. Confirm old cases still open.
+2. Confirm Forest DDPAT Toxic still looks the same. Inspect your existing Superconductor Magenta: dark/neutral sections should remain structural, with the coloured accents changed. Equip it in a bot match and check both palms and backs at your existing wear.
+3. Open Gauntlet cases and inspect White/Black/Inverted Panels variants. Compare the same accent theme across panel variants. Test hand wraps, driver, specialist and other glove types too.
+4. Restart and confirm IDs, finishes, wear, seeds and loadout persist. Keep cs2_gc_finish_ids.json.
+5. If a glove still looks flat, unchanged or changes the wrong region, send its exact name, screenshot and cs2_gc_glove_palettes.json. Do not reset the inventory or finish IDs.
 
 ## Current status
 

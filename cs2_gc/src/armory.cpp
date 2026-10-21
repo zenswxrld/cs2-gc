@@ -79,6 +79,19 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
             item = agent;
         }
     }
+    else if (goods->itemName == "crate_cs2gc_black_market" || goods->itemName == "crate_cs2gc_gauntlet")
+    {
+        // Armory purchases open these custom pools immediately; inventory cases keep normal OpenCase behavior.
+        const auto definition = m_schema.ItemDefIndex(goods->itemName);
+        const auto *crate = definition ? m_schema.FindCrate(*definition) : nullptr;
+        if (crate)
+        {
+            item = RollLootList(m_schema, crate->lootListName, random, odds);
+            if (item && (goods->itemName == "crate_cs2gc_gauntlet" ? m_schema.IsGlove(item->defIndex) : m_schema.IsKnife(item->defIndex)))
+                item->unusual = true;
+            else item.reset();
+        }
+    }
     else if (goods->rotationSlot == "limited" && goods->itemName.starts_with(LootListPrefix))
     {
         std::vector<LootItem> fixed;

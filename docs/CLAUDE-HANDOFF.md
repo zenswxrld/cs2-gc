@@ -1,3 +1,13 @@
+# Build24: direct custom Armory rewards
+
+Armory::Redeem recognizes the exact Black Market/Gauntlet item names and rolls their resolved crate loot list before any credit mutation. Requires the correct knife/glove type, marks unusual, retains limited owner certificate and normal random wear/seed/knife StatTrak; glove StatTrak stays excluded by RollLootList. Existing OpenCase and rare-case rewards unchanged. UI uses saved reel descriptors for up to64 preview entries (full pool remains backend authority), native faux IDs, random-reward labels and suppresses the key warning even if previews are unavailable. Current build tag24.
+
+Latest user likes Crimson Web Aurora but wants green webs over purple panels. Preserve specialist_webs_red/Aurora legacy palette as a baseline; exact web recolour remains pending actual material-mask attribution. User requires finish-specific design/detail preservation across all gloves; do not claim the saturation heuristic achieves that for every finish.
+
+Validation includes direct rewards, one charge/no case/key, glove StatTrak exclusion, save/reload, insufficient credits, old-case opening and preview routing. All26 suites and Windows builds must pass before packaging. Native appearance/UI need live testing. Care-package claim timeout remains unresolved.
+
+---
+
 # Build23: accent-only glove recolours and neutral-panel variants
 
 User requested gloves first. Existing native_gloves.make_glove_finish called finishes.recolor on ALL eight g_vColorTint vectors; it coloured neutral/structural masks too, matching the flat Magenta screenshot. New recolor_accents classifies actual source palette values: chromatic channels (HSV saturation>=.35 and value>.12) receive theme hue with unchanged value/alpha and capped original saturation. Original variants preserve every other channel, including ambiguous muted colours. White/Black/Inverted Panels operate only on neutral/near-black channels, retaining the same accent colours. This is a conservative palette heuristic, not texture segmentation or a per-finish anatomical mask map. Actual client appearance remains unverified.

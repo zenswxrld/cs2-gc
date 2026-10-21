@@ -40,7 +40,8 @@ PANEL_STYLES = {'original': '', 'white': 'White Panels', 'black': 'Black Panels'
 PALETTE_REPORT = 'cs2_gc_glove_palettes.json'
 # User-approved existing finish: keep its exact legacy two-tone palette and saved identity.
 # Panel variants still use accent-only recolouring; approval does not extend to other themes.
-APPROVED_PALETTES = {('gloves/paints/specialist_forest_brown.vcompmat', 'Toxic')}
+APPROVED_PALETTES = {('gloves/paints/specialist_forest_brown.vcompmat', 'Toxic'),
+                     ('gloves/paints/specialist_webs_red.vcompmat', 'Aurora')}
 
 
 def recolor_accents(colors, theme, fade=False, panels='original'):

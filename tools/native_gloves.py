@@ -68,8 +68,30 @@ HARMONY_DEGREES = 60
 # Region colours just under the muted-shade threshold that the user wants changed: Red Racer's tan suede
 # (g_vId4Color, hue 49, saturation .179).
 DEAD_HAND_EXTRA_ACCENTS = {'glove_sport_racer_red': ('g_vId4Color',)}
-# Colours outside a glove's range that the user approved on screen.
-DEAD_HAND_EXTRA_THEMES = {'glove_driver_ostrich_purple': ['Sunset']}
+# Colours the user approved on screen; always offered, even outside the glove's range.
+DEAD_HAND_EXTRA_THEMES = {'glove_driver_ostrich_purple': ['Sunset'], 'glove_specialist_dragon_blue': ['Inferno'],
+                          'glove_specialist_quilted_black': ['Midnight'],
+                          'glove_sport_velvet_red': ['Toxic', 'Magenta'],
+                          'glove_sport_beadwork_diamonds_purple': ['Rose', 'Azure'],
+                          'glove_sport_tech_gradient_bright': ['Aurora', 'Cobalt'], 'glove_sport_racer_red': ['Rose']}
+# User: keep only recolours that look proper; drop ones that barely change. Ash only greys the trim of a printed
+# glove, and a colour within SAME_DEGREES of the glove's own accent colour looks like the original.
+SAME_DEGREES = 20
+
+
+def distinct_themes(picks, own_hue):
+    """Drop Ash and colours that would look like the original (all of a theme's hues near `own_hue`)."""
+    def near(h): return min(abs(h - own_hue) % 360, 360 - abs(h - own_hue) % 360) <= SAME_DEGREES
+    kept = []
+    for name in picks:
+        if name in finishes.THEMES:
+            base, saturation, spread = finishes.THEMES[name]
+            if spread == 0 or near(base): continue
+        elif name in finishes.DUO_THEMES:
+            a, b, saturation = finishes.DUO_THEMES[name]
+            if near(a) and near(b): continue
+        kept.append(name)
+    return kept
 # Every Dead Hand glove gets colours that match its own (user: "use colors that work well with whats already
 # there ... same with all dead hand gloves"). Add a finish here to offer every colour on it again.
 DEAD_HAND_FREE = set()
@@ -420,6 +442,9 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
             elif '/volatile_02/' in compmat and base not in DEAD_HAND_FREE:
                 hue = dead_hand_main_hue(source, compmat)
                 if hue is not None: picks = harmonious_themes(hue)
+            if '/volatile_02/' in compmat and base not in DEAD_HAND_FREE and picks:
+                own = dead_hand_main_hue(source, compmat)
+                if own is not None: picks = distinct_themes(picks, own)
             if base in DEAD_HAND_EXTRA_THEMES and base not in DEAD_HAND_SKIP:
                 picks += [t for t in DEAD_HAND_EXTRA_THEMES[base] if t not in picks]
             # Owned recolours keep rendering even when their colour is no longer offered.

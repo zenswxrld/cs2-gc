@@ -179,7 +179,10 @@ class NativeGloves(unittest.TestCase):
         made, entries, case, _ = gloves.plan(schema, gold, {'glove_driver_fixture_red': 'Wave Chaser'}, source, {}, [],
                                              report=report, inspection=inspection)
         dead = [item for item in case if item.startswith('[rg_glove_driver_fixture_red_')]
-        self.assertEqual(len(dead), gloves.THEMES_PER_GLOVE)  # every theme, original panels only
+        own = gloves.dead_hand_main_hue(source, DEAD_HAND)
+        expected = gloves.distinct_themes(gloves.harmonious_themes(own), own)  # matching colours that look new
+        self.assertTrue(expected and 'Ash' not in expected)
+        self.assertEqual(len(dead), len(expected))  # original panels only
         self.assertTrue(all(item.endswith(']slick_gloves') for item in dead))
         self.assertNotIn('[glove_driver_fixture_red]slick_gloves', case)  # the original stays in its terminal
         self.assertEqual(gloves.dead_hand_test_items(case), dead)  # grant-only test case: Dead Hand recolours only
@@ -233,7 +236,9 @@ class NativeGloves(unittest.TestCase):
             sections = collect(parse(patched))
             test = dict(sections['client_loot_lists'][gloves.TEST_CASE_NAME + '_ancient'])
             gauntlet = dict(sections['client_loot_lists'][gloves.CASE_NAME + '_ancient'])
-            self.assertEqual(len(test), gloves.THEMES_PER_GLOVE)
+            source = finishes.Source(folder=None); source.read = files.get
+            own = gloves.dead_hand_main_hue(source, DEAD_HAND)
+            self.assertEqual(len(test), len(gloves.distinct_themes(gloves.harmonious_themes(own), own)))
             self.assertTrue(set(test) < set(gauntlet))
             self.assertTrue(all(k.startswith('[rg_glove_driver_fixture_red_') for k in test))
             reels = json.loads((proxy / finishes.REEL_FILE).read_text())
@@ -272,7 +277,8 @@ class NativeGloves(unittest.TestCase):
             gloves.DEAD_HAND_PRINT_HUES['glove_driver_fixture_red'] = 190
             _, _, case, _ = gloves.plan(schema, gold, {}, source, {}, [])
             self.assertEqual(sorted(i[len(prefix):-len(']slick_gloves')] for i in case if i.startswith(prefix)),
-                             sorted(t.lower() for t in gloves.harmonious_themes(190)))
+                             sorted(t.lower() for t in gloves.distinct_themes(gloves.harmonious_themes(190),
+                                                                               gloves.dead_hand_main_hue(source, DEAD_HAND))))
             del gloves.DEAD_HAND_PRINT_HUES['glove_driver_fixture_red']
             gloves.DEAD_HAND_SKIP.add('glove_driver_fixture_red')
             owned = {'rg_glove_driver_fixture_red_lime': 39001}

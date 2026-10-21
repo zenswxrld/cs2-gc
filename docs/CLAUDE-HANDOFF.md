@@ -1,3 +1,13 @@
+# Helper26i (Claude): Dead Hand curation — only recolours that look proper
+
+User: "keep the ones that work really well, and ones that dont really change or have clashing colors take
+out". distinct_themes drops Ash (it only greys the trim of a printed glove) and colours whose hues are all
+within 20 degrees of the glove's own accent hue (look like the original), after harmonious_themes.
+DEAD_HAND_EXTRA_THEMES now holds the colours the user approved on screen (Cloud Chaser Inferno, Chesterfield
+Midnight, Occult Toxic/Magenta, Violet Beadwork Rose/Azure, Ultra Violent Aurora/Cobalt, Plum Quill Sunset,
+Red Racer Rose); Brocade Flowers Ember was rejected by the user ("things like this, no"). Red Racer's tan suede
+(g_vId4Color, sat .179) is recoloured via DEAD_HAND_EXTRA_ACCENTS with saturation up to .5.
+
 # Helper26h (Claude): Dead Hand recolours only in colours that match the printed parts
 
 User: "just do the ones that work ... use colors that work well with whats already there ... same with all

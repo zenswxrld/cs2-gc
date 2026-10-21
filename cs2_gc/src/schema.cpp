@@ -316,6 +316,12 @@ bool Schema::IsKnife(std::uint32_t defIndex) const
     return item != m_itemsByIndex.end() && ResolveValue(*item->second, "item_class", m_prefabs) == "weapon_knife";
 }
 
+bool Schema::IsGlove(std::uint32_t defIndex) const
+{
+    const auto item = m_itemsByIndex.find(defIndex);
+    return item != m_itemsByIndex.end() && HasPrefab(*item->second, "hands_paintable", m_prefabs);
+}
+
 bool Schema::LoadGoldPools(std::string_view text)
 {
     const auto parsed = ParseKeyValues(text);
@@ -346,7 +352,7 @@ bool Schema::LoadGoldPools(std::string_view text)
                 return false;
             const auto weapon = m_itemsByIndex.find(skin.weaponDefIndex);
             if (weapon == m_itemsByIndex.end() ||
-                (!IsKnife(skin.weaponDefIndex) && !HasPrefab(*weapon->second, "hands_paintable", m_prefabs)) ||
+                (!IsKnife(skin.weaponDefIndex) && !IsGlove(skin.weaponDefIndex)) ||
                 (skin.paintKitIndex && !SkinAsLootItem(skin.weaponDefIndex, skin.paintKitIndex)))
                 return false;
             pool.push_back(skin);

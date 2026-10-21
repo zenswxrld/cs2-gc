@@ -3,7 +3,7 @@ DEFAULTS = {
     'end_match_screens': 1, 'end_match_duration': 20, 'match_end_delay': 45,
     'armory_collection_slots': 3,
     'armory_charm_slots': 3,
-    'free_case_keys': 1, 'skip_key_selection': 1, 'knife_finishes': 1, 'black_market_price': 100,
+    'free_case_keys': 1, 'skip_key_selection': 1, 'knife_finishes': 1, 'glove_finishes': 1, 'black_market_price': 100,
     'viewmodel_range_percent': 250, 'viewmodel_fov_min': 40, 'viewmodel_fov_max': 90,
     'armory_sticker_slots': 2,
     'armory_case_slots': 2,
@@ -51,7 +51,7 @@ DEFAULTS = {
 }
 LIMITS = {key: (0, 1) for key in DEFAULTS}
 LIMITS.update({key: (0, 1000000) for key in ('kill_xp', 'headshot_xp', 'mvp_xp', 'match_complete_xp')})
-LIMITS.update({'viewmodel_range_percent': (100, 1000), 'viewmodel_fov_min': (1, 179), 'viewmodel_fov_max': (1, 179), 'armory_case_price': (1, 1000000), 'black_market_price': (1, 1000000), 'free_case_keys': (0, 1), 'armory_collection_slots': (0, 6), 'armory_charm_slots': (0, 6), 'armory_sticker_slots': (0, 6), 'armory_case_slots': (0, 6), 'armory_capsule_slots': (0, 6), 'armory_limited_slots': (0, 6), 'armory_agent_slots': (0, 6), 'armory_agent_price': (0, 1000000), 'match_weekly_pool_only': (0, 1), 'item_sales_enabled': (0, 1), 'sell_consumer': (0, 1000000), 'sell_industrial': (0, 1000000), 'sell_mil_spec': (0, 1000000), 'sell_restricted': (0, 1000000), 'sell_classified': (0, 1000000), 'sell_covert': (0, 1000000), 'sell_knife_glove': (0, 1000000), 'sell_sticker_percent': (0, 100), 'sell_music_kit': (0, 1000000), 'sell_container_percent': (0, 100), 'sell_agent_percent': (0, 100), 'premier_rating_variation': (0, 10000), 'premier_bot_spread': (0, 10000)})
+LIMITS.update({'viewmodel_range_percent': (100, 1000), 'viewmodel_fov_min': (1, 179), 'viewmodel_fov_max': (1, 179), 'armory_case_price': (1, 1000000), 'black_market_price': (1, 1000000), 'glove_finishes': (0, 1), 'free_case_keys': (0, 1), 'armory_collection_slots': (0, 6), 'armory_charm_slots': (0, 6), 'armory_sticker_slots': (0, 6), 'armory_case_slots': (0, 6), 'armory_capsule_slots': (0, 6), 'armory_limited_slots': (0, 6), 'armory_agent_slots': (0, 6), 'armory_agent_price': (0, 1000000), 'match_weekly_pool_only': (0, 1), 'item_sales_enabled': (0, 1), 'sell_consumer': (0, 1000000), 'sell_industrial': (0, 1000000), 'sell_mil_spec': (0, 1000000), 'sell_restricted': (0, 1000000), 'sell_classified': (0, 1000000), 'sell_covert': (0, 1000000), 'sell_knife_glove': (0, 1000000), 'sell_sticker_percent': (0, 100), 'sell_music_kit': (0, 1000000), 'sell_container_percent': (0, 100), 'sell_agent_percent': (0, 100), 'premier_rating_variation': (0, 10000), 'premier_bot_spread': (0, 10000)})
 LIMITS.update(armory_terminal_slots=(0, 6), armory_terminal_price=(1, 1000000), end_match_duration=(6, 60), match_end_delay=(25, 120), armory_pity_soft_at=(2, 99), armory_pity_hard_at=(3, 100), armory_top_per_10000=(0, 10000), level_drop_count=(1, 20), armory_howl_star_price=(1, 1000000), premier_placement_wins=(1, 100), premier_start_rating=(0, 99999), premier_win_rating=(0, 10000),
               premier_loss_rating=(0, 10000), premier_max_rating=(1, 99999), premier_bonus_wins=(0, 100), armory_rotation_seconds=(10, 86400), armory_rotation_slots=(1, 60), armory_xp_per_star=(1, 100000), match_drop_count=(1, 20), match_case_percent=(0, 100),
               match_skin_min_rarity=(3, 6), pity_soft_at=(2, 99), pity_hard_at=(3, 100),

@@ -113,6 +113,7 @@ public:
     std::vector<SkinRef> GoldOutcomes(const std::string &collection, bool statTrak) const;
     std::vector<SkinRef> CrateGoldOutcomes(std::uint32_t defIndex) const;
     bool IsKnife(std::uint32_t defIndex) const;
+    bool IsGlove(std::uint32_t defIndex) const;
     std::vector<SkinRef> MatchRewardSkins(bool weeklyOnly = true) const;
     std::vector<std::uint32_t> AgentDefinitions() const;
     bool ProducesStatTrak(std::uint32_t definition) const;

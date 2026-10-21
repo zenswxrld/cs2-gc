@@ -1,4 +1,4 @@
-"""Make the knife-only Black Market Case roll a reel of knives instead of the countdown.
+"""Make the knife-only Black Market Case (and glove-only Gauntlet Case) roll a reel instead of the countdown.
 
 The stock unlock popup (popup_capability_decodable) shows a countdown when the client counts at most one loot list
 item, and it collapses an all-knife list into one "rare special item". For our case only, the reel is filled with
@@ -23,10 +23,12 @@ INSERT = """        if (lootListCount <= 1 && _LocalKnifeReel(caseId)) {
         else if (lootListCount <= 1) {
             _SetUpCaseOpeningCountdown();
         }"""
-HELPER = """    // cs2_gc: the knife-only Black Market Case rolls real knives (sampled when the case was generated).
-    const m_localKnifeReel = __REEL__;
+HELPER = """    // cs2_gc: the knife-only Black Market Case and glove-only Gauntlet Case roll real items (sampled when the
+    // cases were generated).
+    const m_localKnifeReels = __REEL__;
     function _LocalKnifeReel(caseId) {
-        if (InventoryAPI.GetItemDefinitionName(caseId) !== 'crate_cs2gc_black_market' || !m_localKnifeReel.length)
+        const m_localKnifeReel = m_localKnifeReels[InventoryAPI.GetItemDefinitionName(caseId)] || [];
+        if (!m_localKnifeReel.length)
             return false;
         // Like a real case, every reel tile is the gold Rare Special Item; the knife is revealed after the reel.
         const image = InventoryAPI.GetLootListUnusualItemImage(caseId);
@@ -48,13 +50,17 @@ def patch(source, reel):
     if (source.count(ANCHOR) != 1 or source.count(FUNCTION) != 1 or source.count(TILE) != 1
             or '_SetUpCaseOpeningScroll()' not in source):
         raise ValueError('Installed popup_capability_decodable layout has changed; no patch was written')
-    helper = HELPER.replace('__REEL__', json.dumps([[int(a), int(b)] for a, b in reel]))
+    if isinstance(reel, list): reel = {'crate_cs2gc_black_market': reel}  # reel file from before the Gauntlet Case
+    helper = HELPER.replace('__REEL__', json.dumps({name: [[int(a), int(b)] for a, b in pairs]
+                                                   for name, pairs in sorted(reel.items())}, sort_keys=True))
     return source.replace(ANCHOR, INSERT, 1).replace(FUNCTION, helper + FUNCTION, 1).replace(TILE, TILE_INSERT, 1)
 
 
 def prepare(proxy_directory, config):
     path = Path(proxy_directory) / 'cs2_gc_black_market_reel.json'
-    reel = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else []
+    reel = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    if isinstance(reel, list): reel = {'crate_cs2gc_black_market': reel}
+    reel = {name: pairs for name, pairs in reel.items() if pairs}
     return install_override(proxy_directory, enabled=bool(config.get('knife_finishes', 1)) and bool(reel),
                             folder=FOLDER, comment=COMMENT, owner=OWNER, asset=ASSET,
                             patch=lambda source: patch(source, reel))

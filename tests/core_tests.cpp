@@ -3558,12 +3558,14 @@ void ConfiguredRewardsAndPity()
         "5181" { "name" "terminal_gold" "prefab" "volatile_pricing weapon_case_selfopening_collection"
           "tags" { "ItemSet" { "tag_value" "set_test" } }
           "attributes" { "set supply crate series" { "value" "1" } } }
+        "61" { "name" "case_gloves" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "2" } } }
       }
       "paint_kits" { "10" { "name" "blue" } "11" { "name" "red" } "20" { "name" "gold" } }
-      "paint_kits_rarity" { "blue" "rare" "red" "ancient" }
+      "paint_kits_rarity" { "blue" "rare" "red" "ancient" "gold" "ancient" }
       "item_sets" { "set_timed_drops_test" { "items" { "[blue]weapon_test" "1" "[red]weapon_test" "1" } } }
-      "revolving_loot_lists" { "1" "rewards" }
-      "client_loot_lists" { "rewards" { "rewards_rare" "1" "rewards_ancient" "1" }
+      "revolving_loot_lists" { "1" "rewards" "2" "gloves_only" }
+      "client_loot_lists" { "rewards" { "rewards_rare" "1" "rewards_ancient" "1" } "gloves_only" { "gloves_only_ancient" "1" }
+        "gloves_only_ancient" { "[gold]gloves_test" "1" }
         "rewards_rare" { "[blue]weapon_test" "1" } "rewards_ancient" { "[red]weapon_test" "1" } }
     })");
     Check(schema && schema->LoadGoldPools("\"gold_pools\" { \"60\" { \"5030:20\" \"1\" } }"), "pity fixture validated");
@@ -3578,6 +3580,13 @@ void ConfiguredRewardsAndPity()
     const auto gold = OpenCase(*restored, *schema, crate, key, [] { return 9999ull; });
     Check(gold.error == OpenError::None && gold.item.unusual && gold.item.defIndex == 5030 && !gold.item.statTrak && restored->CasePity() == 0,
           "100th eligible case guarantees real gold and resets without StatTrak gloves");
+    {
+        Inventory gloveInventory;
+        const auto gloveCase = gloveInventory.Add({0, 61}), gloveKey = gloveInventory.Add({0, 50});
+        const auto glove = OpenCase(gloveInventory, *schema, gloveCase, gloveKey, [] { return 0ull; });
+        Check(glove.error == OpenError::None && glove.item.defIndex == 5030 && glove.item.unusual,
+              "a glove in a case's own loot list (the Gauntlet Case) is a gold item");
+    }
     for (auto def : {5176u, 5181u}) restored->Add({0, def});
     LiveInventory terminals(*restored);
     const auto terminalId = [&](auto def) {
@@ -3604,7 +3613,7 @@ void ConfiguredRewardsAndPity()
         const auto drops = RollMatchDrops(*schema, [&] { return engine(); });
         Check(drops && drops->size() == 3, "every completed match produces exactly three drops");
         for (const auto &drop : *drops) {
-            if (!drop.paintKitIndex) { ++caseDrops; Check(drop.defIndex == 60, "only keyed cases in case reward pool"); }
+            if (!drop.paintKitIndex) { ++caseDrops; Check(drop.defIndex == 60 || drop.defIndex == 61, "only keyed cases in case reward pool"); }
             else { ++skinDrops; Check(drop.rarity >= 3 && drop.rarity <= 6 && !drop.unusual && !drop.statTrak, "weapon rewards blue and above, no golds"); }
         }
     }

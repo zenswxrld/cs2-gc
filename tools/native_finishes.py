@@ -86,28 +86,31 @@ def brightness(rgb):
     return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
 
 
-def recolor(colors, theme, fade=False):
-    """colors: four [r, g, b, a] in 0..1. Returns four new colours with the theme's hue, brightness kept."""
-    order = sorted(range(4), key=lambda i: brightness(colors[i]))
-    out = [None] * 4
+def recolor(colors, theme, fade=False, keep_value=False):
+    """colors: [r, g, b, a] in 0..1 (four for a weapon finish, eight glove tints). Returns new colours with the
+    theme's hue; brightness is kept (keep_value: exactly, for glove tints that multiply a texture)."""
+    count = len(colors)
+    last = max(1, count - 1)
+    order = sorted(range(count), key=lambda i: brightness(colors[i]))
+    out = [None] * count
     for rank, index in enumerate(order):
         r, g, b, a = colors[index]
         value = max(r, g, b)
         if theme in GRADIENT_THEMES:
             hues, saturation = GRADIENT_THEMES[theme]
-            hue = hues[index]
+            hue = hues[index * 4 // count]
         elif theme in DUO_THEMES:
             hue_a, hue_b, saturation = DUO_THEMES[theme]
-            hue = hue_a if rank in (0, 3) else hue_b
+            hue = hue_a if rank in (0, count - 1) else hue_b
         else:
             base, saturation, spread = THEMES[theme]
             if fade and spread:
                 # A fade needs visible movement: sweep 80 degrees along the finish's own colour order.
-                hue = (base + 80 * (index / 3.0 - 0.5)) % 360
+                hue = (base + 80 * (index / last - 0.5)) % 360
             else:
-                hue = (base + spread * (rank / 3.0 - 0.5)) % 360
+                hue = (base + spread * (rank / last - 0.5)) % 360
         saturation *= 0.6 if value > 0.85 else 0.85 if value < 0.2 else 1.0
-        value = min(0.97, 0.12 + 0.88 * value ** 0.85)
+        if not keep_value: value = min(0.97, 0.12 + 0.88 * value ** 0.85)
         rr, gg, bb = colorsys.hsv_to_rgb(hue / 360.0, saturation, value)
         out[index] = [rr, gg, bb, a]
     return out
@@ -260,16 +263,17 @@ def schema_info(source_text, gold_pools_text):
 REEL_FILE = 'cs2_gc_black_market_reel.json'
 
 
-def reel_sample(source_text, gold_pools_text, entries, case, size=60):
+def reel_sample(source_text, gold_pools_text, entries, case, size=60, defs=None):
     """[[knife def index, paint kit id], ...] for the opening reel: the client collapses an all-knife loot list to
-    one placeholder, so native_knife_reel.py fills the reel from this list instead."""
+    one placeholder, so native_knife_reel.py fills the reel from this list instead. defs: {item name: def index}
+    for other gold items (gloves); knives by default."""
     _, knives, kits, _ = schema_info(source_text, gold_pools_text)
-    defs = {name: int(key) for key, name in knives.items()}
+    if defs is None: defs = {name: int(key) for key, name in knives.items()}
     ids = {name: int(key) for name, (key, _) in kits.items()}
     ids.update({name: int(kit_id) for kit_id, name, _, _ in entries})
     pairs = []
     for entry in case:
-        match = re.fullmatch(r'\[([^\]]+)\](weapon_\w+)', entry)
+        match = re.fullmatch(r'\[([^\]]+)\](\w+)', entry)
         if match and match.group(2) in defs and match.group(1) in ids:
             pairs.append([defs[match.group(2)], ids[match.group(1)]])
     rng = random.Random(len(pairs))
@@ -361,47 +365,61 @@ def _block(key, values, indent):
     return '\n'.join(lines)
 
 
-def patch_items_game(source_text, entries, case, case_price=None):
-    """Add the recolour paint kits and the knife-only Black Market Case to an items_game override."""
+def patch_items_game(source_text, entries, case, case_price=None, extra_cases=()):
+    """Add the recolour paint kits and the knife-only Black Market Case to an items_game override.
+
+    extra_cases: more gold-only cases as dicts (name, title, description, base, items), e.g. the Gauntlet Case."""
     from native_tradeups import parse as parse_spans
-    if CASE_NAME in source_text: raise ValueError('items_game already has the Black Market Case')
+    cases = [dict(name=CASE_NAME, title=CASE_TITLE, description=CASE_DESCRIPTION, base=CASE_BASE, items=case)]
+    cases += list(extra_cases)
+    for spec in cases:
+        if spec['name'] in source_text: raise ValueError('items_game already has the %s' % spec['title'])
     sections = collect(parse(source_text))
     used_ids = set(sections.get('items', {}))
-    case_id = next(str(i) for i in range(FIRST_CASE_ID, FIRST_CASE_ID + 1000) if str(i) not in used_ids)
-    base = sections.get('items', {}).get(CASE_BASE)
-    if not isinstance(base, list): raise ValueError('Base case %s missing' % CASE_BASE)
-    base = as_dict(base)
-    series = max([int(k) for k in sections.get('revolving_loot_lists', {}) if k.isdigit()] + [0]) + 1
+    series = max([int(k) for k in sections.get('revolving_loot_lists', {}) if k.isdigit()] + [0])
     for kit_id, _, _, _ in entries:
         if kit_id in sections.get('paint_kits', {}): raise ValueError('Paint kit id %s is taken' % kit_id)
     # Names are written as plain text: overriding the game's language file broke every other string (17k).
-    kit_text = '\n'.join(_block(kit_id, [('name', name), ('description_string', title),
-                                         ('description_tag', title)] + sorted(values.items()) +
-                                [('composite_material_path', COMPMAT_DIR + name + '.vcompmat')], 2)
+    kit_text = '\n'.join(_block(kit_id, [('name', name), ('description_string', title), ('description_tag', title)] +
+                                sorted((k, v) for k, v in values.items() if k != 'composite_material_path') +
+                                [('composite_material_path',
+                                  values.get('composite_material_path') or COMPMAT_DIR + name + '.vcompmat')], 2)
                          for kit_id, name, title, values in entries)
     rarity_text = '\n'.join('\t\t' + _quote(name) + '\t\t"ancient"' for _, name, _, _ in entries)
-    case_def = [('item_name', CASE_TITLE), ('item_description', CASE_DESCRIPTION),
-                ('name', CASE_NAME), ('image_inventory', CASE_IMAGE)]
-    case_def += [(k, base[k]) for k in ('model_player', 'prefab') if k in base]
-    for key in ('associated_items', 'tool'):
-        if isinstance(base.get(key), list): case_def.append((key, base[key]))
-    case_def.append(('attributes', [('set supply crate series', [('attribute_class', 'supply_crate_series'),
-                                                                 ('value', str(series))])]))
-    item_text = _block(case_id, case_def, 2)
-    tier = CASE_NAME + '_ancient'
-    lists_text = _block(CASE_NAME, [(tier, '1')], 2) + '\n' + _block(tier, [(entry, '1') for entry in case], 2)
-    revolving_text = '\t\t' + _quote(str(series)) + '\t\t' + _quote(CASE_NAME)
+    item_texts, list_texts, revolving_texts, details = [], [], [], {'kits': len(entries)}
+    for spec in cases:
+        base = sections.get('items', {}).get(spec['base'])
+        if not isinstance(base, list): raise ValueError('Base case %s missing' % spec['base'])
+        base = as_dict(base)
+        case_id = next(str(i) for i in range(FIRST_CASE_ID, FIRST_CASE_ID + 1000) if str(i) not in used_ids)
+        used_ids.add(case_id)
+        series += 1
+        case_def = [('item_name', spec['title']), ('item_description', spec['description']),
+                    ('name', spec['name']), ('image_inventory', 'econ/weapon_cases/' + spec['name'])]
+        case_def += [(k, base[k]) for k in ('model_player', 'prefab') if k in base]
+        for key in ('associated_items', 'tool'):
+            if isinstance(base.get(key), list): case_def.append((key, base[key]))
+        case_def.append(('attributes', [('set supply crate series', [('attribute_class', 'supply_crate_series'),
+                                                                     ('value', str(series))])]))
+        item_texts.append(_block(case_id, case_def, 2))
+        tier = spec['name'] + '_ancient'
+        list_texts.append(_block(spec['name'], [(tier, '1')], 2) + '\n' +
+                          _block(tier, [(entry, '1') for entry in spec['items']], 2))
+        revolving_texts.append('\t\t' + _quote(str(series)) + '\t\t' + _quote(spec['name']))
+        if spec['name'] == CASE_NAME:
+            details.update(case=CASE_NAME, case_id=case_id, series=series, case_items=len(spec['items']))
+        else:
+            details[spec['name']] = dict(case_id=case_id, series=series, case_items=len(spec['items']))
     top = parse_spans(source_text).one('items_game')
     inserts = {}
-    for key, text in (('paint_kits', kit_text), ('paint_kits_rarity', rarity_text), ('items', item_text),
-                      ('client_loot_lists', lists_text), ('revolving_loot_lists', revolving_text)):
+    for key, text in (('paint_kits', kit_text), ('paint_kits_rarity', rarity_text), ('items', '\n'.join(item_texts)),
+                      ('client_loot_lists', '\n'.join(list_texts)), ('revolving_loot_lists', '\n'.join(revolving_texts))):
         nodes = [node for node in top.children if node.key == key and node.children is not None]
         if not nodes: raise ValueError('items_game has no %s section' % key)
         inserts[nodes[-1].end - 1] = inserts.get(nodes[-1].end - 1, '') + '\n' + text + '\n\t'
     for position in sorted(inserts, reverse=True):
         source_text = source_text[:position] + inserts[position] + source_text[position:]
-    return source_text, {'case': CASE_NAME, 'case_id': case_id, 'series': series, 'kits': len(entries),
-                         'case_items': len(case)}
+    return source_text, details
 
 
 def localization(english_text, tokens):
@@ -497,6 +515,7 @@ def prepare(proxy_directory, config, items_game_text):
     english = source.read('resource/csgo_english.txt')
     if english is None: raise ValueError('resource/csgo_english.txt not found in the installed VPK')
     english = english.decode('utf-8-sig')
+    template = source.read('panorama/images/econ/weapon_cases/crate_operation_ii_png.vtex_c')
     gold = (proxy / 'gold_pools.txt').read_text(encoding='utf-8')
     _, _, kits, _ = schema_info(items_game_text, gold)
     ids_path = proxy / 'cs2_gc_finish_ids.json'
@@ -504,14 +523,30 @@ def prepare(proxy_directory, config, items_game_text):
         known = json.loads(ids_path.read_text(encoding='utf-8')) if ids_path.is_file() else {}
     except ValueError:
         known = {}
-    files, entries, case, tokens = plan(items_game_text, gold, titles_from(english, kits), source, known)
+    titles = titles_from(english, kits)
+    files, entries, case, tokens = plan(items_game_text, gold, titles, source, known)
+    glove_entries, glove_case, glove_defs = [], [], {}
+    if config.get('glove_finishes', 1):
+        import native_gloves
+        glove_files, glove_entries, glove_case, glove_defs = native_gloves.plan(
+            items_game_text, gold, titles, source, known, [kit_id for kit_id, _, _, _ in entries])
+        files.update(glove_files)
+        if glove_case and template is not None and native_gloves.ICON.is_file():
+            files['panorama/images/econ/weapon_cases/' + native_gloves.CASE_NAME + '_png.vtex_c'] = \
+                make_vtex(template, native_gloves.ICON.read_bytes())
+    entries += glove_entries
     known.update({name: int(kit_id) for kit_id, name, _, _ in entries})
     atomic_write(ids_path, json.dumps(known, indent=1, sort_keys=True) + '\n')
-    template = source.read('panorama/images/econ/weapon_cases/crate_operation_ii_png.vtex_c')
     if template is not None and ICON.is_file():
         files['panorama/images/' + CASE_IMAGE + '_png.vtex_c'] = make_vtex(template, ICON.read_bytes())
-    patched, details = patch_items_game(items_game_text, entries, case)
-    atomic_write(proxy / REEL_FILE, json.dumps(reel_sample(items_game_text, gold, entries, case)) + '\n')
+    extra = []
+    reels = {CASE_NAME: reel_sample(items_game_text, gold, entries, case)}
+    if glove_case:
+        import native_gloves
+        extra.append(native_gloves.case_spec(glove_case))
+        reels[native_gloves.CASE_NAME] = reel_sample(items_game_text, gold, entries, glove_case, defs=glove_defs)
+    patched, details = patch_items_game(items_game_text, entries, case, extra_cases=extra)
+    atomic_write(proxy / REEL_FILE, json.dumps(reels, sort_keys=True) + '\n')
     atomic_write(manifest_path, json.dumps(dict(owner=OWNER, files=len(files), **details), indent=2) + '\n')
     wanted = {mod / path for path in files}
     for path, content in files.items():
@@ -527,8 +562,8 @@ def prepare(proxy_directory, config, items_game_text):
     fallback = source.read(FALLBACK_ICON)
     icons = []
     if fallback is not None:
-        for entry in case:
-            match = re.fullmatch(r'\[([^\]]+)\](weapon_\w+)', entry)
+        for entry in case + glove_case:
+            match = re.fullmatch(r'\[([^\]]+)\](\w+)', entry)
             if not match: continue
             for wear in WEARS:
                 path = '%s%s_%s_%s_png.vtex_c' % (ICON_DIR, match.group(2), match.group(1), wear)
@@ -540,7 +575,8 @@ def prepare(proxy_directory, config, items_game_text):
         if not backup.exists():
             with backup.open('x', encoding='utf-8', newline='') as output: output.write(current)
         atomic_write(info, mounted); changed = True
-    return patched, ('%d recolours, %d knives in the %s%s' % (len(entries), len(case), CASE_TITLE,
+    gloves = ', %d gloves in the Gauntlet Case' % len(glove_case) if glove_case else ''
+    return patched, ('%d recolours, %d knives in the %s%s%s' % (len(entries), len(case), CASE_TITLE, gloves,
                      '; RESTART CS2 ONCE' if changed else ''))
 
 

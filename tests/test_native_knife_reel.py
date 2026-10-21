@@ -37,12 +37,15 @@ const InventoryAPI = {GetLootListItemsCount: () => 1, GetItemDefinitionName: () 
 const $ = {GetContextPanel: () => ({Data: () => data})};
 function _SetUpCaseOpeningCountdown() { calls.push('countdown'); }
 function _SetUpCaseOpeningScroll() { calls.push('scroll'); }
-''' + reel.patch(SOURCE, [[507, 38], [500, 30001]]) + '''
+''' + reel.patch(SOURCE, {'crate_cs2gc_black_market': [[507, 38], [500, 30001]],
+                         'crate_cs2gc_gauntlet': [[5030, 30500]]}) + '''
 _ShowUnlockAnimation();
 assert.deepEqual(calls, ['scroll']);
 assert.deepEqual(data.aItemsInLootlist, [{id: '507:38', weight: 1}, {id: '500:30001', weight: 1}]);
 assert.equal(data.unusualItemImagePath, 'econ/weapon_cases/default_rare_item.png');
 calls = []; _UpdateScrollTile('ScrollList', {}, '507:38'); assert.deepEqual(calls, ['gold']);
+name = 'crate_cs2gc_gauntlet'; data = {}; calls = []; _ShowUnlockAnimation(); assert.deepEqual(calls, ['scroll']);
+assert.deepEqual(data.aItemsInLootlist, [{id: '5030:30500', weight: 1}]);
 name = 'crate_operation_ii'; data = {}; calls = []; _ShowUnlockAnimation(); assert.deepEqual(calls, ['countdown']);
 calls = []; _UpdateScrollTile('ScrollList', {}, '1'); assert.deepEqual(calls, []);
 '''
@@ -52,6 +55,7 @@ calls = []; _UpdateScrollTile('ScrollList', {}, '1'); assert.deepEqual(calls, []
     def test_layout_change_is_refused(self):
         with self.assertRaises(ValueError): reel.patch('nothing', [])
         with self.assertRaises(ValueError): reel.patch(reel.patch(SOURCE, []), [])
+        self.assertIn('"crate_cs2gc_black_market": [[507, 38]]', reel.patch(SOURCE, [[507, 38]]))  # old reel file
 
 
 if __name__ == '__main__':

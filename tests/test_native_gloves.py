@@ -86,6 +86,28 @@ def dead_hand_files():
 
 
 class NativeGloves(unittest.TestCase):
+    def setUp(self):
+        # The Dead Hand recolour rules stay tested even though the user turned the feature off.
+        self.dead_hand = gloves.DEAD_HAND_RECOLOURS
+        gloves.DEAD_HAND_RECOLOURS = True
+
+    def tearDown(self):
+        gloves.DEAD_HAND_RECOLOURS = self.dead_hand
+
+    def test_dead_hand_recolours_are_off_but_owned_ones_still_render(self):
+        gloves.DEAD_HAND_RECOLOURS = False
+        schema = SCHEMA_GLOVES.replace('"5030" {', '"5031" { "name" "slick_gloves" "prefab" "hands_paintable" }\n\t\t"5030" {').replace(
+            '"1001" {', '"1399" { "name" "glove_driver_fixture_red" "description_tag" "#PaintKit_fixture_Tag" '
+                        '"composite_material_path" "%s" }\n\t\t"1001" {' % DEAD_HAND)
+        gold = GOLD_GLOVES.replace('"5030:10037" "1"', '"5030:10037" "1" "5031:1399" "1"')
+        files = glove_files(); files.update(dead_hand_files())
+        source = finishes.Source(folder=None); source.read = files.get; source.exists = lambda name: name in files
+        owned = {'rg_glove_driver_fixture_red_cobalt': 39002}
+        _, entries, case, _ = gloves.plan(schema, gold, {}, source, owned, [])
+        self.assertFalse(gloves.dead_hand_test_items(case))  # nothing to drop, so no Dead Hand Test Case either
+        self.assertTrue(any(item.startswith('[rg_sporty_purple_') for item in case))  # classic gloves unchanged
+        self.assertIn(('39002', 'rg_glove_driver_fixture_red_cobalt'), [(k, n) for k, n, _, _ in entries])
+
     def test_composite_diagnostic_keeps_nested_override_types_names_and_values(self):
         root=obj(('m_Points',Node(kv3.ARRAY,[obj(('color',Node(kv3.ARRAY,
             [Node(kv3.FLOAT,.2),Node(kv3.FLOAT,.8)])),('color',string('repeated-name')))])),
@@ -179,7 +201,10 @@ class NativeGloves(unittest.TestCase):
         made, entries, case, _ = gloves.plan(schema, gold, {'glove_driver_fixture_red': 'Wave Chaser'}, source, {}, [],
                                              report=report, inspection=inspection)
         dead = [item for item in case if item.startswith('[rg_glove_driver_fixture_red_')]
-        self.assertEqual(len(dead), gloves.THEMES_PER_GLOVE)  # every theme, original panels only
+        own = gloves.dead_hand_main_hue(source, DEAD_HAND)
+        expected = gloves.distinct_themes(gloves.harmonious_themes(own), own)  # matching colours that look new
+        self.assertTrue(expected and 'Ash' not in expected)
+        self.assertEqual(len(dead), len(expected))  # original panels only
         self.assertTrue(all(item.endswith(']slick_gloves') for item in dead))
         self.assertNotIn('[glove_driver_fixture_red]slick_gloves', case)  # the original stays in its terminal
         self.assertEqual(gloves.dead_hand_test_items(case), dead)  # grant-only test case: Dead Hand recolours only
@@ -233,11 +258,80 @@ class NativeGloves(unittest.TestCase):
             sections = collect(parse(patched))
             test = dict(sections['client_loot_lists'][gloves.TEST_CASE_NAME + '_ancient'])
             gauntlet = dict(sections['client_loot_lists'][gloves.CASE_NAME + '_ancient'])
-            self.assertEqual(len(test), gloves.THEMES_PER_GLOVE)
+            source = finishes.Source(folder=None); source.read = files.get
+            own = gloves.dead_hand_main_hue(source, DEAD_HAND)
+            self.assertEqual(len(test), len(gloves.distinct_themes(gloves.harmonious_themes(own), own)))
             self.assertTrue(set(test) < set(gauntlet))
             self.assertTrue(all(k.startswith('[rg_glove_driver_fixture_red_') for k in test))
             reels = json.loads((proxy / finishes.REEL_FILE).read_text())
             self.assertTrue(reels[gloves.TEST_CASE_NAME] and all(p[0] == 5031 for p in reels[gloves.TEST_CASE_NAME]))
+
+    def test_camo_hand_wraps_get_no_new_panel_variants_and_owned_ones_render_as_original(self):
+        schema = SCHEMA_GLOVES.replace('sporty_purple', 'handwrap_camo_grey')
+        files = glove_files()
+        files['gloves/paints/handwrap_camo_grey.vcompmat_c'] = files['gloves/paints/sporty_purple.vcompmat_c']
+        source = finishes.Source(folder=None); source.read = files.get; source.exists = lambda path: path in files
+        made, entries, case, _ = gloves.plan(schema, GOLD_GLOVES, {}, source, {}, [])
+        self.assertTrue(case and not any('_panels_' in item for item in case))
+        self.assertFalse(any('_panels_' in name for _, name, _, _ in entries))
+        original = sorted(name for _, name, _, _ in entries)[0]
+        owned = original + '_panels_white'
+        made, entries, case, _ = gloves.plan(schema, GOLD_GLOVES, {}, source, {owned: 39000}, [])
+        self.assertIn(('39000', owned), [(kit, name) for kit, name, _, _ in entries])  # still renders for its owner
+        self.assertNotIn('[%s]sporty_gloves' % owned, case)
+        def tints(name):
+            _, blocks = kv3.read_resource(made[gloves.VMAT_DIR + name + '.vmat_c'])
+            return {k: [round(x.value, 5) for x in v.value]
+                    for k, v in gloves._tints(kv3.read_kv3(dict(blocks)['DATA'])[1]).items()}
+        self.assertEqual(tints(owned), tints(original))  # same colours as the original panels
+
+    def test_printed_dead_hand_gloves_get_matching_colours_and_skipped_ones_keep_owned_items(self):
+        self.assertEqual(gloves.harmonious_themes(355), ['Crimson', 'Ember', 'Amber', 'Magenta', 'Rose', 'Ash',
+                                                         'Sunset', 'Inferno'])
+        schema = SCHEMA_GLOVES.replace('"5030" {', '"5031" { "name" "slick_gloves" "prefab" "hands_paintable" }\n\t\t"5030" {').replace(
+            '"1001" {', '"1399" { "name" "glove_driver_fixture_red" "description_tag" "#PaintKit_fixture_Tag" '
+                        '"composite_material_path" "%s" }\n\t\t"1001" {' % DEAD_HAND)
+        gold = GOLD_GLOVES.replace('"5030:10037" "1"', '"5030:10037" "1" "5031:1399" "1"')
+        files = glove_files(); files.update(dead_hand_files())
+        source = finishes.Source(folder=None); source.read = files.get; source.exists = lambda name: name in files
+        prefix = '[rg_glove_driver_fixture_red_'
+        try:
+            gloves.DEAD_HAND_PRINT_HUES['glove_driver_fixture_red'] = 190
+            _, _, case, _ = gloves.plan(schema, gold, {}, source, {}, [])
+            self.assertEqual(sorted(i[len(prefix):-len(']slick_gloves')] for i in case if i.startswith(prefix)),
+                             sorted(t.lower() for t in gloves.distinct_themes(gloves.harmonious_themes(190),
+                                                                               gloves.dead_hand_main_hue(source, DEAD_HAND))))
+            del gloves.DEAD_HAND_PRINT_HUES['glove_driver_fixture_red']
+            gloves.DEAD_HAND_SKIP.add('glove_driver_fixture_red')
+            owned = {'rg_glove_driver_fixture_red_lime': 39001}
+            _, entries, case, _ = gloves.plan(schema, gold, {}, source, owned, [])
+            self.assertFalse([i for i in case if i.startswith(prefix)])
+            self.assertIn(('39001', 'rg_glove_driver_fixture_red_lime'), [(k, n) for k, n, _, _ in entries])
+        finally:
+            gloves.DEAD_HAND_PRINT_HUES.pop('glove_driver_fixture_red', None)
+            gloves.DEAD_HAND_SKIP.discard('glove_driver_fixture_red')
+
+    def test_dead_hand_finish_with_only_wear_edge_accents_is_not_offered(self):
+        files = glove_files(); files.update(dead_hand_files())
+        _, blocks = kv3.read_resource(files[DEAD_HAND_VMAT + '_c'])
+        guid, root = kv3.read_kv3(dict(blocks)['DATA'])
+        for entry in root.get('m_vectorParams').value:
+            if entry.get('m_name').value.startswith(('g_vId', 'g_vSurface')):
+                for channel in entry.get('m_value').value[:3]: channel.value = .9
+        root.get('m_vectorParams').value.append(vector('g_vDamageBevelColorTint1', [.8, .4, .2, 0]))
+        files[DEAD_HAND_VMAT + '_c'] = kv3.write_resource(0, [['DATA', kv3.write_kv3(GUID, root)]])
+        source = finishes.Source(folder=None); source.read = files.get; source.exists = lambda name: name in files
+        report = {}
+        self.assertIsNotNone(gloves.make_dead_hand_finish(source, DEAD_HAND, 'rg_x', 'Teal', report=report))
+        self.assertEqual(report[DEAD_HAND]['accent_channels'], [])  # wear-edge tint only: not sold as a recolour
+        self.assertEqual(report[DEAD_HAND]['accent_vectors'], ['g_vDamageBevelColorTint1'])
+
+    def test_dead_hand_muted_shades_of_an_accent_follow_it_but_cream_and_grey_stay(self):
+        # Plum Quill: strong purple accents, muted purples (~.3) on the ostrich, plus cream and white.
+        colours = [[.20, .08, .33, .7], [.16, .05, .38, 1], [.47, .41, .58, .5], [.43, .35, .52, .6],
+                   [1, 1, 1, 1], [.87, .80, .72, 0], [.5, .5, .5, 1]]
+        picked = gloves.dead_hand_accents(colours)
+        self.assertEqual(picked, {0, 1, 2, 3})
 
     def test_gauntlet_case_has_glove_recolours_and_the_unreleased_finishes(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -904,6 +904,13 @@ State &Init()
                     const std::string goldText((std::istreambuf_iterator<char>(goldFile)), {});
                     s.log->Write(schema->LoadGoldPools(goldText) ? "gold trade-ups: validated gold_pools.txt loaded"
                                                                : "gold trade-ups: gold_pools.txt missing or incompatible with items_game.txt");
+                    {
+                        std::ifstream familyFile(std::filesystem::path(s.directory + L"cs2_gc_skin_families.txt"), std::ios::binary);
+                        const std::string familyText((std::istreambuf_iterator<char>(familyFile)), {});
+                        if (!familyText.empty())
+                            s.log->Write(schema->LoadSkinFamilies(familyText) ? "custom collections: colour families loaded"
+                                                                              : "custom collections: cs2_gc_skin_families.txt invalid; families off");
+                    }
                     if (const std::size_t repaired = live->RepairCollectionStatTrak(*schema))
                     {
                         s.log->Write("inventory: cleared invalid StatTrak flags on " + std::to_string(repaired) +
@@ -994,7 +1001,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: claude-20261021-26e");
+        s.log->Write("test build: claude-20261021-26q");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");

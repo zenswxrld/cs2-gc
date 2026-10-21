@@ -4129,6 +4129,39 @@ void SouvenirPackagesAndHandwraps()
 
 }
 
+void CustomSkinFamilies()
+{
+    auto schema=Schema::Load(R"("items_game" {
+      "rarities" { "common" { "value" "1" } "legendary" { "value" "5" } }
+      "items" { "7" { "name" "weapon_test" "item_rarity" "common" } }
+      "paint_kits" { "30" { "name" "cgf_doppler_legendary" } "31" { "name" "am_doppler_phase1" } "32" { "name" "rk_am_doppler_phase1_lava" }
+        "33" { "name" "plain" } }
+      "paint_kits_rarity" { "cgf_doppler_legendary" "legendary" "plain" "legendary" }
+      "client_loot_lists" { "set_cs2gc_doppler" { "set_cs2gc_doppler_legendary" "1" }
+        "set_cs2gc_doppler_legendary" { "[cgf_doppler_legendary]weapon_test" "1" } }
+    })");
+    Check(schema.has_value(),"family fixture loads");
+    std::mt19937_64 engine(5);
+    const auto random=[&]{return engine();};
+    auto before=RollLootList(*schema,"set_cs2gc_doppler",random);
+    Check(before && before->paintKitIndex==30,"without families the collection grants the listed finish");
+    Check(!schema->LoadSkinFamilies("\"skin_families\" { \"missing_kit\" { \"am_doppler_phase1\" \"1\" } }"),
+          "a family kit that is not in the schema is refused");
+    Check(schema->LoadSkinFamilies("\"skin_families\" { \"cgf_doppler_legendary\" { \"am_doppler_phase1\" \"1\" "
+                                   "\"rk_am_doppler_phase1_lava\" \"1\" \"gone\" \"1\" } }"),"families load");
+    std::set<std::uint32_t> seen;
+    for (int n=0;n<200;++n)
+    {
+        const auto item=RollLootList(*schema,"set_cs2gc_doppler",random);
+        Check(item && (item->paintKitIndex==31 || item->paintKitIndex==32) && item->rarity==5,
+              "a family roll grants one of its colours at the collection tier's rarity");
+        if (item) seen.insert(item->paintKitIndex);
+    }
+    Check(seen.size()==2,"every colour of the family can drop");
+    InventoryItem other; other.paintKitIndex=33; ApplySkinFamily(*schema,other,random);
+    Check(other.paintKitIndex==33,"finishes outside a family are untouched");
+}
+
 void NativeCarePackages()
 {
     const auto schema=Schema::Load(R"("items_game" {
@@ -4139,7 +4172,9 @@ void NativeCarePackages()
         "60" { "name" "crate_normal" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
         "61" { "name" "crate_cs2gc_black_market" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
         "62" { "name" "crate_cs2gc_gauntlet" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
-        "63" { "name" "crate_cs2gc_dead_hand_test" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } } }
+        "63" { "name" "crate_cs2gc_dead_hand_test" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
+        "64" { "name" "crate_cs2gc_custom_skins_test" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } }
+        "65" { "name" "crate_cs2gc_case_ashfall" "prefab" "weapon_case" "attributes" { "set supply crate series" { "value" "1" } } } }
       "paint_kits" { "10" { "name" "blue" } }
       "paint_kits_rarity" { "blue" "common" }
       "item_sets" { "set_timed_drops_test" { "items" { "[blue]weapon_test" "1" } } }
@@ -4152,8 +4187,8 @@ void NativeCarePackages()
         std::mt19937_64 engine(77);bool testCase=false;
         for (int n=0;n<500;++n)
             if (const auto drops=RollMatchDrops(*schema,[&]{return engine();},config))
-                for (const auto &drop:*drops) testCase|=drop.defIndex==63;
-        Check(!testCase,"the grant-only Dead Hand Test Case never drops");
+                for (const auto &drop:*drops) testCase|=drop.defIndex==63||drop.defIndex==64||drop.defIndex==65;
+        Check(!testCase,"grant-only test cases and Armory-only custom cases never drop");
     }
     Inventory saved;saved.SetGameplay(config);
     LiveInventory live(saved);
@@ -4265,6 +4300,7 @@ int main()
     try
     {
         NativeCarePackages(); std::cout << "PASS native three-of-four care packages, keyless cases and rare rewards\n";
+        CustomSkinFamilies(); std::cout << "PASS custom collection colour families\n";
         SouvenirPackagesAndHandwraps(); std::cout << "PASS souvenir packages, glove repair and handwrap sales\n";
         ArmoryTerminals(); std::cout << "PASS terminal Armory offers\n";
         MusicKitsAndCouponMigration(); std::cout << "PASS music kits and coupon migration\n";

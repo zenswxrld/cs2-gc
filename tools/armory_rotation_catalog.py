@@ -90,12 +90,29 @@ def catalogue(source, config):
             add('lootlist:' + name, slot, price, template)
 
     for name in ARMORY_COLLECTIONS: loot(name, 'collection', 4)
+    # Custom colour-family collections (native_skins.py), once the user has checked them with the test case.
+    if config.get('custom_cases', 1):  # the 12 custom gun collections (native_skins.custom_cases)
+        from native_skins import CASE_COLLECTIONS
+        for name, title in CASE_COLLECTIONS.items():
+            if name in lists:
+                loot(name, 'collection', 4)
+                # Emblem drawn by make_collection_icons.py, packed as econ/set_icons/<name> by native_finishes.
+                goods['lootlist:' + name].update(callout=title, ui_set_image=name)
+    if config.get('custom_collections', 0):
+        from native_skins import COLLECTIONS
+        for name, (title, _) in COLLECTIONS.items():
+            if name in lists:
+                loot(name, 'collection', 4)
+                goods['lootlist:' + name]['callout'] = title  # no item_set (needs a #CSGO_ token), so name it here
     # The current weekly drop pool collections rotate through the collection tiles too.
     for name in sorted(n for n in sections.get('item_sets', {}) if n.startswith('set_timed_drops_')): loot(name, 'collection', 4)
     for name in lists:
         if name.startswith('keychain_pack_') and name.endswith('_lootlist'): loot(name, 'charm', 3)
         if name.startswith('sticker_pack_') and name.endswith('_lootlist'): loot(name, 'sticker', 1)
-    for name in sorted(cases): add(name, 'case', config.get('armory_case_price', 5), {'flags': '2'})
+    for name in sorted(cases):
+        # Our grant-only test cases are never sold; the custom weapon cases are, like any case.
+        if name.startswith('crate_cs2gc_'): continue
+        add(name, 'case', config.get('armory_case_price', 5), {'flags': '2'})
     for name in sorted(souvenirs): add(name, 'souvenir', config['armory_souvenir_price'], {'flags': '2'})
     if config['terminals_enabled']:
         for name in sorted(terminals): add(name, 'terminal', config['armory_terminal_price'])

@@ -24,7 +24,10 @@ own loot list and icon) in the generated override and the cs2_gc_finishes VPK. N
 files or existing definitions; knife_finishes = 0 removes everything. Extended by the user the same day to
 gloves: recoloured copies of classic glove materials (new g_vColorTint values only), paint_kits for the four
 shipped glove finishes no paint kit uses, and one glove-only "Gauntlet Case" in the Armory limited rotation;
-glove_finishes = 0 removes the gloves and their case. Back up gameinfo.gi before adding the
+glove_finishes = 0 removes the gloves and their case. Further user authorisation (21 October 2026): custom
+weapon skins (official knife finishes and existing rk_ recolour kits on guns that never had them), first in a
+grant-only test case, then as custom Armory collections priced like the other collections; custom_skins_test = 0
+removes the test case. Back up gameinfo.gi before adding the
 owned native search path and preserve other addons. The store must live in CS2's native Armory page with the user's stock 4/3/4 catalogue layout. The user requested removing the text category tabs on 20 October 2026. Do not bring back the legacy Riptide store.
 Do not claim the Armory UI works until mounted and verified in the target client.
 

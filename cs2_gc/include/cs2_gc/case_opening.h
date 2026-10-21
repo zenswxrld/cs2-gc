@@ -44,6 +44,9 @@ struct CaseOdds
     std::uint32_t fifthTier{}, sixthTier{}; // Armory collections can contain more tiers than standard cases
 };
 
+// A rolled custom-collection family finish becomes one of its colour variants (no-op for anything else).
+void ApplySkinFamily(const Schema &schema, InventoryItem &item, const RandomSource &random);
+
 // Rolls one item from a client loot list (a case's, or an Armory collection, sticker or charm pack's).
 // Tiers are ranked by rarity within the list and given the odds in rank order, so a case (rare to
 // ancient) and a collection (uncommon to legendary) are treated alike. Tiers with nothing resolvable

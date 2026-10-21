@@ -1,3 +1,144 @@
+# Build26q (Claude): stock collection layout + 12 custom gun cases
+
+- User: custom collections/cases must "look like this in the armory ... follow the layout rule for the
+  collections" (Overpass 2024 grid). Stock Armory collections are 1 Covert / 2 Classified / 3 Restricted /
+  4 Mil-Spec / 6 Industrial (checked set_overpass_2024, set_graphic_design, set_train_2025). FILLER_TIERS now
+  follows that; a Classified chase (USP-S, Glock) gets 4 Restricted / 5 Mil-Spec / 6 Industrial instead.
+- Custom cases (user's answers: Armory case slot, guns only, no gold, "a few random per case" ranges):
+  native_skins.custom_cases(): 12 crates crate_cs2gc_case_<name> ("Ashfall Case" ...) with the user's
+  OfflineCS case pictures (tools/case_icons/cs2gc_*.png), base 4003 key, same 16-skin layout. Ranges: the
+  Covert chase (cgf_ family on a top gun) plus one Classified and one Restricted classic pattern
+  (hydro/spray) family cgc_<pattern>_<tier> whose colours cgr_<pattern>_<theme>_<tier> use NEW recolour
+  materials rc_<pattern>_<theme> (native_finishes.make_finish, 8 themes). Sold in the Armory case slot
+  (armory_case_price); RollMatchDrops skips crate_cs2gc_case_*; the catalogue no longer sells *_test crates.
+  custom_cases = 1 (default). collections() now returns the families dict; family_text() writes the file.
+- User wants these trade-up-able later. Note: client item_sets need #CSGO_ tokens (see 26n), so collection
+  membership for trade-ups must come from somewhere else (GC-side list) — not done yet.
+DLL tag claude-20261021-26q.
+
+# Helper26p (Claude): chase rarity by gun, families = our colours only, one name per family
+
+User clarifications: the chase rarity follows the gun (AK red, USP purple: CHASE_TIERS — USP-S and Glock
+Classified, others Covert; fillers only below the chase); a family holds only our colours, not the official
+original ("not the normal fade"); every colour is named just like the family ("when you unbox a marble fade,
+it's just marble fade, but different colour"). Variant kits cgv_<recolour>_<tier> reuse the rk_ material
+(weapons/paints/cs2_gc/<rk>.vcompmat) with the family title and the chase tier; cgf_<family>_<tier> families map
+to them. Black Market knives keep their own rk_ names. Room for more colours/skins later.
+
+# Helper26o (Claude): 40 small custom collections with one Covert chase each
+
+User: collections like real ones — "a bunch of other skins, and then one red that's going to be an AK ...
+Doppler", unboxing it gives a colour of the family; same for Tiger Tooth, Twilight Galaxy, Case Hardened
+(patterns via seed, colourways via rk_ recolours) etc.; "like 40". native_skins.collection_specs(): 40 lists
+set_cs2gc_<family>_<gun> ("The AK-47 Doppler Collection"), chase = cgf_<family>_ancient on one of AK-47, M4A4,
+M4A1-S, AWP, USP-S, Desert Eagle, Glock-18 (each family on 2-3 guns). Each list: 1 Covert chase, 2 Classified,
+3 Restricted, 5 Mil-Spec ordinary skins = official generic patterns (styles 1/2/3/8, no weapon-named kits) on
+guns that never had them, via alias kits cga_<kit>_<tier> (official material, our rarity, official title).
+Families file unchanged in format (only cgf_*_ancient now). Test cases: crate_cs2gc_collections_test (all 40,
+real odds) and crate_cs2gc_chase_test (only the 40 chases, random colours); grant cmds for both.
+custom_collections = 1 puts the 40 in the Armory collection rotation (callout from COLLECTIONS). Same DLL 26m.
+
+# Helper26n (Claude): 26m crashed CS2's schema load — no item_sets
+
+User got "Assertion Failed in function CEconItemSystem::ParseItemSchemaFile(): false" with 26m. client.dll
+strings include "Item Set %s: item locname tokens must be #CSGO_%s" / "no localized name": the three custom
+item_sets used literal names. Removed item_sets; the collections are client_loot_lists only (like charm and
+sticker packs), and the Armory rows get their callout from native_skins.COLLECTIONS. Do not add item_sets
+without a real #CSGO_ token (the language file cannot be overridden safely). Same DLL 26m.
+
+# Build26m (Claude): custom colour-family collections + test case
+
+User approved colour families ("families sounds great"). native_skins.collections(): family paint kits
+cgf_<family>_<rarity> (16 families x 4 tiers) reuse an official finish's composite material for the picture and
+title; three item_sets/client_loot_lists — set_cs2gc_doppler (Doppler, Gamma Doppler, Marble Fade),
+set_cs2gc_spectrum (Fade, Twilight Galaxy, Gold Brick, Blue Phosphor, Ultraviolet), set_cs2gc_classics (Tiger
+Tooth, Slaughter, Crimson Web, Damascus, Case Hardened, Blued Steel, Bright Water, Freehand) — one entry per family
+per gun, tier by gun (TIERS: rifles/AWP/Deagle Covert ... shotguns/LMGs/autos Mil-Spec). Families file
+cs2_gc_skin_families.txt (family kit -> official variants + rk_ recolours) is loaded by the GC
+(Schema::LoadSkinFamilies); RollLootList and the Armory pity top-reward call ApplySkinFamily, granting a random
+variant at the tier's rarity. Variants are not item_set members (no trade-ups from them). Grant-only
+crate_cs2gc_collections_test (loot = the three collection lists). custom_collections = 1 (default 0) adds the
+collections to the Armory rotation as collection rows priced 4 like the others, after the user's test.
+patch_items_game gained extra_sections, loot_lists cases and per-kit _rarity. DLL tag claude-20261021-26m.
+
+# Helper26l (Claude): Custom Skins Test Case 2
+
+User: batch 1 "all honestly work. really well". Batch 2: crate_cs2gc_custom_skins2_test (grant
+grant_custom_skins_test2_cases.cmd) with the knife finishes on the other 24 guns plus 8 fade/doppler
+recolours each, and Twilight Galaxy / Gold Brick / Blue Phosphor (am_aqua_flecks, am_gold_brick,
+am_m4a1s_bluesmoke) on all guns where unofficial, plus 4 of their recolours per gun (~760 items). Same DLL 26k.
+Next (user approved): colour families (one collection entry per finish family per gun, GC rolls a variant on
+grant) and 2-3 custom Armory collections priced like collections.
+
+# Build26k (Claude): Custom Skins Test Case (phase 1 of custom weapon collections)
+
+User: custom skins "same as armory collections, lets make them those instead of cases. but we will need test
+cases first". New tools/native_skins.py: grant-only crate_cs2gc_custom_skins_test (base 4003, Black Market
+icon) with the official knife-only finishes (Doppler/Gamma phases, marbleized, Marble Fade, Tiger Tooth,
+Slaughter, Damascus, Crimson Web, Fade, Case Hardened, Blued, Bright Water, Freehand, Ultraviolet) on AK-47,
+M4A4, M4A1-S, AWP, Deagle, USP-S, Glock, FAMAS, Galil, P250 wherever that pair is not official, plus 12
+fade/doppler rk_ recolours per gun (existing kits, no new materials). RollMatchDrops now skips every
+crate_cs2gc_*_test. grant_custom_skins_test_cases.cmd adds 20. DLL tag claude-20261021-26k. Rendering on guns
+unverified (knife-only kits may carry knife-tuned pattern scale/legacy-model flags). Phase 2 after the user's
+check: custom item_sets + tiered loot lists as Armory collection rows (catalogue), priced like collections.
+
+# Helper26j (Claude): Dead Hand custom gloves removed
+
+User: "forget the dead hand custom gloves, remove them completely". DEAD_HAND_RECOLOURS = False: no Dead Hand
+recolour is in any case, so the Dead Hand Test Case is no longer generated (grant_dead_hand_test_cases.cmd
+removed). Already-owned rg_glove_* recolours keep their definitions/materials (known ids) so inventories stay
+valid. Classic glove recolours, the four ug_ unreleased finishes and the Gauntlet Case are unchanged. The
+Dead Hand rules/tests remain (tests flip the flag on). Next user request: an LTD custom weapon-skin case.
+
+# Helper26i (Claude): Dead Hand curation — only recolours that look proper
+
+User: "keep the ones that work really well, and ones that dont really change or have clashing colors take
+out". distinct_themes drops Ash (it only greys the trim of a printed glove) and colours whose hues are all
+within 20 degrees of the glove's own accent hue (look like the original), after harmonious_themes.
+DEAD_HAND_EXTRA_THEMES now holds the colours the user approved on screen (Cloud Chaser Inferno, Chesterfield
+Midnight, Occult Toxic/Magenta, Violet Beadwork Rose/Azure, Ultra Violent Aurora/Cobalt, Plum Quill Sunset,
+Red Racer Rose); Brocade Flowers Ember was rejected by the user ("things like this, no"). Red Racer's tan suede
+(g_vId4Color, sat .179) is recoloured via DEAD_HAND_EXTRA_ACCENTS with saturation up to .5.
+
+# Helper26h (Claude): Dead Hand recolours only in colours that match the printed parts
+
+User: "just do the ones that work ... use colors that work well with whats already there ... same with all
+dead hand gloves" (examples: Lime Polycam Violet, Creme Pinstripe Aurora clash with the printed parts).
+Every Dead Hand glove now offers only harmonious_themes(hue): single themes within 60 degrees of the glove's
+main hue (plus neutral Ash) and duo themes with both hues within 60. Hue = DEAD_HAND_PRINT_HUES (printed
+colour read from screenshots: crane/velvet/pinstripe red, flower/seigaiha teal, Ultra Violent/Plum Quill
+purple, Sunburst orange) else the saturation-weighted mean hue of the finish's clear visible accents
+(dead_hand_main_hue). DEAD_HAND_SKIP (Big Swell, Blaze) gets no recolours. Owned recolours in colours no
+longer offered keep their ids/materials (retained, not in any case). DEAD_HAND_FREE (empty) re-enables all
+colours for a finish. Classic gloves unchanged.
+
+# Helper26g (Claude): wear-edge-only Dead Hand accents are not recolours
+
+User: Pillow Punchers Teal (glove_specialist_quilted_white) looks unchanged — its only accents are
+DamageBevel/Burnishing tints (worn edges). Report accent_channels now excludes those (WEAR_ONLY), so such
+finishes are not offered (owned ids still render). Occult Ash (glove_sport_velvet_red) also looked unchanged:
+the red velvet and gold are most likely colour textures; awaiting the user's list of Dead Hand finishes that
+barely change before excluding them individually. Chesterfield's gold TORTUE plate/studs, brocade/wave/
+Seigaiha prints are texture colour too (user offered texture recolouring as a later option).
+
+# Helper26f (Claude): Dead Hand muted shades, two missed Dead Hand gloves, camo hand-wrap panels
+
+From the user's cs2_gc_glove_palettes.json / cs2_gc_glove_materials.json (26e):
+- 20 of 22 Dead Hand finishes were recoloured. glove_driver_dragon_scale_red and
+  glove_driver_embroidered_flowers_teal use the same 'paint' + COPY_MATCHING_KEYS layout but were dropped:
+  dead_hand_colours required all eight g_vId*Color, and make_glove_finish's fallback then overwrote the
+  inspection entry (now merged with setdefault/update). Any recognised colour vector is enough now.
+- Plum Quill (glove_driver_ostrich_purple) stayed purple because its ostrich purples are muted (Id3 242/.30,
+  Id5 254/.32, Burnishing4 259/.32, bevel 271/.26). dead_hand_accents adds muted shades (sat>=.18, value>.12)
+  within 25 degrees of a clear accent hue; creams/tans/greys of other hues stay. Recolour per channel uses the
+  same recolor() targets as before, so previously-changed channels get identical values.
+- Big Swell's blue leather and the brocade panels are texture colour (white tints): not changeable.
+- handwrap_camo_grey: one accent (ch5), camo in seven near-grey green tints; White Panels erased it
+  (user: "definitely broken"). NO_PANEL_VARIANTS stops new panel variants for it; owned variant ids still get
+  definitions but render with the original-panel colours.
+- glove_driver_knit_argyle_green and glove_specialist_graffiti_black have no accents: no recolours (unchanged).
+Wear: normal random float/seed per item; bright clean ones are low-float rolls.
+
 # Build26e (Claude): grant-only Dead Hand Test Case; first Dead Hand screenshots
 
 New crate_cs2gc_dead_hand_test ("Dead Hand Test Case", base 4017, Gauntlet icon): exactly the Gauntlet entries
@@ -518,6 +659,36 @@ and gameplay config must accompany the DLL; restart helper AND CS2 after edits.
 # Handoff: Codex test 2026-10-20-01
 
 Based on `schema-loader` commit `42150481ac7db513a64f4b6704cd3c0a1b8349c0` (PR #4). User authorized changes and asked that all source changes be pushed so Claude can continue. See [TEST-BUILD.md](TEST-BUILD.md) for installation, exact reward rules, limitations and verification.
+
+
+## 26r (Claude) - custom gun cases become Armory collections
+- The 12 custom cases are now collection tiles (`set_cs2gc_case_<name>` loot lists, rotation type `collection`, count 4)
+  like Arabesque: no crate items, no keys. native_skins.custom_cases writes a top list plus the tier lists.
+- Emblems: tools/make_collection_icons.py draws CS2-style diamond badges into tools/collection_icons/; native_finishes
+  packs them as panorama/images/econ/set_icons/<name>_png / _small_png (template set_arabesque), and the catalogue
+  rows set ui_set_image = <name>. The old tools/case_icons pictures are removed.
+- The DLL is unchanged from 26q. Crates bought in 26q (crate_cs2gc_case_*) no longer have a definition, so open them first.
+- LIVE (user, 21 Oct): the tile and nav emblem render, the callout reads "The Ashfall Collection", and unlocking works
+  (e.g. "Desert Eagle | Marble Fade" from The Brimstone Collection, AK-47 Doppler chase from opened cases).
+- OPEN BUG, for the next person: the tile has NO gun preview and the collection page is EMPTY.
+  Cause (from the user's xpshop.js): _GetLootListForReward('lootlist:set_cs2gc_case_<name>') gets
+  InventoryAPI.GetLootListItemsCount(...) == 0, so lootlist = [rewardId], so the single-image path with a non-item id is used
+  and PlaceTiles returns early. Stock 'lootlist:set_arabesque' has the same nested structure and works.
+  NOT the cause: list order (the stock schema has 562 forward nested refs; 26r now writes the tiers first anyway,
+  matching set_arabesque, which is harmless). The same nested lists DO preview inside a crate (collections test case),
+  so the items and kits are valid on the client. The difference is probably how the native resolves a "lootlist:" reward
+  name (maybe item_sets, which we cannot add: client needs a #CSGO_ localised token, see 26m crash).
+  Suggested fix, same approach as 17v native_knife_reel: patch xpshop.js _GetLootListForReward so that when the count is 0
+  and the name starts with 'lootlist:set_cs2gc_', it fills itemsList from a generated JSON
+  (list name -> [def index + paint kit] -> InventoryAPI.GetFauxItemIDFromDefAndPaintIndex), written by native_finishes
+  next to the collection lists. Do not invent APIs; GetFauxItemIDFromDefAndPaintIndex is already used in xpshop.js.
+- 26s (Claude): implemented that fix. native_finishes writes cs2_gc_collection_previews.json
+  ({collection: [[weapon, kit id]]}, chase first) and rotate_armory passes it in m_localRotation.previews; the patched
+  _GetLootListForReward uses it only when the native count is 0. NOT verified live yet; if the tiles stay empty, check
+  that cs2_gc_collection_previews.json exists next to the proxy and that the Armory override was regenerated (restart twice).
+- Still to do: trade-ups for custom skins (GC-side collection membership; client item_sets are not possible),
+  effect finishes (glitter/pearl) waiting on the user's extract_finish_materials output, custom_collections (40 chase
+  collections) default 0 until the user asks.
 
 ## User reports and scope
 

@@ -121,6 +121,10 @@ public:
     std::vector<SkinRef> CrateGoldOutcomes(std::uint32_t defIndex) const;
     bool IsKnife(std::uint32_t defIndex) const;
     bool IsGlove(std::uint32_t defIndex) const;
+    // Colour families of the custom collections (cs2_gc_skin_families.txt): a collection lists one family paint
+    // kit per gun, and a roll grants one of its variant finishes instead. Unknown finishes are skipped.
+    bool LoadSkinFamilies(std::string_view text);
+    const std::vector<std::uint32_t> *SkinFamily(std::uint32_t paintKitIndex) const;
     std::vector<SouvenirSticker> SouvenirStickers(std::uint32_t event) const;
     std::uint32_t SouvenirMapSticker(std::uint32_t crateDefinition) const;
     std::vector<SkinRef> MatchRewardSkins(bool weeklyOnly = true) const;
@@ -169,6 +173,7 @@ private:
     std::unordered_map<std::uint32_t, std::size_t> m_crateIndex;
     std::unordered_map<std::string, std::uint32_t> m_itemsByName;
     std::unordered_map<std::string, const KvNode *> m_paintKits; // by name; key is the index
+    std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> m_skinFamilies; // family kit -> variant kits
     std::unordered_map<std::string, std::uint32_t> m_rarities;
     std::unordered_map<std::string, std::string> m_paintKitRarity;       // kit name -> rarity name
     std::unordered_map<std::uint32_t, std::string> m_paintKitNames;      // kit index -> name

@@ -389,7 +389,7 @@ def patch_previews(source):
     return source
 
 
-def patch(source, config, categories=None, agents=None):
+def patch(source, config, categories=None, agents=None, previews=None):
     if config['armory_howl_enabled'] and not categories:
         raise ValueError('Howl requires the matching generated native catalogue')
     if source.count(ANCHOR) != 1 or source.count(END) != 1 or 'const m_elContentPanel =' not in source:
@@ -397,12 +397,22 @@ def patch(source, config, categories=None, agents=None):
     if 'm_localRotation' in source: raise ValueError('Source is already patched')
     settings = {'enabled': bool(config['armory_rotation_enabled']),
                 'seconds': config['armory_rotation_seconds'], 'slots': config['armory_rotation_slots'],
-                'categories': categories or {}, 'agents': agents or [],
+                'categories': categories or {}, 'agents': agents or [], 'previews': previews or {},
                 'counts': {slot: config.get('armory_' + slot + '_slots', 1) for slot in
                            ('collection', 'case', 'capsule', 'charm', 'sticker', 'limited', 'agent', 'terminal', 'souvenir')}}
     source = source.replace('    function _UpdateShopGoods(m_nTrack) {',
                             INSERT.replace('__SETTINGS__', json.dumps(settings)) + '    function _UpdateShopGoods(m_nTrack) {', 1)
     source = source.replace(ANCHOR, PREPARE + ANCHOR, 1) if categories else source
+    empty = '        if (!count) {\n            itemsList.push(rewardId);'
+    if previews and source.count(empty) == 1:
+        # Custom collections (native_finishes PREVIEW_FILE): the native count is 0 for their lootlist rewards.
+        source = source.replace(empty, '''        const localPreview = !count && m_localRotation.previews[String(rewardId).replace('lootlist:', '')];
+        if (localPreview) {
+            localPreview.forEach(entry => itemsList.push(InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
+                InventoryAPI.GetItemDefinitionIndexFromDefinitionName(entry[0]), entry[1])));
+        }
+        else if (!count) {
+            itemsList.push(rewardId);''', 1)
     source = source.replace(END, END + '''
         m_localRotationItems = aShopItemsData;
         if (m_localRotationTick) $.CancelScheduled(m_localRotationTick);
@@ -431,9 +441,12 @@ def prepare(proxy_directory, config):
         categories = data['armory_catalogue']
     from armory_rotation_catalog import agent_names
     agents = agent_names((proxy / 'items_game.txt').read_text(encoding='utf-8-sig')) if categories else []
+    from native_finishes import PREVIEW_FILE
+    preview_path = proxy / PREVIEW_FILE
+    previews = json.loads(preview_path.read_text(encoding='utf-8')) if categories and preview_path.is_file() else {}
     return install_override(proxy, enabled=config['armory_rotation_enabled'], folder='cs2_gc_armory',
         comment='cs2_gc native armory', owner='cs2-gc-armory-ui-v1',
-        asset='panorama/scripts/xpshop.vjs_c', patch=lambda source: patch(source, config, categories, agents))
+        asset='panorama/scripts/xpshop.vjs_c', patch=lambda source: patch(source, config, categories, agents, previews))
 
 
 if __name__ == '__main__':

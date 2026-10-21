@@ -129,7 +129,15 @@ std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view
     }
 
     const LootItem &drop = chosen->items[Below(random, chosen->items.size())];
-    return MakeLootItem(drop, chosen->rarity, random, schema.IsGlove(drop.weaponDefIndex) ? 0 : odds.statTrakPerMille);
+    auto item = MakeLootItem(drop, chosen->rarity, random, schema.IsGlove(drop.weaponDefIndex) ? 0 : odds.statTrakPerMille);
+    ApplySkinFamily(schema, item, random);
+    return item;
+}
+
+void ApplySkinFamily(const Schema &schema, InventoryItem &item, const RandomSource &random)
+{
+    if (const auto *variants = item.paintKitIndex ? schema.SkinFamily(item.paintKitIndex) : nullptr)
+        item.paintKitIndex = (*variants)[Below(random, variants->size())]; // rarity stays the collection tier's
 }
 
 std::optional<InventoryItem> RollSouvenir(const Schema &schema, const CrateInfo &crate,
@@ -276,7 +284,9 @@ std::optional<std::vector<InventoryItem>> RollMatchDrops(const Schema &schema, c
     for (const auto &crate : schema.Crates())
         if (crate.kind == CrateKind::Case && crate.keyDefIndex && !schema.LootTiers(crate.lootListName).empty())
         {
-            if (crate.name == "crate_cs2gc_dead_hand_test") continue; // grant-only test case, never a drop
+            // Grant-only test cases (crate_cs2gc_*_test) never drop.
+            if (crate.name.starts_with("crate_cs2gc_") && crate.name.ends_with("_test")) continue;
+            if (crate.name.starts_with("crate_cs2gc_case_")) continue; // custom cases: Armory only (user's choice)
             if (crate.name == "crate_cs2gc_black_market" || crate.name == "crate_cs2gc_gauntlet") {
                 if ((crate.name == "crate_cs2gc_black_market" && config.knife_finishes) ||
                     (crate.name == "crate_cs2gc_gauntlet" && config.knife_finishes && config.glove_finishes))

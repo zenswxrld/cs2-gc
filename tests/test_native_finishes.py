@@ -122,6 +122,23 @@ class NativeFinishes(unittest.TestCase):
         self.assertIsNotNone(made)
         self.assertEqual(report['am_gold_brick']['policy'],'related-metal-tones-v1')
 
+    def test_teal_fade_stays_teal_instead_of_sweeping_into_green(self):
+        source = finishes.Source(folder=None)
+        source.read = vpk_files().get
+        report = {}
+        made = finishes.make_finish(source, 'aa_fade', 'weapons/paints/legacy/aa_fade.vcompmat',
+                                    'rk_aa_fade_teal', 'Teal', report=report)
+        self.assertIsNotNone(made)
+        entry = report['aa_fade']
+        colors = entry['themes']['Teal']
+        for color, original in zip(colors, entry['original_colors']):
+            hue = colorsys.rgb_to_hsv(*color[:3])[0] * 360
+            self.assertTrue(171 - 1e-6 <= hue <= 185 + 1e-6, hue)
+            self.assertEqual(color[3], original[3])
+        # The shared recolour function still supports the wider sweep used by gloves.
+        wide = finishes.recolor(entry['original_colors'], 'Teal', fade=True)
+        self.assertLess(min(colorsys.rgb_to_hsv(*c[:3])[0] * 360 for c in wide), 150)
+
     def test_recolour_changes_only_colours_and_names(self):
         source = finishes.Source(folder=None)
         originals = vpk_files()

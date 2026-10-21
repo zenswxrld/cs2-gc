@@ -250,7 +250,9 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None):
     current = [[item.value for item in colors['g_vColor%d' % i].value] for i in range(4)]
     if any(len(color) != 4 for color in current): return None
     new_colors = (recolor_gold_brick(current, theme) if kit == 'am_gold_brick' else
-                  recolor(current, theme, fade=kit in FADE_BASES))
+                  # Teal needs related blue-green tones: the wide fade sweep reaches
+                  # green at one end. Keep this knife-only exception out of glove tinting.
+                  recolor(current, theme, fade=kit in FADE_BASES and theme != 'Teal'))
     if report is not None:
         entry = report.setdefault(kit, {'source_compmat': kit_path, 'source_material': specific.value,
             'shader': m_root.get('m_shaderName').value if m_root.get('m_shaderName') else '',

@@ -62,6 +62,7 @@ def catalogue(source, config):
         else: raise ValueError('Unclassified native Armory good: ' + name)
         if slot == 'terminal' and not config['terminals_enabled']: continue
         cost = LIMITED_PRICES.get(name.removeprefix('lootlist:'), int(data['points'])) if slot == 'limited' else int(data['points'])
+        if name == 'lootlist:removed_items': cost = max(250, config['armory_howl_star_price'])
         add(name, slot, cost, data)
     templates = {v['local_rotation_slot']: v for v in goods.values()}
     if config.get('knife_finishes', 1) and 'crate_cs2gc_black_market' in items:
@@ -106,7 +107,7 @@ def catalogue(source, config):
     if config['armory_howl_enabled']:
         howl = lists.get('removed_items')
         if isinstance(howl, list) and [(k, v) for k, v in howl if k != 'public_list_contents'] == [('[cu_m4a1_howling]weapon_m4a1', '1')]:
-            loot('removed_items', 'limited', config['armory_howl_star_price'])
+            loot('removed_items', 'limited', max(250, config['armory_howl_star_price']))
     return goods
 
 

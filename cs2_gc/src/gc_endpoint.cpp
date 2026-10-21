@@ -569,19 +569,32 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                 }
                 else valid=false;
             }
-            if (!valid || reader.Failed() || !generation || balance!=3 || inventory->Items().CarePackages().empty()) {++gc.m_ignored;return;}
+            // This proto field is an optional client snapshot, not authority to grant items.
+            // Native clients may omit a zero (remaining) balance. Saved generation + exactly three
+            // distinct, matching offers remain authoritative regardless of that hint.
+            if (!valid || reader.Failed() || !generation || balance.value_or(0)>3 || inventory->Items().CarePackages().empty()) {
+                if(gc.m_config.diagnostic)gc.m_config.diagnostic("care claim rejected: invalid frame/queue; choices="+std::to_string(ids.size())+
+                    " balance_hint="+std::to_string(balance.value_or(0)));
+                ++gc.m_ignored;return;
+            }
             const auto &package=inventory->Items().CarePackages().front();
             std::vector<std::uint64_t> selected;
             for (const auto token:ids) {
                 const auto slot=static_cast<std::size_t>((token-CareChoiceBase)>>32);
-                if (slot>=package.offers.size() || token!=CareChoiceToken(package.offers[slot],slot)) {++gc.m_ignored;return;}
+                if (slot>=package.offers.size() || token!=CareChoiceToken(package.offers[slot],slot)) {
+                    if(gc.m_config.diagnostic)gc.m_config.diagnostic("care claim rejected: offer descriptor mismatch");
+                    ++gc.m_ignored;return;
+                }
                 selected.push_back(package.offers[slot].id);
             }
             const auto chosen=inventory->ClaimCarePackage(*generation,selected);
-            if (!chosen) {++gc.m_ignored;return;}
+            if (!chosen) {
+                if(gc.m_config.diagnostic)gc.m_config.diagnostic("care claim rejected: stale generation or duplicate/partial choices");
+                ++gc.m_ignored;return;
+            }
             // Preview descriptors never enter the econ cache. Only the three chosen owned items are published.
             if (afterChange) afterChange();
-            gc.NotifyRewardDrops(*chosen); gc.NotifyCarePackage();
+            gc.NotifyCarePackage(); gc.NotifyRewardDrops(*chosen);
             PbWriter notification;
             for(const auto &item:*chosen) notification.Varint(1,CustomItemIdBase+item.id);
             notification.Varint(2,gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemFreeReward);

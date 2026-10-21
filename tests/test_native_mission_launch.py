@@ -11,22 +11,26 @@ import native_mission_launch as mission
 class MissionLaunch(unittest.TestCase):
     def test_listen_session_and_matching_map_mode_without_official_search(self):
         script='''const assert=require('assert');let data={gamemode:'deathmatch',mapgroup:'delta'},settings,starts=0,difficulty;
-const $={GetContextPanel:()=>({Data:()=>({m_oMissionData:data})}),DispatchEvent:()=>{}};
+let scheduled=[],session=null,active=false,party=1,stops=0; const $={GetContextPanel:()=>({Data:()=>({m_oMissionData:data})}),DispatchEvent:()=>{},Schedule:(delay,fn)=>scheduled.push(fn)};
+function drain(){for(let i=0;scheduled.length&&i<40;i++)scheduled.shift()();}
+const PartyListAPI={GetCount:()=>party};
 const GameTypesAPI={GetConfig:()=>({gameTypes:{gungame:{gameModes:{deathmatch:{}}},classic:{gameModes:{competitive:{}}}},mapgroups:{delta:{maps:{de_mirage:1,de_dust2:1}}}}),SetCustomBotDifficulty:v=>difficulty=v};
 const GameInterfaceAPI={GetSettingString:()=>'-1'};
-const LobbyAPI={StopMatchmaking:()=>{},CreateSession:()=>{},BIsHost:()=>true,UpdateSessionSettings:v=>settings=v,StartMatchmaking:()=>starts++};
+const LobbyAPI={StopMatchmaking:()=>stops++,CloseSession:()=>{session=null;active=false;},CreateSession:()=>active=true,IsSessionActive:()=>active,BIsHost:()=>active,GetSessionSettings:()=>session,UpdateSessionSettings:v=>{settings=v;session={options:v.update.Options,game:v.update.Game};},StartMatchmaking:()=>{assert.equal(session.options.server,'listen');starts++;}};
 let alerts=0;const UiToolkitAPI={ShowGenericPopupOk:()=>alerts++};function IsSearching(){return false;}
 '''+mission.REPLACEMENT+'''
-PlayMission();assert.equal(starts,1);assert.equal(settings.update.Options.server,'listen');
+PlayMission();PlayMission();assert.equal(starts,0);drain();assert.equal(starts,1);assert.equal(settings.update.Options.server,'listen');
 assert.equal(settings.update.Game.mode,'deathmatch');assert.equal(settings.update.Game.type,'gungame');
 assert.ok(['de_mirage','de_dust2'].includes(settings.update.Game.map));
 assert.equal(settings.update.Game.mapgroupname,'mg_'+settings.update.Game.map);
 assert.equal(settings.update.Game.gamemodeflags,32);assert.equal(difficulty,2);
 assert.equal(settings.update.Options.practicesettings_infwarmup,0);
-data={gamemode:'competitive',map:'de_inferno'};PlayMission();assert.equal(starts,2);
+data={gamemode:'competitive',map:'de_inferno'};session={options:{server:'official'},game:{}};PlayMission();drain();assert.equal(starts,2);
 assert.equal(settings.update.Game.map,'de_inferno');assert.equal(settings.update.Game.gamemodeflags,16);
 data={gamemode:'deathmatch',mapgroup:'missing'};PlayMission();assert.equal(starts,2);assert.equal(alerts,1);
 data={gamemode:'unsupported',map:'de_mirage'};PlayMission();assert.equal(starts,2);assert.equal(alerts,2);
+data={gamemode:'competitive',map:'de_inferno'};party=2;PlayMission();assert.equal(alerts,3);assert.equal(starts,2);
+party=1;LobbyAPI.UpdateSessionSettings=v=>{};PlayMission();drain();assert.equal(starts,2);assert.equal(alerts,4);assert.ok(stops>=4);
 '''
         r=subprocess.run(['node','-e',script],capture_output=True,text=True)
         self.assertEqual(r.returncode,0,r.stderr)

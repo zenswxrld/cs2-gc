@@ -287,6 +287,7 @@ std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text)
     if (config.premier_start_rating > config.premier_max_rating) return std::nullopt;
     if (config.armory_pity_soft_at >= config.armory_pity_hard_at) return std::nullopt;
     if (config.pity_soft_at >= config.pity_hard_at) return std::nullopt;
+    config.armory_howl_star_price = std::max(250u, config.armory_howl_star_price);
     return config;
 }
 }

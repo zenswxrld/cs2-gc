@@ -7,7 +7,9 @@ from native_resources import install_override
 
 START = '    function PlayMission() {'
 END = '    function OnRoundStart() {'
-REPLACEMENT = '''    function PlayMission() {
+REPLACEMENT = '''    let m_localMissionStarting = false;
+    function PlayMission() {
+        if (m_localMissionStarting) return;
         // cs2_gc: mission launch uses the native listen-server path, never official matchmaking.
         const mission = $.GetContextPanel().Data().m_oMissionData;
         const cfg = GameTypesAPI.GetConfig();
@@ -23,14 +25,19 @@ REPLACEMENT = '''    function PlayMission() {
                 'This mission has no supported local map and mode. No matchmaking was started.', '', () => {});
             return;
         }
-        if (IsSearching()) LobbyAPI.StopMatchmaking();
-        LobbyAPI.CreateSession();
-        if (!LobbyAPI.BIsHost()) return;
+        if (PartyListAPI.GetCount() > 1) {
+            UiToolkitAPI.ShowGenericPopupOk('Offline mission', 'Leave your party before starting a local bot mission.', '', () => {});
+            return;
+        }
+        m_localMissionStarting = true;
+        // Cancel a previous search and discard its stale session after disconnect.
+        LobbyAPI.StopMatchmaking();
+        LobbyAPI.CloseSession();
         // Keep a supported bot difficulty; restore a playable difficulty when the saved selection is outside that range.
         const savedDifficulty = Number(GameInterfaceAPI.GetSettingString('player_botdifflast_s'));
         const difficulty = Number.isInteger(savedDifficulty) && savedDifficulty >= 0 && savedDifficulty <= 3 ? savedDifficulty : 2;
         GameTypesAPI.SetCustomBotDifficulty(difficulty);
-        LobbyAPI.UpdateSessionSettings({
+        const settings = {
             update: {
                 Options: {
                     action: 'custommatch', server: 'listen',
@@ -43,9 +50,33 @@ REPLACEMENT = '''    function PlayMission() {
                 }
             },
             delete: { Options: { challengekey: 1 } }
-        });
-        $.DispatchEvent('CSGOPlaySoundEffect', 'mainmenu_mission_start', 'MOUSE');
-        LobbyAPI.StartMatchmaking('', '', '', '');
+        };
+        let attempts = 0;
+        function startLocal() {
+            const session = LobbyAPI.GetSessionSettings();
+            const ready = session && session.options && session.game &&
+                session.options.server === 'listen' && session.options.action === 'custommatch' &&
+                session.game.mode === mode && session.game.type === type &&
+                (!session.game.map || session.game.map === map) && session.game.mapgroupname === 'mg_' + map &&
+                Number(session.game.gamemodeflags || 0) === settings.update.Game.gamemodeflags;
+            if (ready && LobbyAPI.BIsHost() && !IsSearching()) {
+                m_localMissionStarting = false;
+                $.DispatchEvent('CSGOPlaySoundEffect', 'mainmenu_mission_start', 'MOUSE');
+                LobbyAPI.StartMatchmaking('', '', '', '');
+                return;
+            }
+            if (++attempts >= 30) {
+                m_localMissionStarting = false;
+                LobbyAPI.StopMatchmaking();
+                UiToolkitAPI.ShowGenericPopupOk('Offline mission',
+                    'The local bot session was not ready. Try again from the main menu.', '', () => {});
+                return;
+            }
+            if (!LobbyAPI.IsSessionActive()) LobbyAPI.CreateSession();
+            if (LobbyAPI.BIsHost()) LobbyAPI.UpdateSessionSettings(settings);
+            $.Schedule(0.1, startLocal);
+        }
+        $.Schedule(0.1, startLocal);
     }
 '''
 

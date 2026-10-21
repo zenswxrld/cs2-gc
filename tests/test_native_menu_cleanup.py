@@ -35,7 +35,7 @@ function draw(){
 """+native_scoreboard.NAME_ANCHOR+native_scoreboard.NAME_INJECT+"""}
 draw();assert.equal(stock.visible,true);assert.equal(stock.text,'player&lt;&amp;&gt;');
 name='';draw();assert.equal(stock.text,'{g:player_name:player_slot}');
-name='BOT Other';draw();assert.equal(stock.text,'Other');
+name='<span class="decorated-player-name">BOT Other &amp; &#x3c;3</span>';draw();assert.equal(stock.text,'Other &amp; &lt;3');
 fake=false;draw();assert.equal(stock.visible,true);assert.equal(stock.text,'{g:player_name:player_slot}');
 """
         self.run_js(script)

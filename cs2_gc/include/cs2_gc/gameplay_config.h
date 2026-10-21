@@ -65,7 +65,7 @@ struct GameplayConfig
     std::uint32_t armory_top_per_10000{64};
     std::uint32_t premier_win_rating{300}, premier_loss_rating{100}, premier_max_rating{35000};
     std::uint32_t premier_bonus_wins{0}; // total extra placement wins the helper grants once; never removed
-    std::uint32_t armory_howl_enabled{1}, armory_howl_star_price{40};
+    std::uint32_t armory_howl_enabled{1}, armory_howl_star_price{250};
     std::uint32_t armory_rotation_enforce{0}; // enable after matching Panorama override is mounted
 };
 std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text);

@@ -58,6 +58,10 @@ def patch(source):
         raise ValueError('Installed care-package tile contract changed; no patch written')
     source=source.replace(preview,preview+'\n'+PREVIEW,1)
     source=source.replace(data,'        elGhostItem.Data().itemid = localChoice ? choiceToken : itemId;',1)
+    init = '        ItemTileStore.Init(elGhostItem, oItemData);'
+    if source.count(init) != 1: raise ValueError('Installed reward-tile initializer changed')
+    source=source.replace(init,init+"\n        if (localChoice) { elGhostItem.SetHasClass('item-claimed', false); elGhostItem.SetHasClass('item-claimslot-expired', false); }",1)
+
     source=source.replace(activate,'        if (_LocalCarePackage() || !InventoryAPI.IsFauxItemID(itemId)) {',1)
     source=source.replace('Object.values(objStore.items)', 'Object.values(objStore.items || {})')
     return source

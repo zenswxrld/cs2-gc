@@ -103,7 +103,15 @@ NAME_INJECT = r"""
                     const localBot = oPlayer.GetGameStat('is_fake_player') &&
                         !GameStateAPI.IsDemoOrHltv() && !GameStateAPI.IsQueuedMatchmakingMode_Team();
                     const rawName = localBot ? MockAdapter.GetPlayerName(oPlayer.m_xuid) : '';
-                    const cleanName = rawName ? String(rawName).replace(/^\s*(?:\[BOT\]|BOT)\s+/i, '').trim() : '';
+                    // The native API returns decorated <span> markup. Decode its text before escaping once.
+                    const nameText = rawName ? String(rawName).replace(/<\/?(?:span|font|b|i|u|a)\b[^>]*>/gi, '')
+                        .replace(/&(amp|lt|gt|quot|apos|nbsp|#\d+|#x[0-9a-f]+);/gi, (entity, key) => {
+                            const named = {amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:' '};
+                            if (named[key.toLowerCase()] !== undefined) return named[key.toLowerCase()];
+                            const code = key[1].toLowerCase() === 'x' ? parseInt(key.slice(2),16) : parseInt(key.slice(1),10);
+                            return code > 0 && code <= 1114111 ? String.fromCodePoint(code) : entity;
+                        }) : '';
+                    const cleanName = nameText.replace(/^\s*(?:\[BOT\]|BOT)\s+/i, '').trim();
                     if (stockName) {
                         stockName.visible = true;
                         if (localBot && cleanName) {

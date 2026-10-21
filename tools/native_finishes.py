@@ -86,7 +86,7 @@ def brightness(rgb):
     return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
 
 
-def recolor(colors, theme):
+def recolor(colors, theme, fade=False):
     """colors: four [r, g, b, a] in 0..1. Returns four new colours with the theme's hue, brightness kept."""
     order = sorted(range(4), key=lambda i: brightness(colors[i]))
     out = [None] * 4
@@ -101,7 +101,11 @@ def recolor(colors, theme):
             hue = hue_a if rank in (0, 3) else hue_b
         else:
             base, saturation, spread = THEMES[theme]
-            hue = (base + spread * (rank / 3.0 - 0.5)) % 360
+            if fade and spread:
+                # A fade needs visible movement: sweep 80 degrees along the finish's own colour order.
+                hue = (base + 80 * (index / 3.0 - 0.5)) % 360
+            else:
+                hue = (base + spread * (rank / 3.0 - 0.5)) % 360
         saturation *= 0.6 if value > 0.85 else 0.85 if value < 0.2 else 1.0
         value = min(0.97, 0.12 + 0.88 * value ** 0.85)
         rr, gg, bb = colorsys.hsv_to_rgb(hue / 360.0, saturation, value)
@@ -224,7 +228,7 @@ def make_finish(source, kit, kit_path, new_name, theme):
     if colors is None: return None
     current = [[item.value for item in colors['g_vColor%d' % i].value] for i in range(4)]
     if any(len(color) != 4 for color in current): return None
-    new_colors = recolor(current, theme)
+    new_colors = recolor(current, theme, fade=kit in FADE_BASES)
     if max(brightness(c) for c in new_colors) < 110 / 255: return None  # dark patterns need a bright colour to show
     for i in range(4):
         for item, value in zip(colors['g_vColor%d' % i].value, new_colors[i]): item.value = value

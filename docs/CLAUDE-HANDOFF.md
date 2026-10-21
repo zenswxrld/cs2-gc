@@ -506,3 +506,4 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   pairs. Base-name fallback for extra finish titles (17v showed "Skeleton Knife | Ember").
 - 17z: user wants the Black Market Case to hold ONLY custom finishes (new knife finishes + recolours); all official knife finishes removed from it (they stay in regular cases).
 - 18a: 12 four-colour GRADIENT_THEMES (colour i -> hue i) for FADE_BASES (fades, marble fade, doppler/gamma phases, marbleized, tiger tooth); appended after older recolours, ids saved.
+- 18b: single-hue themes on FADE_BASES sweep 80 degrees along the finish's colour order (user: fades looked one flat colour).

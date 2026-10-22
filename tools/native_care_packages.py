@@ -1,13 +1,18 @@
 """Reuse CS2's native care-package tiles and StoreRedeemFreeRewards for local 3-of-4 rewards.
 
 Uses the inspected rankup_redemption_store and the captured PersonalStore (SO type 4). No invented UI APIs.
-Claims submit the faux ids of the displayed tiles (GetFauxItemIDFromDefAndPaintIndex); see SUBMIT.
+Build 29: offers are real econ items of the account, so the store ids are submitted as they are (see SUBMIT;
+old choice tokens are still mapped to faux ids).
 """
 from native_resources import install_override
 
 HELPER = '''    function _LocalCarePackage() {
         const store = GetPersonalStore();
-        return store && Object.values(store.items || {}).every(id => Number(id) >= 3000000000000 && Number(id) < 3017179869184);
+        // Build 29: the offers are real items of the account (ids 1e12..2e12); older stores used choice tokens.
+        return store && Object.values(store.items || {}).every(id => _LocalCareToken(id) || (Number(id) >= 1000000000000 && Number(id) < 2000000000000));
+    }
+    function _LocalCareToken(id) {
+        return Number(id) >= 3000000000000 && Number(id) < 3017179869184;
     }
     function _LocalCareFauxId(token) {
         const encoded = Number(token) - 3000000000000;
@@ -20,7 +25,7 @@ HELPER = '''    function _LocalCarePackage() {
 PREVIEW = """        // cs2_gc: display native catalogue previews, never synthetic unowned econ objects.
         const localChoice = _LocalCarePackage();
         const choiceToken = itemId;
-        if (localChoice && itemId !== '-') itemId = _LocalCareFauxId(itemId);
+        if (localChoice && itemId !== '-' && _LocalCareToken(itemId)) itemId = _LocalCareFauxId(itemId);
 """
 CLAIM = '''        // cs2_gc: a package grants exactly three picks, never one/two or all four.
         if (_LocalCarePackage() && _GetSelectedItems().length !== 3) { _PulseItems(); return; }
@@ -41,7 +46,7 @@ TIME = '''        if (_LocalCarePackage()) {
 # and let the GC map them back to the saved offers. Console diagnostics record what was submitted.
 SUBMIT = '''        if (_LocalCarePackage()) {
             const tokens = _GetSelectedItems().map(item => item.item_id);
-            szItemList = tokens.map(token => _LocalCareFauxId(token)).join(',');
+            szItemList = tokens.map(token => _LocalCareToken(token) ? _LocalCareFauxId(token) : token).join(',');
             _LocalCareLog(() => {
                 const store = GetPersonalStore();
                 const known = list => list.map(id => InventoryAPI.IsItemInfoValid(id) + '/' + InventoryAPI.IsValidItemID(id)).join(',');

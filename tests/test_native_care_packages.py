@@ -133,6 +133,11 @@ throwing=true;OnRedeem();assert.equal(sent.length,2,'a failing diagnostic never 
 _RedemptionTimedOut();assert.ok(logs[logs.length-1].includes('claim timed out'));
 store={generation_time:1,redeemable_balance:2,items:['52275636417']};selected=['52275636417'];
 OnRedeem();assert.equal(sent[2],'52275636417','official stores keep their native item ids');
+// Build 29: the offers are real items of the account; their ids go to the native call unchanged.
+store={generation_time:8,redeemable_balance:3,items:['1000000000101','1000000000102','1000000000103','1000000000104']};
+selected=['1000000000101','1000000000103','1000000000104'];logs.length=0;throwing=false;
+OnRedeem();assert.equal(sent[3],'1000000000101,1000000000103,1000000000104');
+assert.ok(logs[0].includes('submitted=1000000000101,1000000000103,1000000000104'));
 """
         self.run_js(script)
 

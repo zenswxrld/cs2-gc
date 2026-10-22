@@ -1,3 +1,17 @@
+# Build 29 (Claude) - care packages: offers are real econ items
+
+DLL tag claude-20261022-29. User's build-28 console.log: StoreRedeemFreeRewards got three faux ids the client
+recognised (IsItemInfoValid/IsValidItemID true) and STILL sent no 9219 (no frame in cs2_gc_log.txt). Valve's recorded
+PersonalStore lists real item ids for choosable slots (faux ids only for claimed ones), so the native call evidently
+needs ids that are in the store AND are items in the SO cache.
+- EncodeCareStore lists CustomItemIdBase+offer.id; EncodeCareOffers publishes the four offers as type-1 econ items of
+  the account (NOT account 0, the build-19 crash) with inventory position 0 (CareOfferPosition), in both welcome paths
+  and on NotifyCarePackage (old offer objects destroyed first). A claim destroys the four offer objects, then
+  NotifyRewardDrops creates the chosen three as owned items (unacknowledged bit). CareChoiceSlot accepts the real ids
+  (tokens/faux still accepted).
+- JS: _LocalCarePackage accepts the 1e12..2e12 range; tokens are mapped to faux ids only when the store still holds tokens.
+- Unverified live: whether position-0 offers appear in the inventory before the claim, and the claim itself.
+
 # Build 28 (Claude) - custom gun collections rebuilt from every gun finish; care-package claim ids
 
 DLL tag claude-20261022-28 (new DLL: care-package claim). Branch claude/collections-rebuild from main.

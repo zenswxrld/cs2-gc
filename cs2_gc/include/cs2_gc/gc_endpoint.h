@@ -130,6 +130,7 @@ private:
     void NotifyCarePackage(); // caller holds m_mutex
     std::uint32_t m_sentCareGeneration{};
     std::vector<std::uint8_t> m_sentCareStore;
+    std::vector<std::vector<std::uint8_t>> m_sentCareOffers; // econ items of the offered rewards
     void NotifyRewardDrops(const std::vector<InventoryItem> &drops); // caller holds m_mutex
     void SendMissingCaseKeys(); // free_case_keys: create and send a key for each newly owned case type
     std::optional<std::uint64_t> AcceptTerminalLocked(std::uint64_t gameId);

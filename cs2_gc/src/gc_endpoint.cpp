@@ -24,6 +24,8 @@ std::uint64_t CareChoiceToken(const InventoryItem &item, std::size_t slot)
         (static_cast<std::uint64_t>(item.paintKitIndex) << 16) + item.defIndex;
 }
 constexpr std::uint64_t FauxItemIdBase = 0xF000000000000000ull;
+// Offers are not in the backpack until chosen: no inventory position.
+constexpr std::uint32_t CareOfferPosition = 0;
 }
 // Maps one submitted id to an unused offer slot. Accepts the local choice token, or the client-side
 // faux id that Panorama derives for the displayed tile with GetFauxItemIDFromDefAndPaintIndex:
@@ -31,6 +33,8 @@ constexpr std::uint64_t FauxItemIdBase = 0xF000000000000000ull;
 // combined-id layout and is checked here only against the saved offer (a mismatch is rejected and logged).
 std::optional<std::size_t> CareChoiceSlot(const CarePackage &package, std::uint64_t id, const std::vector<bool> &used)
 {
+    for (std::size_t slot=0;slot<package.offers.size();++slot)
+        if (slot<used.size() && !used[slot] && id==CustomItemIdBase+package.offers[slot].id) return slot;
     if (id>=CareChoiceBase && id<CareChoiceBase+(4ull<<32)) {
         const auto slot=static_cast<std::size_t>((id-CareChoiceBase)>>32);
         if (slot<package.offers.size() && slot<used.size() && !used[slot] && id==CareChoiceToken(package.offers[slot],slot)) return slot;
@@ -46,6 +50,9 @@ std::optional<std::size_t> CareChoiceSlot(const CarePackage &package, std::uint6
 }
 namespace
 {
+// The user's build-28 console log: StoreRedeemFreeRewards sent nothing for local tokens nor for faux ids the
+// client recognised. Valve's recorded PersonalStore lists real item ids for the choices, so the offers are
+// published as real econ items of the account (never account 0, the build-19 crash) and the store lists their ids.
 std::vector<std::uint8_t> EncodeCareStore(const Inventory &inventory)
 {
     PbWriter out;
@@ -53,10 +60,18 @@ std::vector<std::uint8_t> EncodeCareStore(const Inventory &inventory)
     if (queue.empty()) { out.Varint(1,0); out.Varint(2,0); }
     else {
         out.Varint(1,queue.front().generation); out.Varint(2,3);
-        for (std::size_t slot=0;slot<queue.front().offers.size();++slot)
-            out.Varint(3,CareChoiceToken(queue.front().offers[slot],slot));
+        for (const auto &offer : queue.front().offers) out.Varint(3,CustomItemIdBase+offer.id);
     }
     return out.bytes();
+}
+std::vector<std::vector<std::uint8_t>> EncodeCareOffers(const Inventory &inventory, std::uint32_t account)
+{
+    std::vector<std::vector<std::uint8_t>> objects;
+    const auto &queue = inventory.CarePackages();
+    if (!queue.empty())
+        for (const auto &offer : queue.front().offers)
+            objects.push_back(BuildEconItem(offer, account, CustomItemIdBase+offer.id, CareOfferPosition));
+    return objects;
 }
 constexpr std::uint32_t NotificationNameItem = 1006;
 constexpr std::uint32_t NotificationUnlockCrate = 1007;
@@ -622,7 +637,7 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                 if(gc.m_config.diagnostic)gc.m_config.diagnostic("care claim rejected: stale generation or duplicate/partial choices");
                 ++gc.m_ignored;return;
             }
-            // Preview descriptors never enter the econ cache. Only the three chosen owned items are published.
+            // The four offer items are destroyed (NotifyCarePackage) before the chosen three are created as owned items.
             if (afterChange) afterChange();
             gc.NotifyCarePackage(); gc.NotifyRewardDrops(*chosen);
             PbWriter notification;
@@ -1236,6 +1251,11 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
                 const auto &queue=m_live->Items().CarePackages();
                 const std::vector<std::vector<std::uint8_t>> store{EncodeCareStore(m_live->Items())};
                 if(auto result=AppendObjectsToWelcome(patched,PersonalStoreTypeId,store,true)) patched=std::move(*result);
+                m_sentCareOffers=EncodeCareOffers(m_live->Items(),static_cast<std::uint32_t>(m_config.owner.id));
+                if(!m_sentCareOffers.empty()) {
+                    if(auto result=AppendObjectsToWelcome(patched,ItemTypeId,m_sentCareOffers,false)) patched=std::move(*result);
+                    else ++m_patchFailures;
+                }
                 m_sentCareStore=store.front();m_sentCareGeneration=queue.empty()?0:queue.front().generation;
             }
             if (m_armory || m_armoryCredits)
@@ -1278,6 +1298,12 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
         auto &types=welcome.outOfDateCaches.front().types;
         types.erase(std::remove_if(types.begin(),types.end(),[](const auto &type){return type.typeId==static_cast<std::int32_t>(PersonalStoreTypeId);}),types.end());
         types.push_back({static_cast<std::int32_t>(PersonalStoreTypeId),{EncodeCareStore(m_live->Items())}});
+        m_sentCareOffers=EncodeCareOffers(m_live->Items(),static_cast<std::uint32_t>(m_config.owner.id));
+        if (!m_sentCareOffers.empty()) {
+            auto items=std::find_if(types.begin(),types.end(),[](const auto &type){return type.typeId==static_cast<std::int32_t>(ItemTypeId);});
+            if (items==types.end()) types.push_back({static_cast<std::int32_t>(ItemTypeId),m_sentCareOffers});
+            else items->objects.insert(items->objects.end(),m_sentCareOffers.begin(),m_sentCareOffers.end());
+        }
         const auto &queue=m_live->Items().CarePackages();
         m_sentCareStore=EncodeCareStore(m_live->Items());m_sentCareGeneration=queue.empty()?0:queue.front().generation;
     }
@@ -1373,6 +1399,18 @@ void LocalGameCoordinator::NotifyCarePackage()
         SoSingleObject removed;removed.typeId=static_cast<std::int32_t>(PersonalStoreTypeId);
         removed.owner=m_config.owner;removed.version=++m_soVersion;removed.data=m_sentCareStore;
         Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy,EncodeSoSingleObject(removed));
+    }
+    // Offer items of the previous package go away (a claim re-creates the chosen three as owned items).
+    for (const auto &offer : m_sentCareOffers) {
+        SoSingleObject removed;removed.typeId=static_cast<std::int32_t>(ItemTypeId);
+        removed.owner=m_config.owner;removed.version=++m_soVersion;removed.data=offer;
+        Reply(gc_msg::ESOMsg::k_ESOMsg_Destroy,EncodeSoSingleObject(removed));
+    }
+    m_sentCareOffers=EncodeCareOffers(m_live->Items(),static_cast<std::uint32_t>(m_config.owner.id));
+    for (const auto &offer : m_sentCareOffers) {
+        SoSingleObject created;created.typeId=static_cast<std::int32_t>(ItemTypeId);
+        created.owner=m_config.owner;created.version=++m_soVersion;created.data=offer;
+        Reply(gc_msg::ESOMsg::k_ESOMsg_Create,EncodeSoSingleObject(created));
     }
     m_sentCareStore=EncodeCareStore(m_live->Items());m_sentCareGeneration=generation;
     SoSingleObject store;store.typeId=static_cast<std::int32_t>(PersonalStoreTypeId);store.owner=m_config.owner;

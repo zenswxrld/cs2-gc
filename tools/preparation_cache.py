@@ -15,7 +15,7 @@ FILENAME = 'cs2_gc_prepare_cache.json'
 # the DLL/launcher, re-runs only those steps instead of regenerating every collection material (user, build 30:
 # "still takes a while with each change"). Everything else feeds the schema/material stage.
 LIGHT_HELPERS = frozenset(name + '.py' for name in (
-    'rotate_armory', 'native_scoreboard', 'native_store', 'skip_container_confirm', 'native_item_sales',
+    'rotate_armory', 'native_scoreboard', 'native_store', 'skip_container_confirm', 'native_item_sales', 'native_multi_sell',
     'native_endmatch', 'native_offer_numbers', 'skip_key_select', 'native_endmatch_stock', 'native_care_packages',
     'native_mainmenu', 'native_mission_launch', 'native_knife_reel', 'native_bot_names', 'prepare_native',
     'preparation_cache', 'vpk_signatures', 'gsi_rewards', 'console_controls', 'grant_test_items',

@@ -126,7 +126,7 @@ class PreparationCaching(unittest.TestCase):
                 stack.enter_context(patch.object(prepare_native,'PreparationCache',return_value=cache))
                 actions={name:stack.enter_context(patch.object(prepare_native,name,return_value='ready')) for name in
                     ('recipes','armory','scoreboard','store','confirmation','sales','results','offers','key_select',
-                     'stock_results','mainmenu','care_packages','missions','knife_reel','bot_names',
+                     'stock_results','mainmenu','care_packages','multi_sell','missions','knife_reel','bot_names',
                      'ensure_first_game_path','signatures')}
                 output=io.StringIO()
                 with contextlib.redirect_stdout(output):

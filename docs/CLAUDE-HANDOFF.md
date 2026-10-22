@@ -1224,3 +1224,15 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   ceil(xp/100) stars (cumulative "stars N" line in cs2_gc_mission_progress.txt -> Inventory::ApplyMissionStars,
   persisted as mission_star_total). Armory passes auto-renew (armory_pass_auto_renew, default 1): a full 40-star track
   restarts and carries over XP. "Add more missions" waits for the user to confirm tracking works live. Not verified live.
+- Build 36 (22 Oct): user parked missions ("forget missions for now"); build 35 Refresh did not change the mission
+  and SCAR-20 kills did not count while holding a SCAR. Fixes shipped but unverified: MissionTick reports a
+  Refresh-made change to the helper (it used to be swallowed), each Refresh gets its own period (window start +
+  offset), diagnostics "missions: ..." in cs2_gc_log.txt and "Mission: ..." (why a kill was not counted) in
+  cs2_gc_rewards.log. Next time: read both logs before changing anything.
+  Custom-collection trade-ups: Schema::TradeUpCollectionsOf/TradeUpCollectionSkins add the set_cs2gc_case_*
+  loot-list collections (official item_sets first); a colour variant belongs where its family kit is listed and
+  the contract grants a random colour of the outcome family. Client acceptance of these inputs is unverified.
+  Multi-sell: inventory context menu "Sell multiple for stars..." opens CS2's own popup_select_item_for_capability
+  with capability cs2gc_sell; native_multi_sell.py (override folder cs2_gc_multisell) makes it multi-select like
+  casketstore, lists the whole inventory, relabels the confirm button "Sell for N stars" and sells each sellable
+  pick via InventoryAPI.DeleteItem after a Yes/No confirmation. Not verified live.

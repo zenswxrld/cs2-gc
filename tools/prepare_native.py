@@ -11,6 +11,7 @@ from native_scoreboard import prepare as scoreboard
 from native_store import prepare as store
 from skip_container_confirm import prepare as confirmation
 from native_item_sales import prepare as sales
+from native_multi_sell import prepare as multi_sell
 from native_endmatch import prepare as results
 from native_offer_numbers import prepare as offers
 from native_bot_names import prepare as bot_names
@@ -41,7 +42,7 @@ def prepare(directory, force_rebuild=False):
         print('Recipes/catalogue: ' + recipes(directory, bool(config['mixed_stattrak_tradeups']), config) +
               ' [%.2fs]' % (time.perf_counter() - step), flush=True)
     actions = [('Armory', armory), ('Scoreboard', scoreboard), ('Store', store),
-                         ('Opening confirmation', confirmation), ('Item sales', sales),
+                         ('Opening confirmation', confirmation), ('Item sales', sales), ('Multi-sell', multi_sell),
                          ('Match results', results), ('Terminal offers', offers), ('Key picker', key_select),
                          ('Stock XP/rating panels', stock_results), ('Main-menu promotion', mainmenu), ('Care packages', care_packages), ('Bot mission launch', missions), ('Black Market reel', knife_reel)]
     if not cached:

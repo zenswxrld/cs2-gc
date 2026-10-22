@@ -118,6 +118,12 @@ PRICE = '''
 '''
 
 
+def price_code(data):
+    # Read the definition via the same native name-to-index path already used by Armory.
+    return PRICE.replace('__SETTINGS__', json.dumps(data)).replace(
+        'InventoryAPI.GetItemDefinitionIndex(id)', 'InventoryAPI.GetItemDefinitionIndexFromDefinitionName(InventoryAPI.GetItemDefinitionName(id))')
+
+
 def patch(source, data):
     anchor = '        let validEntries = ItemContextEntries.FilterEntries(id, populateFilterText);'
     if source.count(anchor) != 1 or source.count('    function _PopulateContextMenu(id, populateFilterText) {') != 1 or '_LocalSalePrice' in source:
@@ -134,11 +140,16 @@ def patch(source, data):
                     'Sell ' + InventoryAPI.GetItemName(id) + ' for ' + price + ' stars? This removes the item, including attached stickers or charms.',
                     '', () => InventoryAPI.DeleteItem(id), () => {});
             });
+            // Multi-sell (native_multi_sell.py): the storage unit's multi-select picker, selling instead of storing.
+            const many = $.CreatePanel('Button', elParent, 'cs2gc-sell-many');
+            $.CreatePanel('Label', many, '', {text: 'Sell multiple for stars...'});
+            many.SetPanelEvent('onactivate', () => {
+                $.DispatchEvent('ContextMenuEvent', '');
+                $.DispatchEvent('ShowSelectItemForCapabilityPopup', id, '', 'cs2gc_sell');
+            });
         }
 '''
-    # Read the definition via the same native name-to-index path already used by Armory.
-    code = PRICE.replace('__SETTINGS__', json.dumps(data)).replace(
-        'InventoryAPI.GetItemDefinitionIndex(id)', 'InventoryAPI.GetItemDefinitionIndexFromDefinitionName(InventoryAPI.GetItemDefinitionName(id))')
+    code = price_code(data)
     bottom = '        if (!validEntries.length) {'
     if source.count(bottom) != 1: raise ValueError('Changed inventory context-menu footer')
     source = source.replace('    function _PopulateContextMenu(id, populateFilterText) {', code + '\n    function _PopulateContextMenu(id, populateFilterText) {', 1)

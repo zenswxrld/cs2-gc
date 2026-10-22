@@ -283,6 +283,7 @@ public:
         }
         PollTradeUpRequest();
         PollTerminalRequest();
+        PollCarePackageRequest();
 #ifdef CS2_GC_DEBUG_TOOLS
         {
             std::ifstream control(m_rewardPath.parent_path() / "cs2_gc_console.txt");
@@ -341,6 +342,32 @@ public:
     }
 
 private:
+    void PollCarePackageRequest()
+    {
+        const auto dir = m_rewardPath.parent_path();
+        const auto pending = dir / "cs2_gc_care_request.txt";
+        const auto processing = dir / "cs2_gc_care_processing.txt";
+        std::error_code ec;
+        // Recover an interrupted request too; generation checks make replay harmless.
+        if (!std::filesystem::exists(processing,ec)) {
+            if (!std::filesystem::exists(pending,ec)) return;
+            std::filesystem::rename(pending,processing,ec);
+            if (ec) return;
+        }
+        std::ifstream input(processing);
+        std::string line((std::istreambuf_iterator<char>(input)),std::istreambuf_iterator<char>());
+        input.close();
+        if (!line.empty() && line.back() == '\n') line.pop_back();
+        const auto request = DecodeLocalCareRequest(line);
+        std::ifstream boot(dir / "cs2_gc_console_boot.txt");
+        std::string nonce,extra;
+        const bool session = bool(boot >> nonce) && !(boot >> extra);
+        const bool accepted = request && session && request->processId == GetCurrentProcessId() &&
+            request->nonce == nonce && m_gc.ClaimLocalCarePackage(request->generation,request->mask,m_afterReward);
+        m_log.Write(accepted ? "care helper: three selected rewards granted and saved" :
+                               "care helper: request rejected; no rewards granted");
+        std::filesystem::remove(processing,ec);
+    }
     void PollTerminalRequest()
     {
         const auto dir = m_rewardPath.parent_path();

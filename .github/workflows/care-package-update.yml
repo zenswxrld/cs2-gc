@@ -1,0 +1,30 @@
+name: Care package test build
+on:
+  push:
+    branches: [codex/care-package-claims]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check-and-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Configure proxy and core
+        run: cmake -S . -B build -A x64 -DBUILD_TESTING=ON -DCS2_GC_BUILD_PROXY=ON -DCS2_GC_DEBUG_TOOLS=ON -DCS2_GC_PROXY_DEF="${{ github.workspace }}/data/steam_api64_exports.def"
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Package test update
+        run: python tools/package_care_update.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CS2GC-Care-Package-Test
+          path: dist/CS2GC-Care-Package-Test.zip

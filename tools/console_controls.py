@@ -42,6 +42,7 @@ class ConsoleControls:
         self.publish()
         text = ('// Local offline controls. Launch with -insecure -condebug. Execute once per game launch.\n'
                 'setinfo cs2_gc_rotation_offset 0\n'
+                f'setinfo cs2_gc_session_code {self.nonce}\n'
                 + ''.join(f'setinfo cs2gc_{self.nonce}_{name} 0\n' for name in ('s100', 's1000', 'rot')) +
                 f'alias cs2_gc_give_stars "incrementvar cs2gc_{self.nonce}_s100 0 1000000 1"\n'
                 f'alias cs2_gc_give_stars_1000 "incrementvar cs2gc_{self.nonce}_s1000 0 1000000 1"\n'

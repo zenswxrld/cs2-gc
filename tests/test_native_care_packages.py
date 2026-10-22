@@ -19,7 +19,8 @@ class NativeCarePackages(unittest.TestCase):
     def test_native_claim_requires_three_choices_and_removes_weekly_text(self):
         source='''let m_redeemableBalance=3,m_schTimer,m_timeoutScheduleHandle=99,m_timeStamp=10;
     function GetPersonalStore() {return store;}
-    function OnRedeem() {sent++;}
+    function OnRedeem() {let szItemList='';
+        StoreAPI.StoreRedeemFreeRewards(szItemList);\n}
     function _UpdateTime() { weekly++; }
     function OnInventoryUpdated() { updated++; }
     function _CreateItemPanel(itemId, index, bFirstTime, claimedItemId = '') {
@@ -34,7 +35,9 @@ class NativeCarePackages(unittest.TestCase):
 let store={generation_time:10,redeemable_balance:3,items:['3000000000001','3004294967297','3008589934593','3012884901889']};
 const title={},vars={},panel={FindChildrenWithClassTraverse:()=>[title],SetDialogVariable:(key,value)=>vars[key]=value,RemoveClass:()=>{}};
 const $={GetContextPanel:()=>panel,Schedule:()=>1,CancelScheduled:()=>cancelled++};
-const _GetSelectedItems=()=>Array(count).fill({}),_PulseItems=()=>pulses++;
+const _GetSelectedItems=()=>Array.from({length:count},(_,i)=>({item_id:store.items[i]})),_PulseItems=()=>pulses++;
+const GameInterfaceAPI={GetSettingString:()=> 'a'.repeat(32),ConsoleCommand:()=>sent++};
+const StoreAPI={StoreRedeemFreeRewards:()=>sent++};
 ''' +care.patch(source)+'''
 OnRedeem(); assert.equal(sent,0);assert.equal(pulses,1);
 count=4;OnRedeem();assert.equal(sent,0);
@@ -57,7 +60,8 @@ assert.deepEqual(seen,[13,10]);assert.equal(itemId,'faux');assert.equal(choiceTo
 
     def test_native_faux_claimed_flag_is_cleared_only_for_pending_local_rewards(self):
         source="""    function GetPersonalStore() {return store;}
-    function OnRedeem() {}
+    function OnRedeem() {
+        StoreAPI.StoreRedeemFreeRewards(szItemList);\n}
     function _UpdateTime() {}
     function OnInventoryUpdated() {}
     function _CreateItemPanel(itemId, index, bFirstTime, claimedItemId = '') {

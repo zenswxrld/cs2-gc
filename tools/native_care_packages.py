@@ -1,10 +1,34 @@
-"""Reuse CS2's native care-package tiles and StoreRedeemFreeRewards for local 3-of-4 rewards.
+"""Reuse CS2's native care-package tiles with a validated local 3-of-4 claim bridge.
 
 Uses the inspected rankup_redemption_store and the captured PersonalStore (SO type 4). No invented UI APIs.
 """
 from native_resources import install_override
 
-HELPER = '''    function _LocalCarePackage() {
+HELPER = '''    function _SendLocalCareClaim() {
+        const store = GetPersonalStore(), selected = _GetSelectedItems();
+        const generation = Number(store.generation_time);
+        const offers = Object.values(store.items || {}).map(String);
+        let mask = 0;
+        for (const item of selected) {
+            const slot = offers.indexOf(String(item.item_id));
+            if (slot < 0 || slot > 3 || (mask & (1 << slot))) return false;
+            mask |= 1 << slot;
+        }
+        if (!Number.isInteger(generation) || generation < 1 || generation > 4294967295 ||
+            offers.length !== 4 || ![7,11,13,14].includes(mask)) return false;
+        const nonce = GameInterfaceAPI.GetSettingString('cs2_gc_session_code');
+        if (!/^[0-9a-f]{32}$/.test(nonce || '')) {
+            UiToolkitAPI.ShowGenericPopup('', 'CARE PACKAGE',
+                'Restart CS2 using the updated cs2_gc_debug launcher to enable local reward claims.', '', 'OK', function () {});
+            return false;
+        }
+        // Same incrementvar/log transport used by the local console helper.
+        // Encode integer choices in the name, avoiding cvar float precision loss.
+        const name = 'cs2gc_' + nonce + '_care_' + generation + '_' + mask;
+        GameInterfaceAPI.ConsoleCommand('setinfo ' + name + ' 0; incrementvar ' + name + ' 0 1 1');
+        return true;
+    }
+    function _LocalCarePackage() {
         const store = GetPersonalStore();
         return store && Object.values(store.items || {}).every(id => Number(id) >= 3000000000000 && Number(id) < 3017179869184);
     }
@@ -64,6 +88,14 @@ def patch(source):
 
     source=source.replace(activate,'        if (_LocalCarePackage() || !InventoryAPI.IsFauxItemID(itemId)) {',1)
     source=source.replace('Object.values(objStore.items)', 'Object.values(objStore.items || {})')
+    redeem = '        StoreAPI.StoreRedeemFreeRewards(szItemList);'
+    if source.count(redeem) != 1:
+        raise ValueError('Installed reward redemption contract changed; no patch written')
+    source = source.replace(redeem, """        if (_LocalCarePackage()) {
+            if (!_SendLocalCareClaim()) return;
+        } else {
+            StoreAPI.StoreRedeemFreeRewards(szItemList);
+        }""", 1)
     return source
 
 

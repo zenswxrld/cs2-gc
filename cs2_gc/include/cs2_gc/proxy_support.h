@@ -39,5 +39,12 @@ struct ProxyConfig
     std::uint64_t cacheVersion{1};    // cache_version
 };
 
+struct LocalCareRequest
+{
+    std::uint32_t processId{}, generation{}, mask{};
+    std::string nonce;
+};
+std::optional<LocalCareRequest> DecodeLocalCareRequest(std::string_view text);
+
 std::optional<ProxyConfig> ParseProxyConfig(std::string_view text);
 }

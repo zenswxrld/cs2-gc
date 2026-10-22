@@ -4298,6 +4298,45 @@ void NativeCarePackages()
     endpoint.SendMessage(9219|ProtobufMask,body.data(),body.size());
     Check(endpointInventory->Items().Items().size()==3 && endpointInventory->Items().CarePackages().empty() && saves==2,
           "native StoreRedeemFreeRewards path pays three once and saves before notification");
+
+    {
+        auto helperInventory=std::make_shared<LiveInventory>(saved);
+        LocalGameCoordinator helper({});
+        helper.EnableContainers(helperInventory,shared,[]{return 500ull;},{});
+        int helperSaves=0;
+        Check(helper.ApplyMatchRewards(1,{}),"helper fixture queues saved offers");
+        const auto front=helperInventory->Items().CarePackages().front();
+        for (const auto mask : {0u,1u,3u,15u,23u})
+            Check(!helper.ClaimLocalCarePackage(front.generation,mask,[&]{++helperSaves;}),
+                  "helper rejects masks other than exactly three of four");
+        Check(!helper.ClaimLocalCarePackage(front.generation+1,7,{}),
+              "helper rejects stale generation without changing inventory");
+        Check(helper.ClaimLocalCarePackage(front.generation,13,[&]{++helperSaves;}) &&
+              helperInventory->Items().Items().size()==3 &&
+              !helperInventory->Items().Find(front.offers[1].id) && helperSaves==1,
+              "helper grants exactly selected slots and saves once");
+        Check(!helper.ClaimLocalCarePackage(front.generation,13,[&]{++helperSaves;}) && helperSaves==1,
+              "replayed helper request cannot grant twice");
+        bool created=false,notified=false;std::uint32_t available=0;
+        while(helper.IsMessageAvailable(&available)) {
+            std::vector<std::uint8_t> message(available);std::uint32_t type=0,got=0;
+            helper.RetrieveMessage(&type,message.data(),available,&got);
+            created|=(type&~ProtobufMask)==gc_msg::ESOMsg::k_ESOMsg_Create;
+            notified|=(type&~ProtobufMask)==gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification;
+        }
+        Check(created && notified,"helper publishes real inventory and redemption acknowledgements");
+        const auto disk=Inventory::FromText(helperInventory->Items().ToText());
+        Check(disk && disk->Items().size()==3 && disk->CarePackages().empty(),
+              "helper result survives reload without a pending claim");
+        const std::string nonce(32,'a');
+        const auto decoded=DecodeLocalCareRequest("42 123 13 "+nonce);
+        Check(decoded && decoded->processId==42 && decoded->generation==123 && decoded->mask==13 &&
+              decoded->nonce==nonce,"care transport preserves exact integer choices");
+        for (const auto &bad : {"0 123 13 "+nonce, "42 0 13 "+nonce, "42 123 15 "+nonce,
+             "4294967296 123 13 "+nonce, "42 4294967296 13 "+nonce, "42 123 13 "+nonce+" extra",
+             "42 123 13 nope", "42 123 13 "+nonce+"\n42 124 7 "+nonce})
+            Check(!DecodeLocalCareRequest(bad),"care request decoder rejects invalid/sessionless data");
+    }
     Inventory opens;const auto crate=opens.Add({0,60});
     Check(OpenCase(opens,*schema,crate,0,[]{return 0ull;}).error==OpenError::None && opens.Items().size()==1,
           "free case opens with no key object");

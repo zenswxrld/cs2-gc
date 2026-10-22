@@ -4350,6 +4350,31 @@ void NativeCarePackages()
         Check(got==want && routeInventory->Items().CarePackages().empty() && routeSaves==1 && armory->Balance()==30,
               "armory-route claim grants the three chosen slots once without spending Armory credits");
     }
+    {
+        // Build 31: claims printed by the patched page to console.log (the user's build-30 line, verbatim shape).
+        const auto parsed=ParseCareConsoleClaims(
+            "10/22 23:40:29 [PanoramaScript] cs2_gc care: claim generation=1792574030 balance=3 tokens=3000000004186,3008680177725,3012884906436 known=false/false submitted=1 known=true\n"
+            "10/22 23:40:29 [PanoramaScript] cs2_gc care: claim via armory route: generation=1792574030 mask=13 cost=2009184493\n"
+            "cs2_gc care: claim generation=5 balance=3 tokens=1,2 known=x\n"
+            "cs2_gc care: claim generation=5 balance=3 tokens=1,2,x,3 known=x\n");
+        Check(parsed.size()==1 && parsed[0].generation==1792574030u &&
+              parsed[0].tokens==std::vector<std::uint64_t>{3000000004186ull,3008680177725ull,3012884906436ull},
+              "console claim lines parse; route lines and malformed token lists are ignored");
+        const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
+        auto consoleInventory=std::make_shared<LiveInventory>(*disk);LocalGameCoordinator consoleGc({});int consoleSaves=0;
+        consoleGc.EnableContainers(consoleInventory,shared,[]{return 1ull;},[&]{++consoleSaves;});
+        const auto package=consoleInventory->Items().CarePackages().front();
+        const auto token=[&](std::size_t slot)->std::uint64_t{ // the store's choice token for a slot
+            return 3000000000000ull+(std::uint64_t{slot}<<32)+(std::uint64_t{package.offers[slot].paintKitIndex}<<16)+package.offers[slot].defIndex;};
+        Check(!consoleGc.ClaimCareFromConsole(package.generation+1,{token(0),token(1),token(3)}) &&
+              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(0),token(3)}) &&
+              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1)}) && consoleSaves==0,
+              "console claims with another package, a repeated choice or two choices grant nothing");
+        Check(consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1),token(3)}) &&
+              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1),token(3)}) &&
+              consoleInventory->Items().Items().size()==3 && consoleSaves==1,
+              "a console claim grants the three chosen offers once");
+    }
     const auto &offer=endpointInventory->Items().CarePackages().front();
     PbWriter request;request.Varint(1,offer.generation);request.Varint(2,0);
     for(unsigned i=0;i<3;++i)request.Varint(3,choiceTokens[i]);

@@ -7,6 +7,7 @@
 #include "cs2_gc/replay.h"
 #include <atomic>
 #include <functional>
+#include <string_view>
 #include <memory>
 #include <optional>
 #include <mutex>
@@ -92,6 +93,8 @@ public:
                           RandomSource random, std::function<void()> afterChange);
     // Consume cumulative XP from the local GSI bridge, idempotently, on the game's callback thread.
     bool ApplyEarnedXp(std::uint64_t cumulativeXp, const std::function<void()> &afterChange);
+    // A care-package claim the patched page printed to console.log (build 31): generation + the three choice tokens.
+    bool ClaimCareFromConsole(std::uint32_t generation, const std::vector<std::uint64_t> &tokens);
     bool ApplyConsoleControl(std::uint64_t cumulativeStars, std::uint32_t rotationOffset,
                              const std::function<void()> &afterChange);
     bool ApplyMatchRewards(std::uint64_t completed, const std::function<void()> &afterChange);
@@ -174,4 +177,7 @@ std::vector<std::uint8_t> ReplyHeaderFor(const FrameView &request);
 // Care-package claim (k_EMsgGCCStrike15_v2_ClientRedeemFreeReward): the unused offer slot an id names,
 // either the local choice token from the PersonalStore or the faux id Panorama resolved for the tile.
 std::optional<std::size_t> CareChoiceSlot(const CarePackage &package, std::uint64_t id, const std::vector<bool> &used);
+struct CareConsoleClaim { std::uint32_t generation{}; std::vector<std::uint64_t> tokens; };
+// Claims in newly appended console.log text: "cs2_gc care: claim generation=<n> balance=<n> tokens=<a>,<b>,<c> ...".
+std::vector<CareConsoleClaim> ParseCareConsoleClaims(std::string_view text);
 }

@@ -7,6 +7,7 @@
 #include <ctime>
 #include <set>
 #include <bit>
+#include <charconv>
 
 namespace cs2_gc
 {
@@ -45,6 +46,34 @@ std::optional<std::size_t> CareChoiceSlot(const CarePackage &package, std::uint6
             offer.paintKitIndex<=0xFFFFu && offer.defIndex<=0xFFFFu) return slot;
     }
     return std::nullopt;
+}
+std::vector<CareConsoleClaim> ParseCareConsoleClaims(std::string_view text)
+{
+    std::vector<CareConsoleClaim> claims;
+    constexpr std::string_view marker = "cs2_gc care: claim generation=";
+    for (auto at = text.find(marker); at != std::string_view::npos; at = text.find(marker, at + 1))
+    {
+        auto line = text.substr(at + marker.size());
+        line = line.substr(0, std::min(line.find_first_of("\r\n"), line.size()));
+        CareConsoleClaim claim;
+        const auto [end, error] = std::from_chars(line.data(), line.data() + line.size(), claim.generation);
+        const auto tokens = line.find(" tokens=");
+        if (error != std::errc{} || end == line.data() || *end != ' ' || tokens == std::string_view::npos) continue;
+        auto list = line.substr(tokens + 8);
+        list = list.substr(0, std::min(list.find(' '), list.size()));
+        bool valid = !list.empty();
+        while (valid && !list.empty() && claim.tokens.size() < 4)
+        {
+            std::uint64_t token = 0;
+            const auto [next, failed] = std::from_chars(list.data(), list.data() + list.size(), token);
+            valid = failed == std::errc{} && next != list.data();
+            claim.tokens.push_back(token);
+            list.remove_prefix(static_cast<std::size_t>(next - list.data()));
+            if (!list.empty()) { valid = valid && list.front() == ','; list.remove_prefix(1); }
+        }
+        if (valid && list.empty() && claim.tokens.size() == 3) claims.push_back(std::move(claim));
+    }
+    return claims;
 }
 namespace
 {
@@ -213,6 +242,27 @@ void LocalGameCoordinator::RefreshServerInventory()
     cache.Fixed64(3, ++m_soVersion);
     cache.Message(4, owner);
     Reply(gc_msg::ESOMsg::k_ESOMsg_CacheSubscribed, cache.bytes());
+}
+
+bool LocalGameCoordinator::ClaimCareFromConsole(std::uint32_t generation, const std::vector<std::uint64_t> &tokens)
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_live || !m_careClaim) return false;
+    const auto &queue = m_live->Items().CarePackages();
+    if (m_config.diagnostic) m_config.diagnostic("care claim received (console route): generation=" + std::to_string(generation) +
+        " pending=" + std::to_string(queue.empty() ? 0 : queue.front().generation));
+    if (queue.empty() || queue.front().generation != generation || tokens.size() != 3) return false;
+    const auto &package = queue.front();
+    std::vector<bool> used(package.offers.size(), false);
+    std::vector<std::uint64_t> selected;
+    for (const auto token : tokens)
+    {
+        const auto slot = CareChoiceSlot(package, token, used);
+        if (!slot) return false;
+        used[*slot] = true;
+        selected.push_back(package.offers[*slot].id);
+    }
+    return m_careClaim(*this, generation, selected);
 }
 
 bool LocalGameCoordinator::ApplyConsoleControl(std::uint64_t cumulativeStars, std::uint32_t rotationOffset,

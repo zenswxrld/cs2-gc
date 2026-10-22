@@ -84,13 +84,19 @@ def _seed(proxy_directory, reshuffle):
     return seed
 
 
-def patch_labels(text):
-    """Keep the full installed localization and its positional name placeholders."""
-    for key, replacement in (('SFUI_bot_decorated_name', '%s1'),
-                             ('SFUI_bot_decorated_name_controlled', '%s1 (%s2)')):
+def patch_labels(text, hide_tag=True, tokens=None):
+    """Keep the full installed localization and its positional name placeholders. tokens: names of the custom
+    collections' item sets (native_skins.collection_item_sets), added inside the Tokens block."""
+    if tokens:
+        from native_finishes import localization
+        text = localization(text, {k: v for k, v in tokens.items()
+                                   if not re.search(r'"%s"' % re.escape(k), text, re.I)})
+    replacements = (('SFUI_bot_decorated_name', '%s1'), ('SFUI_bot_decorated_name_controlled', '%s1 (%s2)'))
+    for key, replacement in replacements if hide_tag else ():
         pattern = re.compile(r'("' + key + r'"\s*)"([^"\r\n]*)"', re.I)
         matches = list(pattern.finditer(text))
         if len(matches) != 1 or '%s1' not in matches[0][2]:
+            if tokens: continue  # keep the collection names; only the bot label stays as installed
             raise ValueError('Changed bot localization format: ' + key)
         text = pattern.sub(lambda match: match[1] + '"' + replacement + '"', text)
     return text
@@ -103,7 +109,14 @@ def prepare(proxy_directory, config, reshuffle=False):
     seed = _seed(proxy_directory, reshuffle) if enabled else 0
     names = install_override(proxy_directory, enabled=enabled, folder=FOLDER, comment=COMMENT, owner=OWNER,
                              asset=ASSET, patch=lambda source: patch(source, seed))
-    labels = install_override(proxy_directory, enabled=bool(config.get('bot_hide_tag', 1)),
+    # The same English override names the custom collections (their item sets need localized names).
+    import json
+    try:
+        tokens = json.loads((Path(proxy_directory) / 'cs2_gc_collection_tokens.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        tokens = {}
+    hide_tag = bool(config.get('bot_hide_tag', 1))
+    labels = install_override(proxy_directory, enabled=hide_tag or bool(tokens),
         folder='cs2_gc_bot_labels', comment='cs2_gc native bot labels', owner='cs2-gc-bot-labels-v1',
-        asset='resource/csgo_english.txt', patch=patch_labels)
+        asset='resource/csgo_english.txt', patch=lambda text: patch_labels(text, hide_tag, tokens))
     return names + '; bot labels: ' + labels

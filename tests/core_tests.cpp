@@ -4211,12 +4211,15 @@ void CustomSkinFamilies()
       "client_loot_lists" { "set_cs2gc_case_eclipse_common" { "[low]weapon_test" "1" }
         "set_cs2gc_case_eclipse_uncommon" { "[family]weapon_test" "1" }
         "set_cs2gc_case_eclipse" { "set_cs2gc_case_eclipse_uncommon" "1" "set_cs2gc_case_eclipse_common" "1" } }
+      "item_sets" { "set_cs2gc_case_eclipse" { "name" "#CSGO_set_cs2gc_case_eclipse" "is_collection" "1"
+        "items" { "[low]weapon_test" "1" "[red]weapon_test" "1" "[blue]weapon_test" "1" } } }
     })");
     Check(tradeSchema && tradeSchema->LoadSkinFamilies(R"("skin_families" { "family" { "red" "1" "blue" "1" } })"),
           "custom trade-up fixture loads");
     Check(tradeSchema->TradeUpCollectionsOf(7,30)==std::vector<std::string>{"set_cs2gc_case_eclipse"} &&
           tradeSchema->TradeUpCollectionsOf(7,32)==std::vector<std::string>{"set_cs2gc_case_eclipse"} &&
-          tradeSchema->TradeUpCollectionsOf(7,34).empty() && tradeSchema->CollectionsOf(7,30).empty(),
+          tradeSchema->TradeUpCollectionsOf(7,34).empty() && tradeSchema->CollectionsOf(7,30).empty() &&
+          tradeSchema->CollectionCount()==0,
           "custom collections count for trade-ups only, colours with their family");
     std::set<std::uint32_t> colours;
     for (std::uint64_t roll=0; roll<4; ++roll)

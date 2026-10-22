@@ -329,6 +329,10 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
         schema.m_weaponNames.emplace(definition, name);
     for (const KvNode *set : schema.m_itemSets)
     {
+        // The custom collections' item sets exist for the client's trade-up screen only; the GC keeps them as loot
+        // lists (LoadSkinFamilies), so match drops and the official collection lists do not change.
+        if (set->key.starts_with("set_cs2gc_"))
+            continue;
         const KvNode *items = set->Find("items");
         if (!items || !items->block)
             continue;

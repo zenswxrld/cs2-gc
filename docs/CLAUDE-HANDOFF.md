@@ -1236,3 +1236,14 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   with capability cs2gc_sell; native_multi_sell.py (override folder cs2_gc_multisell) makes it multi-select like
   casketstore, lists the whole inventory, relabels the confirm button "Sell for N stars" and sells each sellable
   pick via InventoryAPI.DeleteItem after a Yes/No confirmation. Not verified live.
+- Build 37 (22 Oct): user confirmed multi-sell works ("flawlessly"); the picker now hides tiles worth 0 stars
+  (_LocalSellableOnly re-checks tile itemid attributes every 0.25 s while open). Custom collections did not show in
+  the trade-up screen: the client only accepts skins of real item_sets. native_skins.collection_item_sets writes
+  item_sets set_cs2gc_case_<icon> named "#CSGO_<key>" / "#CSGO_<key>_desc" (the 26m assertion format) listing the
+  owned colours (family variants, never the family kit, each skin in one set); the tokens go to
+  cs2_gc_collection_tokens.json and native_bot_names mounts them in its full English override (cs2_gc_bot_labels;
+  mounted when bot_hide_tag or tokens; a changed bot-label format no longer drops the tokens). The GC skips
+  set_cs2gc_ item_sets (custom path unchanged). custom_collection_tradeups = 0 removes it. If CS2 ever fails its
+  schema load after this build, that switch is the first suspect. Gloves: the user's Kimono Magenta showed default
+  gloves in a match; it was equipped mid-match and showed after the next map load - no bug found (finish 1437 in
+  the log is the official Wave Chaser on another Specialist pair). Not verified live: item sets, language tokens.

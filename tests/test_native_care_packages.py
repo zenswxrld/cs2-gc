@@ -57,6 +57,39 @@ assert.equal(claims.length,1);
         self.run_js(script)
 
 
+    def test_claimed_package_stays_on_show_with_only_the_taken_rewards_marked(self):
+        source="""    function GetPersonalStore() {return store;}
+    function OnRedeem() {
+        let szItemList = '';
+        StoreAPI.StoreRedeemFreeRewards(szItemList);
+    }
+    function _RedemptionTimedOut() {}
+    function _UpdateTime() {}
+    function OnInventoryUpdated() {}
+    function _CreateItemPanel(itemId, index, bFirstTime, claimedItemId = '') {
+        ItemTileStore.Init(elGhostItem, oItemData);
+        elGhostItem.Data().itemid = itemId;
+    }
+    function _OnGhostItemActivate(itemId) {
+        if (!InventoryAPI.IsFauxItemID(itemId)) {}
+    }
+"""
+        script="""const assert=require('assert');const data={},classes={},oItemData={};let shown;
+const taken=3000000000000+68719476736;
+let store={items:[String(taken+7),String(taken+4294967296+9),String(3000000000000+2*4294967296+11),String(taken+3*4294967296+13)]};
+const elGhostItem={Data:()=>data,SetHasClass:(key,value)=>classes[key]=value};
+const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:(def,paint)=>{shown=[def,paint];return 'faux';},IsFauxItemID:()=>true};
+const ItemTileStore={Init:()=>{classes['item-claimed']=true;classes['item-claimslot-expired']=true;}};
+"""+care.patch(source)+"""
+assert.ok(_LocalCarePackage(),'the claimed view is still the local package');
+_CreateItemPanel(store.items[0],0,false);
+assert.equal(classes['item-claimed'],true);assert.equal(classes['item-claimslot-expired'],false);assert.deepEqual(shown,[7,0]);
+_CreateItemPanel(store.items[2],2,false);
+assert.equal(classes['item-claimed'],false,'the reward not taken is not shown as claimed');assert.deepEqual(shown,[11,0]);
+store={items:['17293822569102709458','52275636417']};assert.ok(!_LocalCarePackage(),'Valve stores are untouched');
+"""
+        self.run_js(script)
+
     def test_catalogue_preview_decode_preserves_unique_choice_tokens(self):
         script="""const assert=require('assert');let itemId='3008590589965',seen;
 const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:(def,paint)=>{seen=[def,paint];return 'faux';}};

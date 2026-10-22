@@ -4214,6 +4214,14 @@ void NativeCarePackages()
                 for (const auto &drop:*drops) testCase|=drop.defIndex==63||drop.defIndex==64||drop.defIndex==65;
         Check(!testCase,"grant-only test cases and Armory-only custom cases never drop");
     }
+    {
+        // Default: packages come from profile levels only; a finished match neither queues one nor drops items.
+        Inventory levelOnly;levelOnly.SetGameplay(config);LiveInventory levels(levelOnly);
+        Check(levels.GrantMatchRewards(*schema,1,[]{return 500ull;}).has_value() && levels.Items().Items().empty() &&
+              levels.Items().CarePackages().empty() && !levels.GrantMatchRewards(*schema,1,[]{return 500ull;}),
+              "by default a finished match queues no care package and drops nothing");
+    }
+    config.care_packages_from_matches=1;
     Inventory saved;saved.SetGameplay(config);
     LiveInventory live(saved);
     Check(live.GrantMatchRewards(*schema,1,[]{return 500ull;}).has_value() && live.Items().Items().empty() &&
@@ -4388,6 +4396,36 @@ void NativeCarePackages()
         for(const auto &item:favInventory->Items().Items())got.insert(item.id);
         Check(got==want && favInventory->Items().CarePackages().empty() && favSaves==1,
               "a favourite-route claim grants the three chosen slots once");
+        // The claimed package stays on show: chosen slots as the owned items, the other as a faux id.
+        const auto &claimed=favInventory->Items().LastClaimedCarePackage();
+        Check(claimed && claimed->generation==package.generation && claimed->slots.size()==4 &&
+              claimed->slots[2].ownedId==0 && claimed->slots[0].ownedId==package.offers[0].id &&
+              claimed->slots[3].defIndex==package.offers[3].defIndex,"the last claimed package is recorded per slot");
+        std::vector<std::uint64_t> storeIds;std::uint64_t storeGeneration=0,storeBalance=99;std::uint32_t pending=0;
+        while(favGc.IsMessageAvailable(&pending)) {
+            std::vector<std::uint8_t> bytes(pending);std::uint32_t type=0,got2=0;favGc.RetrieveMessage(&type,bytes.data(),pending,&got2);
+            FrameView frame;ReadProtobufFrame(type,bytes,frame);
+            if((type&~ProtobufMask)!=gc_msg::ESOMsg::k_ESOMsg_Create)continue;
+            const auto object=DecodeSoSingleObject(frame.body);
+            if(!object || object->typeId!=4)continue;
+            storeIds.clear();PbReader store(object->data);PbField field;
+            while(store.Next(field)){if(field.number==1)storeGeneration=field.value;if(field.number==2)storeBalance=field.value;
+                                     if(field.number==3)storeIds.push_back(field.value);}
+        }
+        const auto tokenOf=[&](std::size_t slot,bool taken)->std::uint64_t{
+            return 3000000000000ull+(std::uint64_t{slot}<<32)+(std::uint64_t{package.offers[slot].paintKitIndex}<<16)+
+                   package.offers[slot].defIndex+(taken?(1ull<<36):0);};
+        Check(storeGeneration==package.generation && storeBalance==0 &&
+              storeIds==std::vector<std::uint64_t>{tokenOf(0,true),tokenOf(1,true),tokenOf(2,false),tokenOf(3,true)},
+              "after a claim the store keeps the package on show with the three taken slots flagged, balance 0");
+        favourite(base+7);
+        Check(favInventory->Items().Items().size()==3,"a claimed package on show can not be claimed again");
+        const auto reloaded=Inventory::FromText(favInventory->Items().ToText());
+        Check(reloaded && reloaded->LastClaimedCarePackage() && reloaded->LastClaimedCarePackage()->slots.size()==4 &&
+              reloaded->LastClaimedCarePackage()->slots[1].ownedId==package.offers[1].id,"the claimed view survives a restart");
+        auto broken=favInventory->Items().ToText();
+        broken.replace(broken.find("\"slot3\" \""),9,"\"slot3\" \"x");
+        Check(!Inventory::FromText(broken),"a malformed claimed record is refused, not half-loaded");
     }
     const auto &offer=endpointInventory->Items().CarePackages().front();
     PbWriter request;request.Varint(1,offer.generation);request.Varint(2,0);

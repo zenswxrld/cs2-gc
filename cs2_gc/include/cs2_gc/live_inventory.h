@@ -45,6 +45,12 @@ public:
             return std::vector<InventoryItem>{};
         }
         auto config = m_inventory.Gameplay();
+        if (config.care_packages_enabled && !config.care_packages_from_matches)
+        {
+            // Packages come from profile levels only (GrantLevelRewards); a match itself drops nothing.
+            m_inventory.MarkMatchRewarded();
+            return std::vector<InventoryItem>{};
+        }
         if (config.care_packages_enabled) config.match_drop_count = 4;
         auto drops = RollMatchDrops(schema, random, config);
         if (!drops) return std::nullopt;

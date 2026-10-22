@@ -126,6 +126,17 @@ std::string Inventory::ToText() const
     std::ostringstream out;
     out << "\"inventory\"\n{\n\t\"next_id\"\t\"" << m_nextId << "\"\n";
     out << "\t\"last_care_generation\" \"" << m_lastCareGeneration << "\"\n";
+    if (m_lastClaimedCare)
+    {
+        // Plain numbers, not item blocks: nothing here has to repeat next_id.
+        out << "\t\"care_claimed\" {\n\t\t\"generation\" \"" << m_lastClaimedCare->generation << "\"\n";
+        for (std::size_t slot = 0; slot < m_lastClaimedCare->slots.size(); ++slot)
+        {
+            const auto &entry = m_lastClaimedCare->slots[slot];
+            out << "\t\t\"slot" << slot << "\" \"" << entry.defIndex << ' ' << entry.paintKitIndex << ' ' << entry.ownedId << "\"\n";
+        }
+        out << "\t}\n";
+    }
     if (!m_carePackages.empty())
     {
         out << "\t\"care_packages\" {\n";
@@ -481,6 +492,21 @@ std::optional<Inventory> Inventory::FromText(std::string_view sourceText)
     }
     if (root->Find("last_care_generation") &&
         !ParseNumber(root->Value("last_care_generation"), inventory.m_lastCareGeneration)) return std::nullopt;
+    if (const auto *claimed = root->Find("care_claimed"))
+    {
+        ClaimedCarePackage record;
+        if (!claimed->block || !ParseNumber(claimed->Value("generation"), record.generation) || !record.generation ||
+            record.generation > inventory.m_lastCareGeneration) return std::nullopt;
+        for (std::size_t slot = 0; slot < 4; ++slot)
+        {
+            std::istringstream fields(std::string(claimed->Value("slot" + std::to_string(slot))));
+            ClaimedCareSlot entry; std::string extra;
+            if (!(fields >> entry.defIndex >> entry.paintKitIndex >> entry.ownedId) || (fields >> extra)) return std::nullopt;
+            record.slots.push_back(entry);
+        }
+        if (claimed->children.size() != 5) return std::nullopt;
+        inventory.m_lastClaimedCare = std::move(record);
+    }
     if (const auto *packages = root->Find("care_packages"))
     {
         if (!packages->block || packages->children.size() > 256) return std::nullopt;
@@ -585,6 +611,10 @@ std::optional<std::vector<InventoryItem>> Inventory::ClaimCarePackage(std::uint3
         chosen.push_back(*found);
     }
     m_items.insert(m_items.end(),chosen.begin(),chosen.end());
+    ClaimedCarePackage claimed{generation, {}};
+    for (const auto &offer : offers)
+        claimed.slots.push_back({offer.defIndex, offer.paintKitIndex, unique.count(offer.id) ? offer.id : 0});
+    m_lastClaimedCare = std::move(claimed);
     m_carePackages.erase(m_carePackages.begin());
     return chosen;
 }

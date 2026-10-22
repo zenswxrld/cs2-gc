@@ -7,12 +7,20 @@ a tournament favourite (SetEventFavorite reaches the GC). See SUBMIT.
 """
 from native_resources import install_override
 
-HELPER = '''    function _LocalCarePackage() {
+HELPER = '''    // Local stores hold choice tokens: 3e12 + slot << 32 + finish << 16 + definition, plus 2^36 for the rewards
+    // already taken when a claimed package stays on show (balance 0).
+    function _LocalCareToken(id) {
+        return Number(id) >= 3000000000000 && Number(id) < 3000000000000 + 2 * 68719476736;
+    }
+    function _LocalCareClaimed(id) {
+        return _LocalCareToken(id) && Number(id) - 3000000000000 >= 68719476736;
+    }
+    function _LocalCarePackage() {
         const store = GetPersonalStore();
-        return store && Object.values(store.items || {}).every(id => Number(id) >= 3000000000000 && Number(id) < 3017179869184);
+        return store && Object.values(store.items || {}).every(id => _LocalCareToken(id));
     }
     function _LocalCareFauxId(token) {
-        const encoded = Number(token) - 3000000000000;
+        const encoded = (Number(token) - 3000000000000) % 68719476736;
         return InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(encoded % 65536, Math.floor(encoded / 65536) % 65536);
     }
     function _LocalCareLog(text) {
@@ -32,7 +40,7 @@ TIME = '''        if (_LocalCarePackage()) {
             $.GetContextPanel().SetDialogVariable('time-to-week-rollover', '');
             $.GetContextPanel().SetDialogVariable('frame-badge-text', m_redeemableBalance > 0 ? 'CHOOSE 3 OF 4 REWARDS' : 'REWARDS CLAIMED');
             $.GetContextPanel().SetDialogVariable('frame-desc-text', m_redeemableBalance > 0 ?
-                'Choose three rewards. Your choices are saved until claimed.' : 'Earn another package by completing a match or leveling up.');
+                'Choose three rewards. Your choices are saved until claimed.' : 'Earn another package by leveling up.');
             m_schTimer = $.Schedule(30, _UpdateTime);
             return;
         }
@@ -80,7 +88,9 @@ def patch(source):
     source=source.replace(data,'        elGhostItem.Data().itemid = localChoice ? choiceToken : itemId;',1)
     init = '        ItemTileStore.Init(elGhostItem, oItemData);'
     if source.count(init) != 1: raise ValueError('Installed reward-tile initializer changed')
-    source=source.replace(init,init+"\n        if (localChoice) { elGhostItem.SetHasClass('item-claimed', false); elGhostItem.SetHasClass('item-claimslot-expired', false); }",1)
+    # Native SetClaimed marks every faux preview as claimed. Pending choices lose that look; in a claimed package only
+    # the rewards actually taken keep it (user: keep the claimed items labelled until the next drop).
+    source=source.replace(init,init+"\n        if (localChoice) { elGhostItem.SetHasClass('item-claimed', _LocalCareClaimed(choiceToken)); elGhostItem.SetHasClass('item-claimslot-expired', false); }",1)
 
     source=source.replace(activate,'        if (_LocalCarePackage() || !InventoryAPI.IsFauxItemID(itemId)) {',1)
     submit = '        StoreAPI.StoreRedeemFreeRewards(szItemList);'

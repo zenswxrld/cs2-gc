@@ -1,3 +1,15 @@
+# Build 33 (Claude) - care packages from level-ups only; claimed package stays on show
+
+User confirmed build 32: the favourite-route claim works and the rewards (cases) open. Extra packages appeared at once
+because every match also queued one. New option care_packages_from_matches (default 0): with care packages on, a match
+queues nothing and drops nothing; packages come from profile levels (GrantLevelRewards).
+User: keep the last claimed rewards on show, labelled claimed, until the next drop. Inventory saves "care_claimed"
+(generation + per slot "def paint ownedId", plain numbers, no next_id copies). With an empty queue EncodeCareStore shows
+it (balance 0) as the same choice tokens plus CareClaimedFlag (1 << 36) on the taken slots. The page keeps the native
+claimed look (ItemTileStore.SetClaimed marks every faux preview claimed) only for flagged tokens; the other one is a
+normal tile, disabled because the balance is 0. NotifyCarePackage now compares the encoded store, since a claim keeps the
+generation. Next request queued by the user: multi-select selling in the inventory (later).
+
 # Build 32 (Claude) - care-package claim as a tournament favourite
 
 Build 31 log: the page printed the claim line but the DLL never saw it. The rewards helper's own log shows

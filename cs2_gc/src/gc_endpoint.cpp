@@ -20,6 +20,7 @@ namespace
 // Local choice descriptors, not econ item IDs. Slot keeps duplicate rewards independently selectable.
 // Panorama resolves def/paint through the native GetFauxItemIDFromDefAndPaintIndex API.
 constexpr std::uint64_t CareChoiceBase = 3000000000000ull;
+constexpr std::uint64_t CareClaimedFlag = 1ull << 36; // claimed view only; never a claimable token
 std::uint64_t CareChoiceToken(const InventoryItem &item, std::size_t slot)
 {
     return CareChoiceBase + (static_cast<std::uint64_t>(slot) << 32) +
@@ -82,7 +83,18 @@ std::vector<std::uint8_t> EncodeCareStore(const Inventory &inventory)
 {
     PbWriter out;
     const auto &queue = inventory.CarePackages();
-    if (queue.empty()) { out.Varint(1,0); out.Varint(2,0); }
+    const auto &claimed = inventory.LastClaimedCarePackage();
+    if (queue.empty() && claimed) {
+        // Shown until the next package arrives, balance 0. Same choice tokens, plus CareClaimedFlag on the chosen
+        // three: the patched page draws those with the native claimed look and the other one as unavailable.
+        out.Varint(1,claimed->generation); out.Varint(2,0);
+        for (std::size_t slot=0;slot<claimed->slots.size();++slot) {
+            const auto &entry=claimed->slots[slot];
+            out.Varint(3,CareChoiceBase+(static_cast<std::uint64_t>(slot)<<32)+(std::uint64_t{entry.paintKitIndex&0xFFFFu}<<16)+
+                (entry.defIndex&0xFFFFu)+(entry.ownedId?CareClaimedFlag:0));
+        }
+    }
+    else if (queue.empty()) { out.Varint(1,0); out.Varint(2,0); }
     else {
         out.Varint(1,queue.front().generation); out.Varint(2,3);
         for (std::size_t slot=0;slot<queue.front().offers.size();++slot)
@@ -1469,7 +1481,8 @@ void LocalGameCoordinator::NotifyCarePackage()
     if (!m_live) return;
     const auto &queue=m_live->Items().CarePackages();
     const auto generation=queue.empty()?0:queue.front().generation;
-    if (generation==m_sentCareGeneration && !m_sentCareStore.empty()) return;
+    // A claim keeps the generation but changes the store (claimed view), so compare what would be sent.
+    if (!m_sentCareStore.empty() && EncodeCareStore(m_live->Items())==m_sentCareStore) return;
     if (!m_sentCareStore.empty()) {
         SoSingleObject removed;removed.typeId=static_cast<std::int32_t>(PersonalStoreTypeId);
         removed.owner=m_config.owner;removed.version=++m_soVersion;removed.data=m_sentCareStore;

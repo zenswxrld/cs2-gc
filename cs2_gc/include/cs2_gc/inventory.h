@@ -75,6 +75,10 @@ struct CarePackage
     std::vector<InventoryItem> offers;
 };
 
+// The last claimed package, kept on show (claimed / not chosen) until the next one arrives, like Valve's store.
+struct ClaimedCareSlot { std::uint32_t defIndex{}, paintKitIndex{}; std::uint64_t ownedId{}; }; // ownedId 0: not chosen
+struct ClaimedCarePackage { std::uint32_t generation{}; std::vector<ClaimedCareSlot> slots; };
+
 struct LoadoutSlot
 {
     std::uint32_t classId{}, slotId{};
@@ -125,6 +129,7 @@ public:
     void SetArmoryPity(const std::string &collection, std::uint32_t failures) { m_armoryPity[collection] = failures; }
 
     const std::vector<CarePackage> &CarePackages() const { return m_carePackages; }
+    const std::optional<ClaimedCarePackage> &LastClaimedCarePackage() const { return m_lastClaimedCare; }
     bool QueueCarePackage(std::vector<InventoryItem> offers);
     std::optional<std::vector<InventoryItem>> ClaimCarePackage(std::uint32_t generation,
                                                              const std::vector<std::uint64_t> &ids);
@@ -156,6 +161,7 @@ private:
     std::map<std::string, std::uint32_t> m_armoryPity;
     std::vector<CarePackage> m_carePackages;
     std::uint32_t m_lastCareGeneration{};
+    std::optional<ClaimedCarePackage> m_lastClaimedCare;
     std::uint64_t m_nextId{1};
 };
 }

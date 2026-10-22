@@ -1247,3 +1247,12 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   schema load after this build, that switch is the first suspect. Gloves: the user's Kimono Magenta showed default
   gloves in a match; it was equipped mid-match and showed after the next map load - no bug found (finish 1437 in
   the log is the official Wave Chaser on another Specialist pair). Not verified live: item sets, language tokens.
+- Bot skins (22 Oct, user: "there is a way, give it a go"): CS2's server never asks a GC for bot items (bots have
+  no account; the server only sends ServerHello and gets the human's cache), so the GC cannot do it. New optional
+  tools/bot_skins.py + bot_skins.cmd install, on the user's PC, Metamod:Source 2.0 (mmsdrop latest), CounterStrikeSharp
+  with-runtime (GitHub latest) and ed0ard/CS2-Bot-Randomizer (AGPL-3.0; GiveNamedItem pre-hook + their maintained
+  signatures; nothing of ours touches game memory). Mounts Game csgo/addons/metamod via mount_gameinfo (backup
+  gameinfo.gi.cs2_gc_bot_skins_backup), sets FollowCS2ServerGuidelines=false, refuses if a foreign Metamod/CSS
+  exists, and rewrites the plugin catalogue (original kept as .original) to popular skins per gun / popular sticker
+  capsules / popular knife finishes and gloves, resolved by English finish name against the installed schema (all
+  35 guns resolved on the user's files). Uninstall removes it. Not verified live; after a CS2 update rerun install.

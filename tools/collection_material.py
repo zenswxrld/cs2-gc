@@ -12,7 +12,6 @@ TEXTURE_FAMILIES = {
     'aq_titanium_rainbow_galilar': ('g_tCaseHardeningColorRamp',True),
 }
 _TEXTURES={}
-_DECODED={}
 
 def exposed(root):
     result={}
@@ -141,10 +140,7 @@ def make(source,kit,new_name,theme,compmat,guid,root,specific,material,m_guid,m_
         # Evidence identifies the real texture transformation, not neutral template colours.
         entry.update(texture_binding=binding,texture_stats=stats,owned_texture=owned,
                      policy='masked-source-texture-v1')
-        if theme in finishes.THEMES:hue,saturation,_=finishes.THEMES[theme]
-        elif theme in finishes.DUO_THEMES:hue,_,saturation=finishes.DUO_THEMES[theme]
-        else:hues,saturation=finishes.GRADIENT_THEMES[theme];hue=hues[0]
-        entry['themes'][theme]=[[*colorsys.hsv_to_rgb(hue/360,saturation,v),1] for v in (.25,.45,.65,.85)]
+        entry['themes'][theme]=stats['palette']
     else:
         template=finishes._vector_params(m_root)
         if template is None:return True,None

@@ -108,6 +108,35 @@ class CompositeDetails(unittest.TestCase):
         self.assertEqual(newroot,root)
 
     @unittest.skipUnless(os.environ.get('CS2_GC_TEXTURE_DECODER'),'decoder executable required')
+    def test_official_families_change_only_their_real_lacquer_or_ramp_binding(self):
+        for kit,binding in (('gsch_sport_ump45','g_tPattern'),
+                            ('aq_titanium_rainbow_galilar','g_tCaseHardeningColorRamp')):
+            root=composite()
+            variables=root.get('m_Points').value[0].get('m_vecCompositeInputContainers').value[-1].get('m_vecLooseVariables')
+            for key in ('g_tPattern','g_tCaseHardeningColorRamp'):
+                variables.value.append(obj(('m_strName',string(key)),
+                    ('m_strTextureRuntimeResourcePath',string(key+'.vtex'))))
+            comp=kv3.write_resource(0,[['DATA',fixture_v4(root,True)]])
+            files={'paint.vcompmat_c':comp,
+                'materials/template.vmat_c':material('materials/template.vmat',[[1,1,1,1]]*4),
+                'g_tPattern.vtex_c':texture(),'g_tCaseHardeningColorRamp.vtex_c':texture()}
+            class Source:
+                def read(self,path):return files.get(path)
+            report={}
+            made=finishes.make_finish(Source(),kit,'paint.vcompmat','owned_family','Teal',
+                report=report,weapon_palette='legendary',detail_policy=True)
+            self.assertIsNotNone(made)
+            evidence=report[kit+':legendary']
+            self.assertEqual(evidence['texture_binding'],binding)
+            self.assertTrue(evidence['themes']['Teal'])
+            self.assertEqual(len(report['_files']),1)
+            _,changed=kv3.read_kv3(dict(kv3.read_resource(made[0])[1])['DATA'])
+            changed_vars=cm.exposed(changed);original_vars=cm.exposed(root)
+            changed_vars[binding][0].get('m_strTextureRuntimeResourcePath').value=original_vars[binding][0].get('m_strTextureRuntimeResourcePath').value
+            finishes._specific_material(changed).value=finishes._specific_material(root).value
+            self.assertEqual(changed,root,'all masks, wear, effects, colour/metal trim and other bindings remain intact')
+
+    @unittest.skipUnless(os.environ.get('CS2_GC_TEXTURE_DECODER'),'decoder executable required')
     def test_bc7_foil_recolour_preserves_silver_geometry_and_alpha(self):
         path=os.environ['CS2_GC_TEXTURE_DECODER']
         _,_,_,width,height,payload=cm.texture_payload(texture())

@@ -1,7 +1,7 @@
-"""Read and write Source 2 compiled resources (*_c) and their binary KV3 blocks (version 5 only).
+"""Read and write Source 2 compiled resources (*_c) and their binary KV3 blocks (versions 4 and 5).
 
 Ported from the layout ValveResourceFormat reads and writes (BinaryKV3.cs / BinaryKV3.Serialization.cs).
-Only the parts the native finish generator needs: version 5 KV3 with no compression or LZ4, written back
+Only the parts the native finish generator needs: version 4/5 KV3 with no compression or LZ4, written back
 uncompressed. Python standard library only.
 
 Values decode to Node(type, value, flag) so a round trip keeps every KV3 type; objects are lists of

@@ -57,3 +57,24 @@ update, not a new DLL release.
 
 After delivering the collection test update, investigate the separately reported
 care-package claim timeout. The screenshots alone do not establish its cause.
+
+
+## Composite/material correction
+
+Read-only inspection of the installed material metadata confirmed that both
+requested finishes use KV3 v4 composite documents with exposed parameters that
+override the template VMAT. The previous generator only edited the VMAT and
+skipped v4. New collection materials read v4/v5 and edit exposed colour variables
+where present; the compatibility generator keeps its original v5-only behavior.
+
+Crimson Foil recolours only chromatic red lacquer pixels in its original albedo.
+Neutral silver, dark ink, alpha, roughness, metalness, normal and wear maps stay
+unchanged. Rainbow Spoon recolours its actual case-hardening ramp into the
+family's related hue range, retaining tonal variation and its source pattern.
+The generated report records sampled colours from changed pixels and the count
+changed; no fake donor palette is used to identify a texture recolour.
+
+The BC7 decoder is built in Actions from the unmodified MIT-licensed bcdec
+header plus our small colour-selection utility. It is included with the helper
+update and requires no local compilation. Generated textures have their own
+paths; original files remain referenced for all untouched detail maps.

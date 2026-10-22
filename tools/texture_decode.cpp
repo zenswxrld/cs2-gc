@@ -51,6 +51,8 @@ int main(int argc,char**argv) {
         }
     }
     std::size_t changed=0,eligible=0;
+    std::array<std::size_t,4096> histogram{};
+    std::array<std::array<unsigned char,4>,4096> samples{};
     if(argc==6) {
         float target=std::strtof(argv[3],nullptr)/360,cap=std::strtof(argv[4],nullptr);
         bool ramp=std::atoi(argv[5])==1;
@@ -70,10 +72,28 @@ int main(int argc,char**argv) {
                 auto value=static_cast<unsigned char>(std::clamp(int(std::lround(v[channel]*255)),0,255));
                 differs=differs||value!=pixels[p+channel];pixels[p+channel]=value;
             }
-            if(differs) ++changed;
+            if(differs) {
+                ++changed;
+                unsigned bin=(pixels[p]>>4)*256+(pixels[p+1]>>4)*16+(pixels[p+2]>>4);
+                ++histogram[bin];std::copy_n(pixels.data()+p,4,samples[bin].data());
+            }
         }
     }
-    std::cerr<<"{\"changed_pixels\":"<<changed<<",\"eligible_pixels\":"<<eligible<<"}\n";
+    std::cerr<<"{\"changed_pixels\":"<<changed<<",\"eligible_pixels\":"<<eligible<<",\"palette\":[";
+    bool comma=false;
+    for(int rank=0;rank<4;++rank) {
+        auto best=std::max_element(histogram.begin(),histogram.end());
+        if(*best==0) break;
+        auto index=static_cast<std::size_t>(best-histogram.begin());
+        if(comma) std::cerr<<",";
+        comma=true;std::cerr<<"[";
+        for(int channel=0;channel<4;++channel) {
+            if(channel) std::cerr<<",";
+            std::cerr<<static_cast<unsigned>(samples[index][channel])/255.f;
+        }
+        std::cerr<<"]";*best=0;
+    }
+    std::cerr<<"]}\n";
     std::cout.write(reinterpret_cast<const char*>(pixels.data()),static_cast<std::streamsize>(pixels.size()));
     return std::cout?0:6;
 }

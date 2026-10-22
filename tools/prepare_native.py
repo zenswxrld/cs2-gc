@@ -20,6 +20,7 @@ from native_care_packages import prepare as care_packages
 from native_mainmenu import prepare as mainmenu
 from native_mission_launch import prepare as missions
 from native_knife_reel import prepare as knife_reel
+from native_missions import prepare as missions_schedule
 from native_resources import ensure_first_game_path
 from vpk_signatures import update as signatures
 from preparation_cache import PreparationCache
@@ -47,6 +48,8 @@ def prepare(directory, force_rebuild=False):
         for name, action in actions:
             step = time.perf_counter()
             print(name + ': ' + action(directory, config) + ' [%.2fs]' % (time.perf_counter()-step), flush=True)
+    try: print('Missions: ' + missions_schedule(directory, config), flush=True)  # cheap; follows the calendar
+    except (OSError, ValueError, KeyError) as error: print('Missions skipped (recorded missions stay): ' + str(error), flush=True)
     try: print('Bot names: ' + bot_names(directory, config, reshuffle=True), flush=True)
     except (OSError, ValueError, KeyError) as error: print('Bot names skipped (bots keep their normal names): ' + str(error), flush=True)
     print(ensure_first_game_path(directory), flush=True)

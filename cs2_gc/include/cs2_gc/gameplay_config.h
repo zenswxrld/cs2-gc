@@ -36,7 +36,9 @@ struct GameplayConfig
     std::uint32_t sell_classified{25};
     std::uint32_t sell_covert{50};
     std::uint32_t sell_knife_glove{72};
-    std::uint32_t sell_sticker_percent{50};
+    std::uint32_t sell_sticker_percent{50}; // cap: a sticker never sells above this percent of its rarity's weapon value
+    std::uint32_t sell_sticker_mil_spec{2}, sell_sticker_restricted{5}, sell_sticker_classified{12}, sell_sticker_covert{25};
+    std::uint32_t sell_max_return_percent{90}; // no Armory purchase (or trade-up) can sell back for more than this share
     std::uint32_t sell_charm_mil_spec{1}, sell_charm_restricted{3}, sell_charm_classified{9}, sell_charm_covert{25};
     std::uint32_t sell_wear_enabled{1}, sell_wear_fn{125}, sell_wear_mw{110}, sell_wear_ft{100}, sell_wear_ww{80}, sell_wear_bs{60};
     std::uint32_t sell_music_kit{10};
@@ -73,5 +75,13 @@ struct GameplayConfig
     std::uint32_t armory_howl_enabled{1}, armory_howl_star_price{250};
     std::uint32_t armory_rotation_enforce{0}; // enable after matching Panorama override is mounted
 };
+// Built-in Armory prices of the catalogue's collection/souvenir-free tiles (tools/gameplay_config.py mirrors them).
+constexpr std::uint32_t ArmoryCollectionPrice = 4, ArmoryCharmPrice = 3, ArmoryStickerPrice = 1;
+// Lowers sale values until no Armory purchase route (case, terminal, collection, souvenir, capsule, sticker or
+// charm pack, agent) returns more than sell_max_return_percent of its price on average, with pity at its
+// long-run rate and the best wear; caps each weapon rarity so a trade-up never returns more than that share of
+// its inputs. Idempotent; ParseGameplayConfig applies it and the defaults are already balanced.
+void BalanceSales(GameplayConfig &config);
+GameplayConfig BalancedDefaults();
 std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text);
 }

@@ -18,10 +18,31 @@ import premier_rating as premier
 class GameplayOptions(unittest.TestCase):
     def test_example_and_validation(self):
         values = config.parse((ROOT / 'examples/cs2_gc_gameplay.cfg').read_text())
-        self.assertEqual(values, config.DEFAULTS)
+        self.assertEqual(values, config.balance(dict(config.DEFAULTS)))
         for line in ('unknown=1', 'match_drop_count=0', 'pity_soft_at=99\npity_hard_at=3',
                      'kill_xp=3\nkill_xp=4', 'match_skin_min_rarity=2', 'stars_enabled=2'):
             with self.assertRaises(ValueError): config.parse(line)
+
+    def test_star_sale_balance_mirrors_the_gc(self):
+        # Same golden values as StarEconomy() in tests/core_tests.cpp: the native Sell label equals the GC payout.
+        keys = list(config.WEAPON_KEYS[1:]) + ['sell_knife_glove'] + list(config.STICKER_KEYS) + list(config.CHARM_KEYS) + \
+            ['sell_agent_percent', 'sell_container_percent']
+        defaults = config.balance(dict(config.DEFAULTS))
+        self.assertEqual([defaults[k] for k in keys], [1, 1, 1, 3, 7, 15, 22, 0, 0, 0, 5, 0, 3, 9, 25, 50, 30])
+        generous = config.parse('pity_soft_at = 2\narmory_pity_soft_at = 2\nsell_consumer = 2\nsell_industrial = 5\n'
+                                'sell_mil_spec = 10\nsell_restricted = 15\nsell_classified = 25\nsell_covert = 50\n'
+                                'sell_knife_glove = 150\nsell_sticker_percent = 90\nsell_music_kit = 90\n'
+                                'sell_container_percent = 90\nsell_agent_percent = 85\n')
+        self.assertEqual([generous[k] for k in keys], [1, 1, 1, 2, 4, 9, 18, 0, 0, 0, 4, 0, 2, 9, 25, 85, 90])
+        self.assertEqual(config.balance(dict(generous)), generous)  # idempotent
+        self.assertEqual(config.load(Path(tempfile.mkdtemp())), defaults)
+        # Weapon routes priced by the model never return more than the configured share, even at the best wear.
+        for values in (defaults, generous):
+            enabled, high, _ = config.wear_model(values)
+            weapons = [0] + [values[k] for k in config.WEAPON_KEYS[1:]]
+            routes = config.sale_diagnostics(values, weapons, values['sell_knife_glove'], lambda v: config._share(v, high))
+            self.assertLessEqual(max(routes.values()), values['sell_max_return_percent'] / 100 + 1e-9)
+        with self.assertRaises(ValueError): config.parse('sell_max_return_percent = 100')
 
     def test_helper_requests_refuse_pending_and_invalid_ids(self):
         with tempfile.TemporaryDirectory() as directory:

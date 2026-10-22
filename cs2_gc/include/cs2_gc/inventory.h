@@ -146,7 +146,7 @@ public:
     static std::optional<Inventory> Load(const std::filesystem::path &path);
 
 private:
-    GameplayConfig m_gameplay;
+    GameplayConfig m_gameplay{BalancedDefaults()};
     std::uint32_t m_trackXpPerStar{400};
     std::vector<InventoryItem> m_items;
     std::vector<LoadoutSlot> m_loadout;

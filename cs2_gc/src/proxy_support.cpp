@@ -272,6 +272,9 @@ std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text)
         NUMBER_OPTION(sell_covert, 0, 1000000)
         NUMBER_OPTION(sell_knife_glove, 0, 1000000)
         NUMBER_OPTION(sell_sticker_percent, 0, 100)
+        NUMBER_OPTION(sell_sticker_mil_spec, 0, 1000000) NUMBER_OPTION(sell_sticker_restricted, 0, 1000000)
+        NUMBER_OPTION(sell_sticker_classified, 0, 1000000) NUMBER_OPTION(sell_sticker_covert, 0, 1000000)
+        NUMBER_OPTION(sell_max_return_percent, 1, 95)
         NUMBER_OPTION(sell_charm_mil_spec, 0, 1000000) NUMBER_OPTION(sell_charm_restricted, 0, 1000000)
         NUMBER_OPTION(sell_charm_classified, 0, 1000000) NUMBER_OPTION(sell_charm_covert, 0, 1000000)
         BOOL_OPTION(sell_wear_enabled) NUMBER_OPTION(sell_wear_fn, 0, 1000) NUMBER_OPTION(sell_wear_mw, 0, 1000)
@@ -315,6 +318,7 @@ std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text)
     if (config.armory_pity_soft_at >= config.armory_pity_hard_at) return std::nullopt;
     if (config.pity_soft_at >= config.pity_hard_at) return std::nullopt;
     config.armory_howl_star_price = std::max(250u, config.armory_howl_star_price);
+    BalanceSales(config);
     return config;
 }
 }

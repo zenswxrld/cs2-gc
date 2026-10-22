@@ -112,6 +112,7 @@ public:
     // The skins of one collection, in schema order; empty for an unknown collection.
     const std::vector<SkinRef> &CollectionSkins(const std::string &collection) const;
     std::size_t CollectionCount() const { return m_collectionSkins.size(); }
+    std::vector<std::string> CollectionNames() const; // sorted
 
     // A finish offered by a keyed weapon case can have StatTrak; collection-only drops cannot.
     bool CanBeStatTrak(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;

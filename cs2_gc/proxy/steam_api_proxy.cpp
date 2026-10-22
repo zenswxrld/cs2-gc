@@ -256,6 +256,7 @@ public:
         m_rewardPath = std::move(rewardPath);
         m_afterReward = std::move(afterReward);
         m_log.Write("progression: gameplay rewards use the local bridge (automatic startup controlled by rewards_auto_start)");
+        PollMissions(); // before the welcome, so it carries the local missions
     }
     void PollProgression()
     {
@@ -285,6 +286,7 @@ public:
         PollTerminalRequest();
         PollCareClaims();
         PollCarePackageRequest();
+        PollMissions();
 #ifdef CS2_GC_DEBUG_TOOLS
         {
             std::ifstream control(m_rewardPath.parent_path() / "cs2_gc_console.txt");
@@ -327,6 +329,29 @@ public:
         *m_consoleOffset += text.size();
         for (const auto &claim : ParseCareConsoleClaims(text))
             if (m_gc.ClaimCareFromConsole(claim.generation, claim.tokens, m_afterReward)) m_log.Write("care package: console claim granted");
+    }
+    // Weekly missions: cs2_gc_missions.bin (the 9226 body, written by native_missions.py before launch) and
+    // cs2_gc_mission_progress.txt ("mission period progress" lines from the rewards helper).
+    void PollMissions()
+    {
+        const auto directory = m_rewardPath.parent_path();
+        std::ifstream progressFile(directory / "cs2_gc_mission_progress.txt");
+        std::string text((std::istreambuf_iterator<char>(progressFile)), {});
+        if (m_missionsLoaded && text == m_missionProgressText) return;
+        std::vector<LocalGameCoordinator::MissionProgress> progress;
+        std::istringstream lines(text);
+        LocalGameCoordinator::MissionProgress entry;
+        while (lines >> entry.mission >> entry.period >> entry.progress) progress.push_back(entry);
+        std::vector<std::uint8_t> schema;
+        if (!m_missionsLoaded)
+        {
+            std::ifstream schemaFile(directory / "cs2_gc_missions.bin", std::ios::binary);
+            schema.assign(std::istreambuf_iterator<char>(schemaFile), {});
+            if (schema.empty()) return; // missions off or not prepared: keep the recorded replay
+            m_log.Write("missions: local weekly rotation loaded");
+        }
+        m_missionsLoaded = true; m_missionProgressText = text;
+        m_gc.SetMissions(std::move(schema), std::move(progress));
     }
     void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange)
     {
@@ -462,6 +487,8 @@ private:
     LocalGameCoordinator m_gc;
     std::filesystem::path m_rewardPath;
     std::optional<std::uintmax_t> m_consoleOffset; // console.log bytes already read (care claims)
+    bool m_missionsLoaded{};
+    std::string m_missionProgressText;
     std::function<void()> m_afterReward;
     std::chrono::steady_clock::time_point m_nextRewardPoll{};
     std::mutex m_rewardMutex;
@@ -1053,7 +1080,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: claude-20261022-33");
+        s.log->Write("test build: claude-20261023-34");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");

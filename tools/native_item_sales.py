@@ -80,13 +80,14 @@ def settings(source, config):
     return {'enabled': bool(config['item_sales_enabled']), 'flat': flat, 'fixedCaps':fixed_caps,
             'rarity': [0] + [config['sell_' + key] for key in ('consumer', 'industrial', 'mil_spec', 'restricted', 'classified', 'covert')],
             'goldDefinitions': gold_definitions, 'gold': config['sell_knife_glove'], 'stickerPercent': config['sell_sticker_percent'],
+            'sticker': [0, 0, 0] + [config[key] for key in ('sell_sticker_mil_spec', 'sell_sticker_restricted', 'sell_sticker_classified', 'sell_sticker_covert')],
             'charm': [0,0,0,min(config['sell_charm_mil_spec'],2),config['sell_charm_restricted'],config['sell_charm_classified'],config['sell_charm_covert']],
             'wearEnabled':bool(config['sell_wear_enabled']),
             'wear':[config['sell_wear_'+wear] for wear in ('fn','mw','ft','ww','bs')]}
 
 
 PRICE = '''
-    // Local inventory only. Prices mirror the OfflineCS rarity/percentage rules.
+    // Local inventory only. Prices mirror the GC's balanced rarity rules (gameplay_config.balance).
     const cs2gcSell = __SETTINGS__;
     function _LocalSalePrice(id) {
         const numeric = Number(id);
@@ -98,7 +99,7 @@ PRICE = '''
         const base = cs2gcSell.rarity[rarity] || 0;
         if (ItemInfo.IsKeychain(id)) return (cs2gcSell.charm || [0,0,0,1,3,9,25])[rarity] || 0;
         if (ItemInfo.IsSticker(id) || ItemInfo.IsPatch(id) || ItemInfo.IsSprayPaint(id) || ItemInfo.IsSpraySealed(id))
-            return base && cs2gcSell.stickerPercent ? Math.max(1, Math.floor(base * cs2gcSell.stickerPercent / 100)) : 0;
+            return Math.min((cs2gcSell.sticker || [])[rarity] || 0, Math.floor(base * cs2gcSell.stickerPercent / 100));
         let value = (cs2gcSell.goldDefinitions || []).indexOf(definition) !== -1 || ItemInfo.IsMelee(id) || ItemInfo.IsGloves(id) ? cs2gcSell.gold : ItemInfo.IsWeapon(id) ? base : 0;
         if (value && cs2gcSell.wearEnabled) {
             const rawWear = InventoryAPI.GetItemAttributeValue(id,'set item texture wear');

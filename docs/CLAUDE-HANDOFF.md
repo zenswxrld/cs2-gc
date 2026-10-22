@@ -1,4 +1,5 @@
-# NEXT: mission progress tracking (Claude, design + evidence; NOT implemented yet)
+# Build 34 (Claude): mission progress tracking (implemented; live test pending)
+
 
 User test (build 33): the mission tile and in-match mission panel SHOW ("Get kills with the AWP", DM on Defusal Group
 Delta, 0/120, 600 XP) but progress never moves in bot matches. The listen server never sends 9136 MatchEndRunRewardDrops
@@ -17,22 +18,17 @@ Only three expressions: "act_kill_human && !![weapon_a|weapon_b...]" (DM), "act_
 Client (mission_tile.js / mainmenu_missions.js / hud/hudmissions.js): MissionsAPI.GetRecurringMission() ->
 progress_saved, goal_points[], xp_reward[], progress_this_match; HUD uses GameStateAPI.GetActiveQuestID().
 
-Plan:
-1. Prepare step (Python, light): read proxy/cs2_gc_replay/9226.bin, pool the templates, build periods from 2 weeks ago
-   to +8 weeks (recorded base + k*604800), ONE template per period rotating through the pool, and concretize every
-   random list to a single option seeded by period (keep the syntax: "!![weapon_awp]", "![mg_casualdelta]", update
-   gc.random to match) so the client shows exactly what we count. Write cs2_gc_missions.bin (protobuf 9226 body) and
-   cs2_gc_missions.json (period -> mission id, mode, map/mapgroup, weapon, points, xp) incl. mapgroup -> maps from
-   gamemodes.txt in pak01 (mapgroups block, e.g. "mg_casualdelta").
-2. DLL: on 9225 reply 9226 with cs2_gc_missions.bin when present; publish SO type 16 objects from
-   cs2_gc_mission_progress.txt ("<mission_id> <period> <progress>" lines, written by the helper) in the welcome
-   (replace the recorded 11012) and on change (SO Create/Update, poll in PollProgression).
-3. Helper (gsi_rewards.py): add "player_weapons" "1" (and "round" "1") to the GSI config; for the mission whose period
-   is current and whose mode (map.mode) and map/mapgroup match: kill while weapons[*].state == "active" is the mission
-   weapon -> +1 (count bot kills; offline there are no humans); own team score increment -> act_win_round +1; gameover
-   with own team ahead -> act_win_match +1. Crossing a points tier adds that tier's xp_expr XP to the helper total.
-   Grenade kills can not be attributed (weapon left the hand); say so.
-4. Tests: KV binary round trip, concretize, schedule rotation, GSI evaluation fixtures, SO encoding.
+Implemented (build 34):
+- tools/native_missions.py (prepare step, every launch, UI stage): reads proxy/cs2_gc_replay/9226.bin, keeps the 13
+  playable templates (drops lobby_mapveto / rush), one per weekly period from 4 weeks back to 52 ahead, every "![..]"
+  list resolved to one option per period (seeded), writes cs2_gc_missions.bin (9226 body) + cs2_gc_missions.json.
+  Binary KV kept type-exact (round-trip tested). Map groups from pak01 gamemodes.txt.
+- tools/mission_tracker.py, used by gsi_rewards.py (GSI now also requests "player_weapons"): counts kills with the active
+  mission weapon, own-team round wins, won matches, only in the mission's mode on its maps; first packet of a match is a
+  baseline; tier XP added to the helper total; writes cs2_gc_mission_progress.txt ("mission period progress").
+- DLL: PollMissions (proxy) loads cs2_gc_missions.bin once and the progress file each poll; LocalGameCoordinator::
+  SetMissions: 9225 answered with the local schema, welcome type 16 replaced by our progress, changes pushed as SO
+  Create/Update (CSOAccountRecurringMission). The GSI config change needs ONE CS2 restart after the helper rewrites it.
 Other queued user requests: custom-collection trade-ups, multi-sell via popup_select_item_for_capability
 (casketstore multi-select, user approved the plan), build-folder cleanup + leftover-file removal tool (last),
 detail-preserving palette rotation recolour + texture recolours (Rainbow Spoon / Crimson Foil style).
@@ -1207,3 +1203,13 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   step while ubuntu passes; main last passed at 6b19d25. The job log could not be downloaded from this session
   (log storage host blocked), so the MSVC error is unknown - likely a /W4 /WX warning in cs2_gc_core (src/ only)
   that GCC -Wall -Wextra does not report. Next queued for Claude: souvenir packages.
+- Star economy (22 Oct): new `AuditEconomy` (cs2_gc/src/economy_audit.cpp) values every Armory row (incl. case+free key,
+  terminal best-of-offers, souvenir, capsule, sticker/charm pack, agent, limited, Black Market) and every trade-up with the
+  real odds, long-run pity rate and ItemSaleValue. On the user's schema+config it found loops in all capsules (x10-22),
+  sticker packs (x11-13), all cases opened (x3.6-10.7), terminals (x2.3-5), 6/11 collections (x1.9-2.5), 57/148 souvenirs,
+  4 charm packs (x1.15) and 12 covert->knife trade-ups (x1.04-1.13). Fix: `BalanceSales` (C++ item_sales.cpp, exact Python
+  mirror gameplay_config.balance) lowers configured sale values at load until no route returns more than
+  `sell_max_return_percent` (default 90, model at best wear) and trade-ups cannot gain; new sticker sale table
+  (`sell_sticker_*`, `sell_sticker_percent` now a cap). All Armory weapon cases cost `armory_case_price` (native Fever
+  case was 2); collection/charm/sticker tiles never below 4/3/1. Audit after: no loops; returns ~45-55% cases/terminals,
+  35-48% collections, 25-33% souvenirs, ~1-3% capsules, 20-30% sticker packs, 68-85% charms, trade-ups <=80%.

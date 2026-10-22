@@ -63,6 +63,8 @@ class Rewards:
             self.state['matches'] = int(match_cursor.read_text().strip()) if match_cursor.exists() else 0
         if type(self.state['matches']) is not int or not 0 <= self.state['matches'] <= MAX_TOTAL:
             raise ValueError('Invalid completed-match counter')
+        from mission_tracker import MissionTracker
+        self.missions = MissionTracker(self.directory, self.state)
         self.state.setdefault('premier', premier_rating.initial(self.config))
         premier = self.state['premier']
         if not isinstance(premier, dict) or any(type(premier.get(key)) is not int or premier[key] < 0
@@ -128,7 +130,7 @@ class Rewards:
                    'finished': False}
         if last and timestamp < last['timestamp']:
             return True
-        earned = 0
+        earned = self.missions.observe(provider, player, game_map, stats)
         same = (last and current['player'] == last['player'] and current['map'] == last['map']
                 and current['round'] >= last['round'] and current['kills'] >= last['kills']
                 and current['mvps'] >= last['mvps'])
@@ -171,6 +173,7 @@ def config_text(token, port):
         "player_id" "1"
         "player_state" "1"
         "player_match_stats" "1"
+        "player_weapons" "1"
     }}
 }}
 '''

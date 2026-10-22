@@ -27,6 +27,7 @@ std::uint64_t CareChoiceToken(const InventoryItem &item, std::size_t slot)
         (static_cast<std::uint64_t>(item.paintKitIndex) << 16) + item.defIndex;
 }
 constexpr std::uint64_t FauxItemIdBase = 0xF000000000000000ull;
+constexpr std::uint64_t MissionTypeId = 16; // CSOAccountRecurringMission in the recorded welcome
 // Pseudo event ids of care claims (below 2^53, so Panorama numbers are exact): base + generation * 16 + slot mask.
 constexpr std::uint64_t CareEventBase = 4200000000000000ull;
 }
@@ -165,8 +166,46 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
         if (!store->Find(rule.reply))
             continue;
         SetHandler(rule.request, [store, reply = rule.reply](const FrameView &, LocalGameCoordinator &gc) {
-            gc.Reply(reply, *store->Find(reply));
+            if (reply == gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema && !gc.m_missionSchema.empty())
+                gc.Reply(reply, gc.m_missionSchema); // the local weekly rotation instead of the recorded fortnight
+            else
+                gc.Reply(reply, *store->Find(reply));
         });
+    }
+}
+
+std::vector<std::vector<std::uint8_t>> LocalGameCoordinator::EncodedMissionProgress() const
+{
+    std::vector<std::vector<std::uint8_t>> objects;
+    for (const auto &entry : m_missionProgress.value_or(std::vector<MissionProgress>{}))
+    {
+        PbWriter object; // CSOAccountRecurringMission
+        object.Varint(1, static_cast<std::uint32_t>(m_config.owner.id & 0xFFFFFFFFull));
+        object.Varint(2, entry.mission); object.Varint(3, entry.period); object.Varint(4, entry.progress);
+        objects.push_back(object.bytes());
+    }
+    return objects;
+}
+
+void LocalGameCoordinator::SetMissions(std::vector<std::uint8_t> schema, std::vector<MissionProgress> progress)
+{
+    std::lock_guard lock(m_mutex);
+    if (!schema.empty()) m_missionSchema = std::move(schema);
+    const auto before = m_missionProgress;
+    m_missionProgress = std::move(progress);
+    if (!before) return; // first load: the welcome carries it
+    for (const auto &entry : *m_missionProgress)
+    {
+        const auto old = std::find_if(before->begin(), before->end(), [&](const auto &item) {
+            return item.mission == entry.mission && item.period == entry.period; });
+        if (old != before->end() && old->progress == entry.progress) continue;
+        PbWriter object;
+        object.Varint(1, static_cast<std::uint32_t>(m_config.owner.id & 0xFFFFFFFFull));
+        object.Varint(2, entry.mission); object.Varint(3, entry.period); object.Varint(4, entry.progress);
+        SoSingleObject update; update.typeId = static_cast<std::int32_t>(MissionTypeId);
+        update.data = object.bytes(); update.version = ++m_soVersion; update.owner = m_config.owner;
+        Reply(old == before->end() ? gc_msg::ESOMsg::k_ESOMsg_Create : gc_msg::ESOMsg::k_ESOMsg_Update,
+              EncodeSoSingleObject(update));
     }
 }
 
@@ -1309,6 +1348,9 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
                 else
                     ++m_patchFailures;
             }
+            if (m_missionProgress)
+                if (auto result = AppendObjectsToWelcome(patched, MissionTypeId, EncodedMissionProgress(), true))
+                    patched = std::move(*result); // replaces the recorded mission (11012, May)
             if (m_live && m_live->Items().Gameplay().care_packages_enabled) {
                 const auto &queue=m_live->Items().CarePackages();
                 const std::vector<std::vector<std::uint8_t>> store{EncodeCareStore(m_live->Items())};

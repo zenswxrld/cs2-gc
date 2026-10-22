@@ -93,6 +93,10 @@ public:
                           RandomSource random, std::function<void()> afterChange);
     // Consume cumulative XP from the local GSI bridge, idempotently, on the game's callback thread.
     bool ApplyEarnedXp(std::uint64_t cumulativeXp, const std::function<void()> &afterChange);
+    // Weekly missions (native_missions.py / mission_tracker.py): the 9226 body served for 9225, and the progress
+    // shown as CSOAccountRecurringMission (SO type 16). Changed progress is pushed to the client.
+    struct MissionProgress { std::uint32_t mission{}, period{}, progress{}; };
+    void SetMissions(std::vector<std::uint8_t> schema, std::vector<MissionProgress> progress);
     // A care-package claim the patched page printed to console.log (build 31): generation + the three choice tokens.
     bool ClaimCareFromConsole(std::uint32_t generation, const std::vector<std::uint64_t> &tokens,
                               const std::function<void()> &afterChange);
@@ -141,6 +145,9 @@ private:
     void NotifyCarePackage(); // caller holds m_mutex
     std::uint32_t m_sentCareGeneration{};
     std::vector<std::uint8_t> m_sentCareStore;
+    std::vector<std::uint8_t> m_missionSchema;
+    std::optional<std::vector<MissionProgress>> m_missionProgress;
+    std::vector<std::vector<std::uint8_t>> EncodedMissionProgress() const;
     void NotifyRewardDrops(const std::vector<InventoryItem> &drops); // caller holds m_mutex
     void SendMissingCaseKeys(); // free_case_keys: create and send a key for each newly owned case type
     std::optional<std::uint64_t> AcceptTerminalLocked(std::uint64_t gameId);

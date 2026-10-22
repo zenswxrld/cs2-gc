@@ -524,6 +524,14 @@ const std::vector<SkinRef> &Schema::CollectionSkins(const std::string &collectio
     return found == m_collectionSkins.end() ? none : found->second;
 }
 
+std::vector<std::string> Schema::CollectionNames() const
+{
+    std::vector<std::string> names;
+    for (const auto &entry : m_collectionSkins) names.push_back(entry.first);
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
 std::optional<LootItem> Schema::SkinAsLootItem(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
 {
     const auto weapon = m_weaponNames.find(weaponDefIndex);

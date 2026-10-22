@@ -117,6 +117,48 @@ def recolor(colors, theme, fade=False, keep_value=False):
     return out
 
 
+CLEAN_COLLECTION_TITLES = {
+    'am_m4a1s_bluesmoke': 'Blue Phosphor',
+    'am_aqua_flecks': 'Twilight Galaxy',
+    'am_gold_brick': 'Gold Brick',
+    'am_jorm_orange': 'Jörmungandr',
+    'am_jorm_blue': 'Jörmungandr',
+    'am_moro_textile_bright': 'Bright Textile',
+    'am_zebra_dark': 'Zebra',
+    'am_knots_brown': 'Knotted',
+    'soe_teal_glitter': 'Glitter',
+    'soe_pink_pearl': 'Pink Pearl',
+    'soe_iridescent_purple': 'Iridescence',
+    'soe_metallic_green_2': 'Metallic',
+    'cg_pattern_tidal_contour': 'Tidal Contour',
+    'cg_pattern_obsidian_fault': 'Obsidian Fault',
+    'cg_pattern_prismatic_facets': 'Prismatic Facets',
+    'cg_pattern_vector_lattice': 'Vector Lattice',
+}
+
+
+def source_title(base, titles):
+    if base in CLEAN_COLLECTION_TITLES:
+        return CLEAN_COLLECTION_TITLES[base]
+    localized=(titles.get(base) or '').strip()
+    if localized: return localized
+    named={'am_carbon_fiber':'Carbon Weave','aa_wiring':'Circuitwork',
+           'aa_vertigogeo_neon':'Prism Grid','am_metal_inlay':'Metal Inlay'}
+    if base in named:return named[base]
+    return re.sub(r'^(?:am|aa|aq|hy|so|cu|sp|an)_','',base).replace('_',' ').strip().title() or 'Custom Finish'
+
+
+def variant_title(base, theme, inverse, titles):
+    """Use actual rolled colour in item title, but not in the collection preview."""
+    root = source_title(base, titles)
+    # Canonical colour names only when a palette actually matches.
+    colour = {'Royal':'Purple','Galaxy':'Violet','Ocean':'Blue','Forest':'Green',
+              'Frost':'Frost','Glacier':'Glacier','Coral':'Coral','Vapor':'Vapor',
+              'Sunrise':'Sunset','Lava':'Crimson','Toxin':'Toxic'}.get(theme,theme)
+    if root == 'Blue Phosphor': root='Phosphor'
+    if root == 'Gold Brick': root='Brick'
+    return f'{colour} {root}' + (' Inverted' if inverse else '')
+
 def kit_title(base, theme, titles):
     return KNIFE_BASES.get(base) or titles.get(base) or base
 
@@ -154,7 +196,7 @@ def recolor_hardened(colors, theme):
     return output
 
 
-def _vector_params(root):
+def _vector_params(root, allow_partial=False):
     params = root.get('m_vectorParams')
     if params is None or not isinstance(params.value, list): return None
     found = {}
@@ -163,7 +205,7 @@ def _vector_params(root):
         name, value = entry.get('m_name'), entry.get('m_value')
         if name and value and name.value in ('g_vColor0', 'g_vColor1', 'g_vColor2', 'g_vColor3'):
             found[name.value] = value
-    return found if len(found) == 4 else None
+    return found if len(found) == 4 or (allow_partial and found) else None
 
 
 def _specific_material(root):
@@ -245,7 +287,7 @@ def _with_block(data, name, content):
     return kv3.write_resource(version, blocks)
 
 
-def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_palette=None, weapon_inverse=False):
+def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_palette=None, weapon_inverse=False, weapon_tone=2):
     """(vcompmat bytes, vmat bytes) for a recolour of `kit`, or None when it is not a four-colour finish."""
     compmat = source.read(kit_path + '_c')
     if compmat is None: return None
@@ -265,9 +307,12 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_pale
     if m_data is None: return None
     if len(m_data) < 4 or struct.unpack_from('<I', m_data)[0] != kv3.MAGIC5: return None
     m_guid, m_root = kv3.read_kv3(m_data)
-    colors = _vector_params(m_root)
+    partial=weapon_palette and kit.startswith('soe_')
+    colors = _vector_params(m_root,allow_partial=partial)
     if colors is None: return None
-    current = [[item.value for item in colors['g_vColor%d' % i].value] for i in range(4)]
+    channels=sorted(colors)
+    current = [[item.value for item in colors[name].value] for name in channels]
+    if partial and len(current)<4:current += [list(current[-1]) for _ in range(4-len(current))]
     if any(len(color) != 4 for color in current): return None
     if not weapon_palette:
         new_colors = (recolor_hardened(current, theme) if kit == 'aq_oiled' else
@@ -277,8 +322,8 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_pale
                       recolor(current, theme, fade=kit in FADE_BASES and theme != 'Teal'))
     if weapon_palette:
         from weapon_palettes import recolour, is_new_colourway, invert_panels
-        new_colors = recolour(current, theme, weapon_palette, THEMES, DUO_THEMES, GRADIENT_THEMES)
-        if weapon_inverse: new_colors = invert_panels(current,new_colors)
+        new_colors = recolour(current, theme, weapon_palette, THEMES, DUO_THEMES, GRADIENT_THEMES,tone=weapon_tone)
+        if weapon_inverse: new_colors = invert_panels(current,new_colors,tone=weapon_tone)
         if not is_new_colourway(current,new_colors):
             if report is not None:
                 report.setdefault('excluded',[]).append({'donor':kit,'theme':theme,'tier':weapon_palette,'reason':'near-original colourway'})
@@ -287,14 +332,14 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_pale
         report_key = kit + ':' + weapon_palette if weapon_palette else kit
         entry = report.setdefault(report_key, {'source_compmat': kit_path, 'source_material': specific.value,
             'shader': m_root.get('m_shaderName').value if m_root.get('m_shaderName') else '',
-            'original_colors': current, 'policy': ('weapon-accent-gradient-v1' if weapon_palette else
+            'original_colors': current, 'policy': ('weapon-accent-gradient-v%d'%weapon_tone if weapon_palette else
                 'hardened-metal-accents-v1' if kit == 'aq_oiled' else
                 'related-metal-tones-v1' if kit == 'am_gold_brick' else 'ranked-theme-v1'),
             'themes': {}})
         entry['themes'][theme + (' / inverted' if weapon_inverse else '')] = new_colors
-    if max(brightness(c) for c in new_colors) < 110 / 255: return None  # dark patterns need a bright colour to show
-    for i in range(4):
-        for item, value in zip(colors['g_vColor%d' % i].value, new_colors[i]): item.value = value
+    if max(brightness(c) for c in new_colors[:len(channels)]) < 110 / 255: return None  # dark patterns need a bright colour to show
+    for i,name in enumerate(channels):
+        for item, value in zip(colors[name].value, new_colors[i]): item.value = value
     vmat_path = VMAT_DIR + new_name + '.vmat'
     name = m_root.get('m_materialName')
     if name is not None: name.value = vmat_path
@@ -555,9 +600,28 @@ def read_png(data):
     return width, height, rows
 
 
-def make_vtex(template, png):
+def make_vtex(template, png, max_size=None):
     """An uncompressed BGRA8888 vtex_c (one mip) for `png`, keeping the template icon's resource layout."""
     width, height, rows = read_png(png)
+    if max_size and max(width,height)>max_size:
+        # Render high-resolution source art at a bounded UI size. Keep source PNGs
+        # untouched; premultiplied bilinear sampling avoids dark transparent edges.
+        out_w=max(1,round(width*max_size/max(width,height)))
+        out_h=max(1,round(height*max_size/max(width,height)))
+        output=[]
+        for y in range(out_h):
+            yy=max(0,min(height-1,(y+.5)*height/out_h-.5));y0=int(yy);fy=yy-y0
+            row=bytearray()
+            for x in range(out_w):
+                xx=max(0,min(width-1,(x+.5)*width/out_w-.5));x0=int(xx);fx=xx-x0
+                samples=[(rows[sy][sx*4:sx*4+4],weight) for sy,sx,weight in (
+                    (y0,x0,(1-fy)*(1-fx)),(y0,min(width-1,x0+1),(1-fy)*fx),
+                    (min(height-1,y0+1),x0,fy*(1-fx)),(min(height-1,y0+1),min(width-1,x0+1),fy*fx))]
+                alpha=sum(pixel[3]*weight for pixel,weight in samples)
+                rgb=[round(sum(pixel[c]*pixel[3]*weight for pixel,weight in samples)/alpha) if alpha else 0 for c in range(3)]
+                row.extend((*rgb,round(alpha)))
+            output.append(bytes(row))
+        width,height,rows=out_w,out_h,output
     pixels = bytearray()
     for row in rows:
         for i in range(0, len(row), 4):
@@ -623,12 +687,12 @@ def prepare(proxy_directory, config, items_game_text):
         if glove_case and template is not None and native_gloves.ICON.is_file():
             for name in (native_gloves.CASE_NAME, native_gloves.TEST_CASE_NAME):
                 files['panorama/images/econ/weapon_cases/' + name + '_png.vtex_c'] = \
-                    make_vtex(template, native_gloves.ICON.read_bytes())
+                    make_vtex(template, native_gloves.ICON.read_bytes(),max_size=512)
     entries += glove_entries
     known.update({name: int(kit_id) for kit_id, name, _, _ in entries})
     atomic_write(ids_path, json.dumps(known, indent=1, sort_keys=True) + '\n')
     if template is not None and ICON.is_file():
-        files['panorama/images/' + CASE_IMAGE + '_png.vtex_c'] = make_vtex(template, ICON.read_bytes())
+        files['panorama/images/' + CASE_IMAGE + '_png.vtex_c'] = make_vtex(template, ICON.read_bytes(),max_size=512)
     extra = []
     reels = {CASE_NAME: reel_sample(items_game_text, gold, entries, case)}
     if glove_case:
@@ -648,14 +712,14 @@ def prepare(proxy_directory, config, items_game_text):
             extra.append(native_skins.test_case_spec(skins))
             if template is not None and ICON.is_file():
                 files['panorama/images/econ/weapon_cases/' + native_skins.TEST_CASE_NAME + '_png.vtex_c'] = \
-                    make_vtex(template, ICON.read_bytes())
+                    make_vtex(template, ICON.read_bytes(),max_size=512)
         skins2 = native_skins.test2_items(items_game_text, set(kits),
                                           [name for _, name, _, _ in entries if name.startswith('rk_')])
         if skins2:
             extra.append(native_skins.test2_case_spec(skins2))
             if template is not None and ICON.is_file():
                 files['panorama/images/econ/weapon_cases/' + native_skins.TEST2_CASE_NAME + '_png.vtex_c'] = \
-                    make_vtex(template, ICON.read_bytes())
+                    make_vtex(template, ICON.read_bytes(),max_size=512)
             skins += skins2
     sections_extra, previews = {}, {}
     if config.get('custom_skins_test', 1) or config.get('custom_collections', 0) or config.get('custom_cases', 1):
@@ -676,7 +740,7 @@ def prepare(proxy_directory, config, items_game_text):
                 emblem = Path(__file__).resolve().parent / 'collection_icons' / (name + '.png')
                 if emblem_template is not None and emblem.is_file():
                     for suffix in ('_png.vtex_c', '_small_png.vtex_c'):
-                        files['panorama/images/econ/set_icons/' + name + suffix] = make_vtex(emblem_template, emblem.read_bytes())
+                        files['panorama/images/econ/set_icons/' + name + suffix] = make_vtex(emblem_template, emblem.read_bytes(),max_size=256)
         if family_kits:
             next_id = max([FIRST_KIT_ID - 1] + [int(v) for v in known.values()] + [int(k) for k, _, _, _ in entries]) + 1
             for name, title, values in family_kits:
@@ -699,7 +763,7 @@ def prepare(proxy_directory, config, items_game_text):
                 if template is not None and ICON.is_file():
                     for name in (native_skins.COLLECTIONS_TEST_NAME, native_skins.CHASE_TEST_NAME):
                         files['panorama/images/econ/weapon_cases/' + name + '_png.vtex_c'] = \
-                            make_vtex(template, ICON.read_bytes())
+                            make_vtex(template, ICON.read_bytes(),max_size=512)
     patched, details = patch_items_game(items_game_text, entries, case, extra_cases=extra, extra_sections=sections_extra)
     atomic_write(proxy / REEL_FILE, json.dumps(reels, sort_keys=True) + '\n')
     atomic_write(proxy / PREVIEW_FILE, json.dumps(previews, sort_keys=True) + '\n')

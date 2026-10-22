@@ -24,7 +24,7 @@ def is_new_colourway(original, changed):
     return sum(distances)/len(distances) >= 22/360
 
 
-def recolour(colors, theme, tier, themes, duos, gradients):
+def recolour(colors, theme, tier, themes, duos, gradients, tone=2):
     """Colour channels form gradients only where the donor's original pattern blends them.
 
     Retain neutral metal/trim and relative light/dark structure. All-neutral patterns
@@ -53,11 +53,12 @@ def recolour(colors, theme, tier, themes, duos, gradients):
         # A darker, slightly muted under-colour makes the brighter gradient visible.
         sat*=.88 if rank==0 and len(ranked)>1 else 1
         value=min(.96,max(.14,old_v))
+        if tone>=2 and value>.72:value=.72+(value-.72)*.28
         output[i]=[*colorsys.hsv_to_rgb(hue,sat,value),colors[i][3]]
     return output
 
 
-def invert_panels(original, changed):
+def invert_panels(original, changed, tone=2):
     """Swap painted neutral panels between charcoal and off-white; preserve alpha.
 
     On fully coloured patterns invert the tonal hierarchy rather than RGB-negating
@@ -71,5 +72,6 @@ def invert_panels(original, changed):
     for i in indices:
         h,s,v=colorsys.rgb_to_hsv(*changed[i][:3])
         value=max(.14,min(.96,pivot-v))
+        if tone>=2 and neutrals:value=min(.82,value)
         output[i]=[*colorsys.hsv_to_rgb(h,min(s,.06) if neutrals else s,value),changed[i][3]]
     return output

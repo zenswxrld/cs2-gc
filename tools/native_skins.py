@@ -256,14 +256,18 @@ def family_text(families, drop_collections=()):
 # Custom weapon collections (user, 22 Oct: first "cases" in the case slot, then "I want it like this not a case,
 # they are collections"): guns only, no gold, Armory collection tiles, the same layout as the collections. In each case the Covert chase and one Classified and one Restricted skin come in a colour range;
 # the Classified/Restricted ranges are new recolours of classic patterns (rc_<pattern>_<theme> materials).
-CASE_ICONS = ('ashfall', 'aurora', 'brimstone', 'cascade', 'cinder', 'eclipse', 'halcyon', 'kaleido', 'monsoon',
+LEGACY_CASE_ICONS = ('ashfall', 'aurora', 'brimstone', 'cascade', 'cinder', 'eclipse', 'halcyon', 'kaleido', 'monsoon',
               'nebula', 'solstice', 'zephyr')  # the user's OfflineCS case pictures, tools/case_icons/cs2gc_<n>.png
+NEW_CASE_ICONS=('tidewater','obelisk','zenith','rampart','ironclad','marauder',
+                'nightwatch','outrider','quarry','redoubt','talisman','undertow')
+NEWEST_CASE_ICONS = ('forged','phantom_blade','harbor','mosaic','kestrel','juggernaut','lodestar','fathom','cipher','driftwood','insignia','warden')
+CASE_ICONS=LEGACY_CASE_ICONS+NEW_CASE_ICONS+NEWEST_CASE_ICONS
 CASE_PREFIX = 'set_cs2gc_case_'  # user: "they are collections", Armory collection tiles, not crates
 CLASSIC_STYLES = ('2', '3')  # hydrographic and spray-paint patterns: four colours, any gun
 CLASSIC_THEMES = 8
 
 
-CASE_COLLECTIONS = {CASE_PREFIX + icon: 'The %s Collection' % icon.title() for icon in CASE_ICONS}
+CASE_COLLECTIONS = {CASE_PREFIX + icon: 'The %s Collection' % icon.replace('_', ' ').title() for icon in CASE_ICONS}
 
 
 def legacy_custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits):
@@ -317,7 +321,7 @@ def legacy_custom_cases(source_text, kits, titles, kit_path, finish_source, fami
     classics = [n for n in fillers if kits[n][1].get('style') in CLASSIC_STYLES]
     chases = [(gun, family) for family in FAMILIES for gun in CHASE_GUNS
               if CHASE_TIERS.get(gun, 'ancient') == 'ancient' and 'cgf_%s_ancient' % family in families]
-    for index, icon in enumerate(CASE_ICONS):
+    for index, icon in enumerate(LEGACY_CASE_ICONS):
         name = CASE_PREFIX + icon
         rng = random.Random(name)
         if not chases: break
@@ -365,7 +369,7 @@ COLLECTION_DESIGNS = {
     'solstice': ('weapon_m4a1', 'am_kimono_sunrise', ('Amber','Ember','Rose','Sunset')),
     'zephyr': ('weapon_ak47', 'aa_fade', ('Lime','Teal','Azure','Emerald')),
 }
-DROP_ONLY_COLLECTIONS = frozenset(CASE_PREFIX + name for name in ('eclipse','monsoon'))
+DROP_ONLY_COLLECTIONS = frozenset(CASE_PREFIX + name for name in ('eclipse','monsoon','nightwatch','undertow'))
 # Second art pass: gun donors with known four-channel palettes; no Blaze transfers.
 # Six hand-picked gradient/colour palettes per collection. The original colourway
 # and near copies are rejected by weapon_palettes before entering the random range.
@@ -395,6 +399,65 @@ REFINED_DONORS = tuple(n for n in GUN_PATTERN_DONORS if n != 'aa_flames') + (
 
 
 
+ADDITIONAL_DESIGNS = {
+    'tidewater': ('weapon_awp','cg_pattern_tidal_contour',('Ocean','Frost','Coral','Forest','Glacier','Vapor')),
+    'obelisk': ('weapon_deagle','cg_pattern_obsidian_fault',('Royal','Galaxy','Midnight','Lava','Frost','Coral')),
+    'zenith': ('weapon_m4a1_silencer','cg_pattern_prismatic_facets',('Candy','Galaxy','Vapor','Royal','Toxin','Sunrise')),
+    'rampart': ('weapon_ak47','cg_pattern_vector_lattice',('Forest','Lava','Royal','Toxin','Coral','Glacier')),
+    'ironclad': ('weapon_sg556','soe_teal_glitter',('Frost','Royal','Ocean','Coral','Galaxy','Sunrise')),
+    'marauder': ('weapon_galilar','am_zebra_dark',('Lava','Coral','Royal','Sunset','Midnight','Vapor')),
+    'nightwatch': ('weapon_usp_silencer','am_heist_plans_yellow',('Galaxy','Midnight','Vapor','Royal','Ocean','Aurora')),
+    'outrider': ('weapon_glock','am_knots_brown',('Lava','Sunrise','Coral','Ocean','Forest','Royal')),
+    'quarry': ('weapon_famas','soe_metallic_green_2',('Frost','Royal','Ocean','Lava','Forest','Coral')),
+    'redoubt': ('weapon_aug','am_crystallized_silver',('Lava','Royal','Forest','Sunrise','Vapor','Frost')),
+    'talisman': ('weapon_p250','soe_pink_pearl',('Forest','Royal','Toxin','Ocean','Sunrise','Vapor')),
+    'undertow': ('weapon_mp9','soe_iridescent_purple',('Ocean','Frost','Forest','Vapor','Midnight','Glacier')),
+}
+
+# Third batch of twelve new Armory collections (no new weapon cases).
+ADDITIONAL_DESIGNS.update({
+    'forged': ('weapon_ak47', 'am_metal_inlay', ('Lava', 'Crimson', 'Sunrise', 'Royal', 'Inferno', 'Coral')),
+    'phantom_blade': ('weapon_m4a1_silencer', 'am_navy_shine', ('Violet', 'Galaxy', 'Royal', 'Midnight', 'Rose', 'Vapor')),
+    'harbor': ('weapon_awp', 'am_seastorm', ('Ocean', 'Glacier', 'Frost', 'Teal', 'Forest', 'Vapor')),
+    'mosaic': ('weapon_deagle', 'am_ddpatdense_peacock', ('Candy', 'Rainbow', 'Vapor', 'Sunrise', 'Royal', 'Aurora')),
+    'kestrel': ('weapon_sg556', 'am_scales_bravo', ('Azure', 'Ocean', 'Frost', 'Sunrise', 'Royal', 'Glacier')),
+    'juggernaut': ('weapon_negev', 'am_diamond_plate', ('Lava', 'Royal', 'Coral', 'Inferno', 'Sunrise', 'Midnight')),
+    'lodestar': ('weapon_awp', 'am_aqua_flecks', ('Galaxy', 'Violet', 'Aurora', 'Royal', 'Midnight', 'Vapor')),
+    'fathom': ('weapon_mp9', 'am_jorm_blue', ('Ocean', 'Frost', 'Teal', 'Forest', 'Glacier', 'Aurora')),
+    'cipher': ('weapon_glock', 'aa_wiring', ('Toxin', 'Forest', 'Aurora', 'Teal', 'Galaxy', 'Royal')),
+    'driftwood': ('weapon_ak47', 'am_knots_brown', ('Coral', 'Sunrise', 'Forest', 'Ocean', 'Royal', 'Frost')),
+    'insignia': ('weapon_m4a1', 'am_gold_brick', ('Royal', 'Sunrise', 'Coral', 'Lava', 'Ocean', 'Vapor')),
+    'warden': ('weapon_xm1014', 'am_chainmail', ('Midnight', 'Ocean', 'Royal', 'Lava', 'Frost', 'Galaxy')),
+})
+
+# Known-working knife-origin colour families on guns. These are eligible for
+# either a chase or a Classified wave, never automatically forced into the chase.
+KNIFE_WAVE_DONORS = ('am_doppler_phase2', 'am_gamma_doppler_phase2',
+                     'am_marble_fade', 'aa_fade', 'an_tiger_orange',
+                     'am_zebra', 'aq_damascus', 'hy_webs', 'aq_oiled')
+
+FEATURED_KNIFE_CHASES = {'aurora':'am_gamma_doppler_phase2', 'nebula':'am_doppler_phase2',
+                          'kaleido':'am_marble_fade', 'outrider':'an_tiger_orange'}
+ADDITIONAL_DONORS=REFINED_DONORS+('am_metal_inlay','am_zebra_dark','am_heist_plans_yellow','am_knots_brown',
+    'am_diamond_plate','am_crystallized_silver','am_mirage_flowers_metalic','am_seastorm_blood')
+
+
+
+NEXT12_DONORS = {
+    'forged': ('am_metal_inlay', 'am_chainmail', 'am_crystallized_silver'),
+    'phantom_blade': ('am_navy_shine', 'am_royal', 'am_fuschia'),
+    'harbor': ('am_seastorm', 'am_jorm_blue', 'am_bamboo_jungle'),
+    'mosaic': ('am_ddpatdense_peacock', 'am_geometric_steps', 'am_moro_textile_bright'),
+    'kestrel': ('am_scales_bravo', 'am_gyrate', 'am_carbon_fiber'),
+    'juggernaut': ('am_diamond_plate', 'am_chainmail', 'am_crystallized_silver'),
+    'lodestar': ('am_aqua_flecks', 'am_geometric_steps', 'am_navy_shine'),
+    'fathom': ('am_jorm_blue', 'am_seastorm', 'am_bamboo_jungle'),
+    'cipher': ('aa_wiring', 'aa_vertigogeo_neon', 'am_carbon_fiber'),
+    'driftwood': ('am_knots_brown', 'am_jorm_orange', 'am_bamboo_jungle'),
+    'insignia': ('am_gold_brick', 'am_metal_inlay', 'am_crystallized_silver'),
+    'warden': ('am_chainmail', 'am_diamond_plate', 'am_zebra_dark'),
+}
+
 def custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits, report=None):
     if report is None: report={}
     # Keep build27a definitions even when a repeated donor is replaced in the current pool.
@@ -403,12 +466,85 @@ def custom_cases(source_text, kits, titles, kit_path, finish_source, families, m
     definitions={entry[0]:entry for entry in previous[0]}
     definitions.update({entry[0]:entry for entry in current[0]})
     files=dict(previous[1]);files.update(current[1])
-    return _curated_custom_cases(source_text,kits,titles,kit_path,finish_source,families,made_kits,True,
-                                 refined=True,retained=(list(definitions.values()),files),palette_report=report)
+    old_refined=_curated_custom_cases(source_text,kits,titles,kit_path,finish_source,families,made_kits,True,
+        refined=True,retained=(list(definitions.values()),files),palette_report={},tone_revision=1)
+    current=_curated_custom_cases(source_text,kits,titles,kit_path,finish_source,families,made_kits,True,
+        refined=True,retained=old_refined[:2],palette_report=report,tone_revision=3)
+    if finish_source is not None:
+        import native_patterns
+        added,pattern_titles,pattern_files,pattern_report=native_patterns.plan(finish_source,kits,titles)
+        effects=native_patterns.inspect_effects(finish_source,kits)
+        report['pattern_assets']=pattern_report;report['effect_templates']=effects
+        expanded_kits=dict(kits);expanded_kits.update(added)
+        for effect,row in effects.items():
+            if not row['status'].startswith('colour template ready'):
+                expanded_kits.pop(effect,None)
+        expanded_titles=dict(titles);expanded_titles.update(pattern_titles)
+        current[1].update(pattern_files)
+        expanded_source=native_patterns.GeneratedSource(finish_source,pattern_files)
+    else:
+        expanded_kits,expanded_titles,expanded_source=kits,titles,finish_source
+    bases=sorted(kits,key=len,reverse=True)
+    blocked=set()
+    for entry in current[4]:
+        kit,weapon=entry[1:].split(']')
+        base=next((base for base in bases if '_'+base+'_' in '_'+kit+'_'),None)
+        if base:blocked.add((kit_path(base,kits[base][1]).replace('\\','/').lower(),weapon,'coloured'))
+    expanded=_curated_custom_cases(source_text,expanded_kits,expanded_titles,kit_path,expanded_source,families,made_kits,True,
+        refined=True,retained=current[:2],palette_report=report,expansion=True,excluded_pairs=blocked,tone_revision=3)
+    # Keep the Build 30 draft kits/materials for owned inventory. Publish the
+    # third batch from its authored lineup through the same material generator.
+    from next_collection_lineups import build as build_next_collections
+    authored=build_next_collections(source_text,expanded_kits,expanded_titles,kit_path,expanded_source,
+        families,set(made_kits) | {n for n,_,_ in expanded[0]},report)
+    expanded=(expanded[0]+authored[0],dict(expanded[1],**authored[1]),expanded[2]+'\n'+authored[2],
+        expanded[3]+authored[3],expanded[4]+authored[4],dict(expanded[5],**authored[5]))
+    current=(expanded[0],expanded[1],current[2]+'\n'+expanded[2],current[3]+expanded[3],
+             current[4]+expanded[4],dict(current[5],**expanded[5]))
+    # Report actual selected families, including fallback results, not just candidates.
+    report['effects_in_pools']=[entry for entry in current[4] if any('_'+name+'_' in entry for name in
+        ('soe_teal_glitter','soe_pink_pearl','soe_iridescent_purple','soe_metallic_green_2'))]
+    report['original_patterns_in_pools']=[entry for entry in current[4] if '_cg_pattern_' in entry]
+    # Repair blank names on all retained kits too, without changing inventory IDs.
+    import native_finishes as finishes
+    bases=sorted(kits,key=len,reverse=True)
+    definitions=[]
+    for name,title,values in current[0]:
+        base=next((base for base in bases if '_'+base+'_' in '_'+name+'_'),None)
+        # Keep each rolled variant's own colour-specific title. Only the
+        # visible family placeholder uses the generic donor title.
+        is_rolled_variant = name.startswith(('cw2v_', 'ccv_', 'cgv_'))
+        is_fixed_recolour = name.startswith(('cwf_', 'nc31_'))
+        if base in finishes.CLEAN_COLLECTION_TITLES and not (is_rolled_variant or is_fixed_recolour):
+            title=finishes.source_title(base,titles)
+        elif not title or not title.strip():
+            title=finishes.source_title(base or name,titles)
+        definitions.append((name,title,values))
+    return definitions,*current[1:]
+
+
+def weapon_rarity_tags(source_text):
+    from inventory_item import collect,parse,as_dict
+    sections=collect(parse(source_text))
+    prefabs={name:as_dict(value) for name,value in sections.get('prefabs',{}).items() if isinstance(value,list)}
+    def resolve(node,seen=()):
+        if node.get('item_rarity'):return node['item_rarity']
+        for name in node.get('prefab','').split():
+            if name not in seen:
+                found=resolve(prefabs.get(name,{}),seen+(name,))
+                if found:return found
+    return {as_dict(value).get('name'):resolve(as_dict(value)) or 'common'
+            for value in sections.get('items',{}).values() if isinstance(value,list)}
+
+
+def paint_rarity_for_weapon(target,weapon,base_rarities):
+    order=('common','uncommon','rare','mythical','legendary','ancient')
+    bonus=order.index(base_rarities.get(weapon,'common')) if base_rarities.get(weapon,'common') in order else 0
+    return order[max(0,order.index(target)-bonus)]
 
 
 def _curated_custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits, distinct_patterns,
-                          refined=False, retained=None, palette_report=None):
+                          refined=False, retained=None, palette_report=None, tone_revision=2, expansion=False, excluded_pairs=None):
     """Curated collection loot lists; retain the previous kits/materials for owned inventory.
 
     No new crate definitions. Original official weapon/material combinations are
@@ -423,14 +559,24 @@ def _curated_custom_cases(source_text, kits, titles, kit_path, finish_source, fa
         files = dict(files)
     new_kits=list(old_kits)
     present={n for n,_,_ in new_kits} | set(made_kits)
+    positions={name:i for i,(name,_,_) in enumerate(new_kits)}
+    base_rarities=weapon_rarity_tags(source_text) if refined and tone_revision>=2 else {}
     official=set(re.findall(r'"\[([^\]]+)\](weapon_[a-z0-9_]+)"',source_text))
     weapons=sorted(w for w in FILLER_GUNS if re.search(r'"name"\s+"%s"'%w,source_text))
     material=lambda base:kit_path(base,kits[base][1]).replace('\\','/').lower()
     official_materials={(material(base),gun) for base,gun in official if base in kits}
     fillers=sorted(n for n,(_,v) in kits.items() if v.get('style') in FILLER_STYLES and titles.get(n)
+                   and 'chalice' not in (n + ' ' + titles.get(n, '')).lower()
                    and not any(word in n for word in WEAPON_WORDS))
-    donors=[n for n in (REFINED_DONORS if refined else GUN_PATTERN_DONORS) if n in kits]
-    used=set(); counts={}; lists=[]; specs=[]; entries=[]; icons={}; checked_materials={}
+    donor_names=((ADDITIONAL_DONORS+tuple(n for n in kits if n.startswith('cg_pattern_'))+
+                  ()) if expansion and tone_revision>=3 else
+                  (ADDITIONAL_DONORS+tuple(n for n in kits if n.startswith('cg_pattern_'))+
+                  ('soe_teal_glitter','soe_pink_pearl','soe_iridescent_purple','soe_metallic_green_2')) if expansion else
+                  REFINED_DONORS if refined else GUN_PATTERN_DONORS)
+    def usable_donor(n):
+        return n in kits and 'chalice' not in (n + ' ' + titles.get(n, '')).lower()
+    donors=list(dict.fromkeys(n for n in donor_names if usable_donor(n)))
+    used=set(excluded_pairs or ()); counts={}; lists=[]; specs=[]; entries=[]; icons={}; checked_materials={}
 
     def copy_values(base,tier):
         values={k:v for k,v in kits[base][1].items() if isinstance(v,str) and k not in ('name','description_string','description_tag')}
@@ -439,9 +585,13 @@ def _curated_custom_cases(source_text, kits, titles, kit_path, finish_source, fa
 
     def add(name,title,values):
         if name not in present:
+            positions[name]=len(new_kits)
             new_kits.append((name,title,values));present.add(name)
+        elif refined and tone_revision>=2 and name in positions:
+            new_kits[positions[name]]=(name,title,values)
 
-    def colour_family(icon,slot,base,tier,themes):
+    def colour_family(icon,slot,base,tier,themes,weapon):
+        paint_tier=paint_rarity_for_weapon(tier,weapon,base_rarities) if base_rarities else tier
         family=('%s_%s_%s_%s_%s'%('cw2f' if refined else 'ccf',icon,slot,base,tier))
         variants=[]; first_path=None; seen_palettes=set()
         variants_to_make=[(theme,False) for theme in themes]
@@ -452,7 +602,7 @@ def _curated_custom_cases(source_text, kits, titles, kit_path, finish_source, fa
             path=finishes.COMPMAT_DIR+material_name+'.vcompmat'
             if material_name not in checked_materials:
                 report={}
-                options={'weapon_palette':tier,'weapon_inverse':inverse} if refined else {}
+                options={'weapon_palette':tier,'weapon_inverse':inverse,'weapon_tone':tone_revision} if refined else {}
                 made=finishes.make_finish(finish_source,base,kit_path(base,kits[base][1]),material_name,theme,
                                           report=palette_report if refined else report,**options)
                 if not made:
@@ -473,25 +623,58 @@ def _curated_custom_cases(source_text, kits, titles, kit_path, finish_source, fa
                     if signature in seen_palettes:continue
                     seen_palettes.add(signature)
             variant='%s_%s_%s_%s_%s_%s'%('cw2v' if refined else 'ccv',icon,slot,base,suffix,tier)
-            values=copy_values(base,tier);values['composite_material_path']=path
-            add(variant,titles.get(base,base.replace('_',' ').title()),values)
+            values=copy_values(base,paint_tier);values['composite_material_path']=path
+            add(variant,finishes.variant_title(base,theme,inverse,titles),values)
             variants.append(variant);first_path=first_path or path
         if len(variants)<(2 if refined else 1):return None
-        values=copy_values(base,tier);values['composite_material_path']=first_path
-        add(family,titles.get(base,base.replace('_',' ').title()),values)
+        values=copy_values(base,paint_tier);values['composite_material_path']=first_path
+        add(family,finishes.source_title(base,titles),values)
         families[family]=variants
         return family
 
+    def fixed_recolour(icon,slot,base,tier,themes,weapon):
+        """One named fixed finish, NOT a family. Existing cw2 definitions remain for owned items."""
+        if base.startswith('soe_'):
+            return None  # no glitter/pearl/iridescent transfer or unsupported material fallback
+        paint_tier=paint_rarity_for_weapon(tier,weapon,base_rarities) if base_rarities else tier
+        theme=themes[(sum(ord(c) for c in icon+slot+weapon) % len(themes))]
+        suffix=theme.lower()
+        material_name='rwc_%s_%s_%s'%(base,suffix,tier)
+        path=finishes.COMPMAT_DIR+material_name+'.vcompmat'
+        if material_name not in checked_materials:
+            made=finishes.make_finish(finish_source,base,kit_path(base,kits[base][1]),material_name,theme,
+                                      report=palette_report,weapon_palette=tier,weapon_inverse=False,weapon_tone=2)
+            checked_materials[material_name]=bool(made)
+            if made:
+                files[path+'_c'],files[finishes.VMAT_DIR+material_name+'.vmat_c']=made
+        if not checked_materials[material_name]:return None
+        kit='cwf_%s_%s_%s_%s_%s'%(icon,slot,base,suffix,tier)
+        values=copy_values(base,paint_tier);values['composite_material_path']=path
+        add(kit,finishes.variant_title(base,theme,False,titles),values)
+        return kit
+
     # Generic donor fallbacks are only used when a particular material is unavailable.
-    fallback=donors+[n for n in fillers if kits[n][1].get('style') in CLASSIC_STYLES]
-    for icon in CASE_ICONS:
+    fallback=donors+[n for n in fillers if usable_donor(n) and kits[n][1].get('style') in CLASSIC_STYLES]
+    for icon in ((NEW_CASE_ICONS+NEWEST_CASE_ICONS) if expansion else LEGACY_CASE_ICONS):
+        # The new pools keep only TWO visible wave families. Knife-based donors
+        # can be the chase in selected collections OR the pink wave in others.
+        # Every other entry is a fixed finish; old paint kits are retained above.
+        active_knife_donors=[b for b in KNIFE_WAVE_DONORS if b in kits] if refined and tone_revision>=3 else []
+        preferred_knife=FEATURED_KNIFE_CHASES.get(icon) if refined and tone_revision>=3 else None
+        knife_chase=bool(preferred_knife in active_knife_donors)
         name=CASE_PREFIX+icon
-        gun,chase_base,themes=(REFINED_DESIGNS if refined else COLLECTION_DESIGNS)[icon]
+        gun,chase_base,themes=(ADDITIONAL_DESIGNS if expansion else REFINED_DESIGNS if refined else COLLECTION_DESIGNS)[icon]
         if gun not in weapons:continue
         chase=None
-        for base in dict.fromkeys([chase_base]+fallback):
-            if base not in kits:continue
-            chase=colour_family(icon,'chase',base,'ancient',themes)
+        if expansion and tone_revision>=3 and chase_base.startswith('soe_'):
+            chase_base=next((candidate for candidate in ADDITIONAL_DONORS if candidate in kits), chase_base)
+        if knife_chase:
+            chase_candidates=[preferred_knife, chase_base]+fallback
+        else:
+            chase_candidates=[chase_base]+fallback
+        for base in dict.fromkeys(chase_candidates):
+            if not usable_donor(base):continue
+            chase=colour_family(icon,'chase',base,'ancient',themes,gun)
             if chase:break
         if not chase:continue
         tiers={'ancient':['[%s]%s'%(chase,gun)]};taken={gun};collection_materials={material(base)}
@@ -502,8 +685,17 @@ def _curated_custom_cases(source_text, kits, titles, kit_path, finish_source, fa
                 chosen=None
                 # Pink/purple rewards are distinct recolours too, instead of filler
                 # carrying an inflated rarity. At blue, two slots get custom colours.
-                colour = refined or tier in ('legendary','mythical') or (tier=='rare' and slot<2)
-                pool=donors if colour else fillers
+                colour = (refined or tier in ('legendary','mythical') or (tier=='rare' and slot<2))
+                # Build29 draft: chase plus one pink slot keep colour waves; all other
+                # visible slots become fixed themed recolours, never extra family entries.
+                family_slot = not (tone_revision>=3 and refined) or (tier=='legendary' and slot==0)
+                pool=(list(dict.fromkeys([d for d in NEXT12_DONORS[icon] if d in kits]+donors)) if icon in NEXT12_DONORS and colour else donors) if colour else fillers
+                # Only the one Classified wave slot can pull a knife-origin
+                # pattern when the chase is not already knife-derived.
+                # Nothing is added to the visible slot count.
+                if (refined and tone_revision>=3 and tier=='legendary' and slot==0
+                        and not knife_chase and active_knife_donors):
+                    pool=active_knife_donors
                 candidates=[(b,w) for b in pool for w in weapons if w not in taken
                             and (not distinct_patterns or material(b) not in collection_materials)
                             and (material(b),w,'coloured' if colour else 'original') not in used
@@ -513,7 +705,8 @@ def _curated_custom_cases(source_text, kits, titles, kit_path, finish_source, fa
                 candidates.sort(key=lambda bw:(counts.get(bw[0],0),counts.get(bw[1],0)))
                 for base,weapon in candidates:
                     if colour:
-                        kit=colour_family(icon,tier+str(slot),base,tier,themes)
+                        kit=(colour_family(icon,tier+str(slot),base,tier,themes,weapon)
+                             if family_slot else fixed_recolour(icon,tier+str(slot),base,tier,themes,weapon))
                         if not kit:continue
                     else:
                         kit='cga_%s_%s'%(base,tier)
@@ -526,6 +719,8 @@ def _curated_custom_cases(source_text, kits, titles, kit_path, finish_source, fa
             tiers[tier]=picked
         # Never sell an incomplete collection when an installed schema is missing donors.
         if any(len(tiers[t])!=n for t,n in FILLER_TIERS['ancient']):continue
+        if expansion and refined and tone_revision>=3 and icon in NEWEST_CASE_ICONS:
+            continue  # retain draft definitions above, publish authored pools instead
         order=['ancient','legendary','mythical','rare','uncommon']
         lists.append(_collection_lists(name,tiers,order));specs.append(name)
         entries.extend(i for t in order for i in tiers[t]);icons[name]=icon

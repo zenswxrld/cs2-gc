@@ -1,5 +1,13 @@
 # CS2 port
 
+User-authorised extension (22 October 2026): recover the Build 30 collection
+helpers/assets supplied by the user, and implement the next 12 collections
+(Forged through Warden) through the existing generator. Use 16 visible skins,
+the 1/2/3/4/6 rarity split, mostly fixed recolours, one or two named colour
+families, and name-themed icons matching the original artwork. Preserve earlier
+owned paint-kit definitions and IDs. Keep this work on a branch from main;
+installed game assets may be read for validation without modifying the install.
+
 Develop this repository from `main`. The original CS:GO repository is a separate
 project; do not push changes to `zenswxrld/Test` when working here.
 

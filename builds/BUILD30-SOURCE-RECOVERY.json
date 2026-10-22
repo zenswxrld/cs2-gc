@@ -1,0 +1,12 @@
+{
+  "github_base": "59f351c6846432a59589ff3a01dc3c3cfa767b18",
+  "archive": "cs2-gc-build30-next12-repacked.zip",
+  "archive_sha256": "3e19eb28bfc2768b7d98e747ceadfd85d2aa94496166a1c147a66d455c087530",
+  "recovered_sources": {
+    "native_skins.py": "ba65796a90f0094f46ab586e9f5bd05f5aa62831baf8088d91b0b1300b444c90",
+    "native_finishes.py": "a79286ba48ced1c1ebf9e91230874d43090e3d1c0fae849839a44a06c9ec548e",
+    "weapon_palettes.py": "0c03495f393dec32ec09e8151db66f587cca0b03873a782acc5b43f3b5b4bff3",
+    "native_patterns.py": "de9dabace4d41388ca66553ac66908b7045ece391807adc1e0655e3d705c9064"
+  },
+  "binary_imports": false
+}

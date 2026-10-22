@@ -1235,8 +1235,8 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
                     ReplyLocalPremier();
                     continue;
                 }
-                if (const auto *body = m_replay->Find(id))
-                    Reply(id, *body);
+                if (const auto *replayBody = m_replay->Find(id))
+                    Reply(id, *replayBody);
             }
             return;
         }

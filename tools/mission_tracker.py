@@ -24,6 +24,7 @@ class MissionTracker:
         self.directory, self.state, self.now = Path(directory), state, now
         self.state.setdefault('missions', {})
         self.last = None
+        self.reason = None
 
     def plan(self):
         """(progress key, mission) of the current Armory rotation, from the DLL's cs2_gc_mission_current.txt."""
@@ -39,6 +40,8 @@ class MissionTracker:
         """XP earned by mission tiers for this packet (0 when nothing changed)."""
         period, mission = self.plan()
         if mission is None or not mission.get('kind'):
+            self.explain('no countable mission (the DLL has not written %s yet)' % CURRENT_FILE if mission is None
+                         else 'mission %s is not a kill/round/match mission' % mission.get('mission'))
             self.last = None
             return 0
         name = str(game_map.get('name') or '').replace('\\', '/').rsplit('/', 1)[-1]
@@ -54,8 +57,13 @@ class MissionTracker:
                 or current['kills'] < last['kills'] or current['own'] < last['own']):
             return 0  # new match, reconnect or another week: baseline only
         if current['mode'] != mission.get('mode') or (mission.get('maps') and name not in mission['maps']):
+            self.explain('mission %s counts in %s on %s; this match is %s on %s' % (
+                mission.get('mission'), mission.get('mode'), ', '.join(mission.get('maps') or ['any map']), current['mode'], name))
             return 0
         gained = 0
+        if mission['kind'] == 'kill' and current['kills'] > last['kills'] and active != mission.get('weapon'):
+            self.explain('kill not counted: mission weapon %s, active weapon %s%s' % (
+                mission.get('weapon'), active, '' if weapons else ' (no weapon data: restart CS2 once so it reads the new game-state config)'))
         if mission['kind'] == 'kill' and active == mission.get('weapon'):
             gained = current['kills'] - last['kills']
         elif mission['kind'] == 'round' and current['phase'] in ('live', 'gameover'):
@@ -64,6 +72,11 @@ class MissionTracker:
               and current['own'] > current['other']):
             gained = 1
         return self.add(period, mission, gained) if gained > 0 else 0
+
+    def explain(self, text):
+        if text != self.reason:  # once per reason, not every packet
+            self.reason = text
+            print('Mission: ' + text, flush=True)
 
     def add(self, key, mission, gained):
         goals, rewards = mission.get('points') or [0], mission.get('xp') or []

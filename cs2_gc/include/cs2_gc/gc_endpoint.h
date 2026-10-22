@@ -154,6 +154,7 @@ private:
     std::vector<std::uint8_t> m_missionSchema;
     std::vector<std::vector<std::uint8_t>> m_missionPool;
     std::optional<std::uint64_t> m_missionCycle;
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> m_missionUnreported; // for the rewards helper
     std::uint32_t m_missionOffset{};
     bool m_missionsRequested{};
     std::optional<std::pair<std::uint32_t, std::uint32_t>> MissionTickLocked(std::uint64_t unixSeconds);

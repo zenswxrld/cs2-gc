@@ -4452,6 +4452,10 @@ void NativeCarePackages()
         const auto next=favGc.MissionTick(t+interval);
         Check(next && next->first==1 && next->second==interval*3001,"the next Armory rotation serves the next mission");
         favourite(4300000000000000ull+1);
+        const auto now=static_cast<std::uint64_t>(std::time(nullptr));
+        const auto byRefresh=favGc.MissionTick(now);
+        Check(byRefresh && byRefresh->second==now/interval*interval+1 && !favGc.MissionTick(now),
+              "a Refresh's mission is reported to the helper once, with its own period");
         const auto refreshed=favGc.MissionTick(t+interval);
         Check(refreshed && refreshed->first==2 && favInventory->Items().Items().size()==3,
               "an Armory Refresh moves the missions on with the page and grants nothing");

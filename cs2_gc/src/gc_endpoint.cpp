@@ -171,6 +171,7 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
             if (reply == gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema && !gc.m_missionPool.empty()) {
                 gc.MissionTickLocked(static_cast<std::uint64_t>(std::time(nullptr)));
                 gc.m_missionsRequested = true;
+                if (gc.m_config.diagnostic) gc.m_config.diagnostic("missions: the game asked for missions (9225)");
                 gc.Reply(reply, gc.m_missionSchema); // the Armory-rotation mission instead of the recorded fortnight
             }
             else
@@ -195,7 +196,9 @@ std::vector<std::vector<std::uint8_t>> LocalGameCoordinator::EncodedMissionProgr
 std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::MissionTick(std::uint64_t unixSeconds)
 {
     std::lock_guard lock(m_mutex);
-    return MissionTickLocked(unixSeconds);
+    MissionTickLocked(unixSeconds);
+    // A change made by a Refresh (inside the 9200 handler) is reported here too, so the helper follows it.
+    return std::exchange(m_missionUnreported, std::nullopt);
 }
 
 std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::MissionTickLocked(std::uint64_t unixSeconds)
@@ -206,13 +209,19 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::Mis
     if (m_missionCycle == cycle) return std::nullopt;
     m_missionCycle = cycle;
     const auto variant = static_cast<std::uint32_t>(cycle % m_missionPool.size());
-    const auto period = static_cast<std::uint32_t>(unixSeconds / interval * interval);
+    // Each Refresh gets its own period (the window start + offset seconds): the game keys missions by period and
+    // would keep showing the old mission for a schema with the same period.
+    const auto period = static_cast<std::uint32_t>(unixSeconds / interval * interval + m_missionOffset % interval);
     PbWriter list; list.Varint(1, period); list.Bytes(2, m_missionPool[variant]);
     PbWriter schema; schema.Message(1, list);
     m_missionSchema = schema.bytes();
     if (m_missionsRequested) // the game already asked: push the new rotation's mission
         Reply(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema, m_missionSchema);
-    return std::pair{variant, period};
+    if (m_config.diagnostic)
+        m_config.diagnostic("missions: variant " + std::to_string(variant) + " period " + std::to_string(period) +
+                            (m_missionsRequested ? " pushed to the game" : " ready for the game's request"));
+    m_missionUnreported = std::pair{variant, period};
+    return m_missionUnreported;
 }
 
 void LocalGameCoordinator::SetMissions(std::vector<std::uint8_t> pool, std::vector<MissionProgress> progress)

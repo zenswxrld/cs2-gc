@@ -345,10 +345,10 @@ std::vector<EconomyPath> AuditEconomy(const Schema &schema, const GameplayConfig
 
     // Trade-ups: ten skins of one rarity (five Covert) from one collection, at any mix of wear bands, against
     // the average sale value of the result. Input wear is chosen to make the inputs as cheap as possible.
-    for (const auto &collection : schema.CollectionNames())
+    for (const auto &collection : schema.TradeUpCollectionNames())
     {
         std::map<std::uint32_t, std::vector<LootItem>> byRarity;
-        for (const auto &skin : schema.CollectionSkins(collection))
+        for (const auto &skin : schema.TradeUpCollectionSkins(collection))
             if (auto rarity = schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex); rarity && *rarity <= 6)
                 if (auto loot = schema.SkinAsLootItem(skin.weaponDefIndex, skin.paintKitIndex)) byRarity[*rarity].push_back(*loot);
         for (const auto &[rarity, inputs] : byRarity)

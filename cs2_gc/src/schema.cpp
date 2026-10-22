@@ -440,7 +440,59 @@ bool Schema::LoadSkinFamilies(std::string_view text)
     }
     m_skinFamilies = std::move(families);
     m_dropCollections = std::move(dropCollections);
+    // Custom collections for trade-ups: each top list set_cs2gc_case_<name> holds its tier lists.
+    m_customCollectionSkins.clear();
+    m_customSkinCollections.clear();
+    for (const auto &[name, list] : m_lootLists)
+    {
+        if (!name.starts_with("set_cs2gc_case_") || list->children.empty() ||
+            std::any_of(list->children.begin(), list->children.end(),
+                        [&](const KvNode &child) { return !m_lootLists.contains(child.key); }))
+            continue;
+        auto &skins = m_customCollectionSkins[name];
+        for (const auto &tier : LootTiers(name))
+            for (const auto &entry : tier.items)
+            {
+                const auto loot = ResolveLootItem(entry);
+                if (!loot || loot->kind != LootKind::Skin || IsKnife(loot->weaponDefIndex) || IsGlove(loot->weaponDefIndex))
+                    continue;
+                skins.push_back({loot->weaponDefIndex, loot->paintKitIndex});
+                std::vector<std::uint32_t> kits{loot->paintKitIndex};
+                if (const auto *variants = SkinFamily(loot->paintKitIndex)) kits.insert(kits.end(), variants->begin(), variants->end());
+                for (const auto kit : kits)
+                {
+                    auto &names = m_customSkinCollections[(std::uint64_t{loot->weaponDefIndex} << 32) | kit];
+                    if (std::find(names.begin(), names.end(), name) == names.end()) names.push_back(name);
+                }
+            }
+        if (skins.empty()) m_customCollectionSkins.erase(name);
+    }
+    for (auto &[key, names] : m_customSkinCollections) std::sort(names.begin(), names.end());
     return true;
+}
+
+std::vector<std::string> Schema::TradeUpCollectionsOf(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
+{
+    auto names = CollectionsOf(weaponDefIndex, paintKitIndex);
+    if (!names.empty()) return names;
+    const auto found = m_customSkinCollections.find((std::uint64_t{weaponDefIndex} << 32) | paintKitIndex);
+    return found == m_customSkinCollections.end() ? std::vector<std::string>{} : found->second;
+}
+
+std::vector<std::string> Schema::TradeUpCollectionNames() const
+{
+    auto names = CollectionNames();
+    std::vector<std::string> custom;
+    for (const auto &entry : m_customCollectionSkins) custom.push_back(entry.first);
+    std::sort(custom.begin(), custom.end());
+    names.insert(names.end(), custom.begin(), custom.end());
+    return names;
+}
+
+const std::vector<SkinRef> &Schema::TradeUpCollectionSkins(const std::string &collection) const
+{
+    const auto found = m_customCollectionSkins.find(collection);
+    return found == m_customCollectionSkins.end() ? CollectionSkins(collection) : found->second;
 }
 
 const std::vector<std::uint32_t> *Schema::SkinFamily(std::uint32_t paintKitIndex) const

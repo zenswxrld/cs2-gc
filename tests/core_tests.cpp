@@ -4200,6 +4200,36 @@ void CustomSkinFamilies()
     Check(!RollMatchDrops(*dropSchema,random,config),"disabling custom content removes its reward pools");
     InventoryItem other; other.paintKitIndex=33; ApplySkinFamily(*schema,other,random);
     Check(other.paintKitIndex==33,"finishes outside a family are untouched");
+
+    // Custom collections trade up (user: "we do need custom collections trade ups too"): membership comes from the
+    // set_cs2gc_case_* loot lists, colours count where their family is listed, and the result is one of the colours.
+    auto tradeSchema=Schema::Load(R"("items_game" {
+      "rarities" { "common" { "value" "1" } "uncommon" { "value" "2" } }
+      "items" { "7" { "name" "weapon_test" "item_rarity" "common" } }
+      "paint_kits" { "30" { "name" "low" } "31" { "name" "family" } "32" { "name" "red" } "33" { "name" "blue" } "34" { "name" "lost" } }
+      "paint_kits_rarity" { "low" "common" "family" "uncommon" "red" "uncommon" "blue" "uncommon" "lost" "common" }
+      "client_loot_lists" { "set_cs2gc_case_eclipse_common" { "[low]weapon_test" "1" }
+        "set_cs2gc_case_eclipse_uncommon" { "[family]weapon_test" "1" }
+        "set_cs2gc_case_eclipse" { "set_cs2gc_case_eclipse_uncommon" "1" "set_cs2gc_case_eclipse_common" "1" } }
+    })");
+    Check(tradeSchema && tradeSchema->LoadSkinFamilies(R"("skin_families" { "family" { "red" "1" "blue" "1" } })"),
+          "custom trade-up fixture loads");
+    Check(tradeSchema->TradeUpCollectionsOf(7,30)==std::vector<std::string>{"set_cs2gc_case_eclipse"} &&
+          tradeSchema->TradeUpCollectionsOf(7,32)==std::vector<std::string>{"set_cs2gc_case_eclipse"} &&
+          tradeSchema->TradeUpCollectionsOf(7,34).empty() && tradeSchema->CollectionsOf(7,30).empty(),
+          "custom collections count for trade-ups only, colours with their family");
+    std::set<std::uint32_t> colours;
+    for (std::uint64_t roll=0; roll<4; ++roll)
+    {
+        Inventory contract; std::vector<std::uint64_t> ids;
+        for (int i=0;i<10;++i) { InventoryItem item; item.defIndex=7; item.paintKitIndex=30; item.wear=.2f; ids.push_back(contract.Add(item)); }
+        std::uint64_t next=roll; // successive draws starting at a different value each contract
+        const auto result=TradeUp(contract,*tradeSchema,ids,[&next]{return next++;});
+        Check(result.error==TradeUpError::None && (result.item.paintKitIndex==32 || result.item.paintKitIndex==33) &&
+              result.item.rarity==2 && contract.Items().size()==1,"ten custom-collection skins trade up into one of its colours");
+        colours.insert(result.item.paintKitIndex);
+    }
+    Check(colours.size()==2,"every colour of the next tier can come out of a contract");
 }
 
 void NativeCarePackages()

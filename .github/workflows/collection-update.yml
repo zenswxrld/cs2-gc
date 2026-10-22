@@ -1,0 +1,30 @@
+name: Collection helper update
+on:
+  push:
+    branches: [codex/collection-variety-and-names]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check-and-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Build core
+        run: cmake --build build --config Release
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Package helper sources after checks
+        run: python tools/package_collection_update.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CS2GC-Collection-Update-Test
+          path: dist/CS2GC-Collection-Update-Test.zip

@@ -46,6 +46,28 @@ SCHEMA = '''"items_game" {
 
 
 class ArmoryRotation(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('node'),'Node required for custom title fixture')
+    def test_phantom_blade_title_overrides_stale_underscore_callout_and_suffix(self):
+        import native_skins
+        title=native_skins.CASE_COLLECTIONS['set_cs2gc_case_phantom_blade']
+        self.assertEqual(title,'The Phantom Blade Collection')
+        script="""const assert=require('assert');
+const m_tileWidth=400,m_tileHeight=400;
+function _GetLootListForReward(){return [];}
+function _OpenFullScreenInspectItem(){}
+const aShopItemsData=[{item_name:'lootlist:set_cs2gc_case_phantom_blade',
+    callout:'THE PHANTOM_BLADE COLLECTION',suffix_loc_string:'_old'}];
+const m_localRotation={categories:{'lootlist:set_cs2gc_case_phantom_blade':'collection'},
+ collectionNames:{'lootlist:set_cs2gc_case_phantom_blade':'The Phantom Blade Collection'}};
+""" + rotate_armory.PREPARE + """
+assert.equal(aShopItemsData[0].callout,'The Phantom Blade Collection');
+assert.equal(aShopItemsData[0].suffix_loc_string,undefined);
+"""
+        result=subprocess.run(['node','-e',script],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+
+
     @unittest.skipUnless(shutil.which('node'), 'Node required for collection tile model fixture')
     def test_custom_tile_uses_one_chase_model_with_native_camera_and_preserves_stock_tiles(self):
         script = '''const assert=require('assert');
@@ -226,13 +248,16 @@ assert.deepEqual(visible(), ['capsule', 'case_a', 'charm_a']);
     }
 """
         patched = rotate_armory.patch(source, dict(gameplay_config.DEFAULTS, armory_rotation_enabled=False, armory_howl_enabled=False), None, None, previews)
-        script = """const InventoryAPI = {GetLootListItemsCount: () => 0, GetItemDefinitionIndexFromDefinitionName: n => n,
+        script = """let nativeCount = 0;
+const InventoryAPI = {GetLootListItemsCount: () => nativeCount, GetItemDefinitionIndexFromDefinitionName: n => n,
   GetFauxItemIDFromDefAndPaintIndex: (d, p) => d + ':' + p};
 """ + patched.split('    function _UpdateShopGoods')[0].replace('    const m_elContentPanel = root;', '') + """
 """ + patched[patched.index('    function _GetLootListForReward'):] + """
 const assert = require('assert');
 assert.deepEqual(_GetLootListForReward('lootlist:set_cs2gc_case_x'), ['weapon_ak47:9002', 'weapon_p90:9001']);
 assert.deepEqual(_GetLootListForReward('lootlist:set_other'), ['lootlist:set_other']);
+nativeCount = 16;
+assert.deepEqual(_GetLootListForReward('lootlist:set_cs2gc_case_x'), ['weapon_ak47:9002', 'weapon_p90:9001']);
 """
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -1,226 +1,229 @@
-"""Authored third-batch collections, using the existing native material generator.
-
-Only the 12 Build 30 draft pools are replaced. Existing kit definitions and IDs
-remain with native_skins; every new finish has its own stable nc31_ identity.
-"""
-from dataclasses import dataclass
+"""Weekly/Armory collection upgrades. Retained definitions live in a separate module."""
+from dataclasses import replace
 import re
+from retained_collection_lineups import DESIGNS as ORIGINAL_DESIGNS, Design, TIERS, RARITIES, WEAPON_ORDER
+from collection_donors import REQUIRED, catalog, candidates, previous_materials
+from collection_detail import rolled_name
 
-TIERS = ('ancient', 'legendary', 'legendary', 'mythical', 'mythical', 'mythical',
-         'rare', 'rare', 'rare', 'rare', 'uncommon', 'uncommon', 'uncommon',
-         'uncommon', 'uncommon', 'uncommon')
-RARITIES = ('ancient', 'legendary', 'mythical', 'rare', 'uncommon')
-
-
-@dataclass(frozen=True)
-class Design:
-    chase: str
-    chase_donors: tuple
-    themes: tuple
-    names: tuple
-    family_slots: tuple = (1, 3)
-    wave: tuple = ()
-
-
-def words(text):
-    return tuple(text.split('|'))
-
-
-DESIGNS = {
-    'forged': Design('weapon_ak47', ('am_metal_inlay', 'am_gold_brick'),
-        ('Inferno', 'Ember', 'Crimson', 'Amber'),
-        words('Crucible|Crimson Foil|Tempered Crown|Furnace Bloom|Quenched Edge|Brassworks|Hot Rivet|Slag Line|Foundry Mesh|Blacksmith|Scale Break|Iron Filing|Sootfall|Mill Finish|Heat Mark|Castoff'),
-        wave=('am_electric_red', 'am_crystallized')),
-    'phantom_blade': Design('weapon_m4a1_silencer', ('am_doppler_phase2', 'am_navy_shine'),
-        ('Violet', 'Midnight', 'Galaxy', 'Glacier'),
-        words('Spectral Edge|Rainbow Spoon|Veil Piercer|Cold Apparition|Afterimage|Wraithglass|Vanish Point|Night Shard|Silent Cut|Ghostwire|Pale Trace|Shadow Grain|Low Profile|Mistline|Blue Silence|Faded Signal'),
-        family_slots=(0, 1), wave=('am_marble_fade', 'aa_fade')),
-    'harbor': Design('weapon_awp', ('am_seastorm', 'am_seastorm_blood'),
-        ('Ocean', 'Teal', 'Glacier', 'Cobalt'),
-        words('Storm Anchorage|Phosphor Beacon|Breakwater|Tidal Coil|Blue Pilot|Saltwake|Dry Dock|Mooring Line|Sea Gauge|Blue Berth|Hull Plate|Buoy Mark|Ropewalk|Jetty Paint|Sounding Line|Dockside'),
-        wave=('am_m4a1s_bluesmoke', 'am_aqua_flecks')),
-    'mosaic': Design('weapon_deagle', ('cg_pattern_prismatic_facets', 'am_ddpatdense_peacock'),
-        ('Candy', 'Rainbow', 'Vapor', 'Royal'),
-        words('Tessellated Crown|Rainbow Spoon|Prism Pavilion|Jewelwork|Glass Garden|Colour Theory|Tile Runner|Broken Symmetry|Inlay Grid|Lapis Circuit|Grout Line|Ceramic Shift|Small Tessera|Colour Block|Stone Cut|Glaze Test'),
-        wave=('am_marble_fade', 'aa_fade')),
-    'kestrel': Design('weapon_sg556', ('am_m4a1s_bluesmoke', 'am_gyrate'),
-        ('Azure', 'Glacier', 'Teal', 'Amber'),
-        words('Sky Talon|Phosphor Flight|Strike Feather|Raptor Current|High Pursuit|Crosswind|Featherline|Flight Deck|Wing Cut|Airframe|Perch Mark|Wind Gauge|Light Spar|Glide Path|Field Wing|Scout Plume'),
-        wave=('am_aqua_flecks', 'am_navy_shine')),
-    'juggernaut': Design('weapon_negev', ('am_diamond_plate', 'am_metal_inlay'),
-        ('Crimson', 'Inferno', 'Amber', 'Ash'),
-        words('Siegebreaker|Crimson Foil Plating|Brass Colossus|War Machine|Heavy Alloy|Impact Layer|Armour Belt|Pressure Plate|Red Reinforcement|Rivet Row|Ballast|Billet|Workshop Red|Load Bearing|Plate Offcut|Steel Dust'),
-        wave=('am_electric_red', 'am_jorm_orange')),
-    'lodestar': Design('weapon_awp', ('am_aqua_flecks', 'am_heist_plans_purple'),
-        ('Galaxy', 'Violet', 'Midnight', 'Cobalt'),
-        words('Astral Meridian|Rainbow Spoon Navigation|Northlight|Celestial Bearing|Star Compass|Orbit Glass|Azimuth|Blue Sextant|Polar Map|Moon Dial|Transit Line|Survey Mark|Night Bearing|Far Point|Chart Grain|Wayfinder'),
-        family_slots=(0, 1), wave=('aa_fade', 'am_marble_fade')),
-    'fathom': Design('weapon_mp9', ('am_jorm_blue', 'am_seastorm'),
-        ('Ocean', 'Teal', 'Glacier', 'Violet'),
-        words('Abyssal Coil|Phosphor Depth|Pressure Bloom|Pelagic Veil|Trenchlight|Deep Current|Kelp Circuit|Dive Marker|Sonar Wash|Underswell|Sea Glass|Depth Gauge|Siltline|Cold Brine|Marine Layer|Sounding Weight'),
-        wave=('am_m4a1s_bluesmoke', 'am_aqua_flecks')),
-    'cipher': Design('weapon_glock', ('aa_wiring', 'aa_vertigogeo_neon'),
-        ('Emerald', 'Toxin', 'Teal', 'Galaxy'),
-        words('Zero Knowledge|Quantum Key|Encrypted Trace|Ghost Protocol|Key Exchange|Green Circuit|Hash Grid|Packet Shift|Signal Mask|Private Channel|Checksum|Bit Plane|Wire Frame|Null Route|Access Bit|Terminal Green'),
-        wave=('am_aqua_flecks', 'am_heist_plans_purple')),
-    'driftwood': Design('weapon_ak47', ('am_knots_brown', 'am_bamboo_jungle'),
-        ('Amber', 'Coral', 'Teal', 'Forest'),
-        words('Saltworn Borre|Emerald Grain|Lacquer Tide|Weathered Coil|Seafoam Heart|Shoreline Burl|Beach Grain|Brine Knot|Tide Lacquer|Worn Compass|Pale Timber|Splinter Map|Sandwash|Shingle|Coastal Patina|Flotsam'),
-        wave=('am_jorm_green', 'am_jorm_orange')),
-    'insignia': Design('weapon_m4a1', ('am_gold_brick', 'am_metal_inlay'),
-        ('Royal', 'Amber', 'Crimson', 'Sunrise'),
-        words('Sovereign Brick|Crimson Foil Standard|Honour Guard|Ceremonial Coil|Laurel Glass|Parade Alloy|Gold Chevron|Service Ribbon|Unit Mark|Dress Plate|Braided Trim|Field Citation|Brass Button|Uniform Grain|Rank File|Service Stripe'),
-        wave=('am_electric_red', 'am_jorm_orange')),
-    'warden': Design('weapon_xm1014', ('am_chainmail', 'am_diamond_plate'),
-        ('Cobalt', 'Ash', 'Amber', 'Midnight'),
-        words('High Security|Restricted Spectrum|Lockdown Plate|Night Custody|Access Lattice|Watch Command|Barred Entry|Keyway|Warning Band|Secure Perimeter|Cell Block|Grey Register|Gate Mesh|Shift Change|Steel Notice|Visitor Pass'),
-        wave=('am_navy_shine', 'am_aqua_flecks')),
+DESIGNS = dict(ORIGINAL_DESIGNS)
+OLDER_NAMES = {
+    "ashfall": "Cinder Crown|Ember Vein|Burnished Edge|Volcanic Glass|Char Line|Ashen Circuit|Scoria|Coal Seam|Hot Stencil|Dark Furnace|Dust Coat|Grey Rake|Basalt|Falling Ash|Pumice|Soot Grain",
+    "aurora": "Polar Halo|Ion Stream|Winter Flare|Boreal Current|Northern Prism|Sky Ribbon|Ice Signal|Charged Mist|Night Flight|Glacial Trace|Snowline|Pale Drift|Cold Echo|Blue Static|Thin Air|Frost Mark",
+    "brimstone": "Sulfur Crown|Hellfire Alloy|Burning Sigil|Smelter Glass|Fume Coil|Firebrand|Charcoal Grid|Sulfur Trace|Rift Metal|Burn Line|Dark Deposit|Ash Chip|Lime Scale|Yellow Dust|Coal Print|Furnace Sand",
+    "cascade": "Whitewater|River Prism|Spillway|Rapid Glass|Mist Current|Waterline|Foam Runner|Lock Gate|Blue Drop|River Mesh|Silt Print|Pebble|Spray Mark|Shallow Run|Wet Slate|Streambed",
+    "cinder": "Fireheart|Cinder Veil|Bronze Flare|Spark Glass|Coal Bloom|Red Kiln|Blazing Mesh|Warm Rivet|Fire Trail|Black Hearth|Clay Dust|Ember Fleck|Kiln Coat|Coal Trace|Potter Mark|Baked Earth",
+    "eclipse": "Totality|Umbra Glass|Solar Rim|Shadow Flare|Black Meridian|Dark Corona|Night Matrix|Lunar Path|Obscured Sun|Orbital Trace|Moon Ash|Dusk Dust|Pale Halo|Night Haze|Orbit Line|Grey Shadow",
+    "halcyon": "Stillwater|Azure Reverie|Calm Horizon|Summer Prism|Ocean Hush|Cloud Glass|Blue Interval|Light Current|Clear Skies|Reefline|Soft Tide|Pale Coast|Sea Mist|Quiet Wake|Air Blue|Calm Wash",
+    "kaleido": "Prismatic Crown|Spectrum Glass|Shifting Jewel|Mirror Bloom|Colour Spiral|Fractured Light|Facet Grid|Glass Circuit|Angle Shift|Jewel Cut|Prism Dust|Small Mirror|Tile Glint|Colour Chip|Fine Mosaic|Light Fragment",
+    "monsoon": "Stormfront|Rain Current|Thunderhead|Violet Squall|Downpour|Cloudburst|Rain Gauge|Storm Lattice|Wet Signal|Flood Mark|Water Bead|Grey Rain|Wind Trace|Slick Stone|Low Cloud|Puddle",
+    "nebula": "Star Nursery|Cosmic Veil|Ion Halo|Astral Glass|Deep Orbit|Distant Sun|Stellar Grid|Gas Cloud|Solar Thread|Night Signal|Void Dust|Comet Trail|Space Grain|Redshift|Star Chart|Cold Orbit",
+    "solstice": "High Sun|Solar Alloy|Golden Hour|Dawn Glass|Summer Zenith|Daybreak|Sun Dial|Copper Ray|Heat Ribbon|Long Light|Sun Bleach|Warm Sand|Day Mark|Pale Gold|Season Line|Bright Dust",
+    "zephyr": "Skyborne|Wind Prism|Swift Current|Airglow|Feather Glass|Blue Draft|Wind Mesh|Open Sky|Thin Cloud|Gale Trace|Air Print|Pale Feather|Light Breeze|Wind Mark|Sky Dust|Soft Gust",
+    "tidewater": "Tidal Crown|Estuary Glass|Copper Buoy|Flood Prism|Reef Current|Sea Etching|Channel Grid|Brackish Coil|Dune Metal|Salt Line|Mudflat|Ebb Mark|Marsh Grain|Silt Wash|Green Berth|Shore Signal",
+    "obelisk": "Black Monolith|Royal Inlay|Stone Halo|Ancient Glass|Rune Matrix|Night Granite|Carved Grid|Dark Facet|Old Sigil|Stone Rake|Mica Dust|Quarry Line|Basalt Cut|Fine Rune|Deep Stone|Grey Pillar",
+    "zenith": "High Meridian|Sky Jewel|Cobalt Crown|Peak Glass|Summit Coil|Blue Altitude|Airborne Grid|Thin Light|Peak Line|Far Horizon|Pale Apex|Height Mark|Cold Summit|Cloud Grain|Fine Compass|Sky Gauge",
+    "rampart": "Iron Bastion|Fortress Alloy|Guardian Glass|Reinforced Crest|Wall Current|Armour Etch|Defense Grid|Red Masonry|Guard Line|Steel Ribbon|Wall Chip|Field Coat|Gate Mark|Rough Mortar|Stone Guard|Iron Chalk",
+    "ironclad": "Dreadnought|Rivet Alloy|Armour Crest|Deep Steel|Hull Prism|Heavy Etch|Plate Circuit|Pressure Hull|Anchor Grid|Brass Rivet|Iron Scale|Rusted Seam|Grey Bolt|Lower Deck|Mill Dust|Cold Weld",
+    "marauder": "Raid Leader|Tiger Flare|Copper Fang|Wild Prism|Ambush Glass|Red Banner|Predator Mesh|Raid Signal|Sharp Stripe|Outlaw Mark|Dust Trail|Field Streak|Wild Grain|Red Clay|Hidden Track|Dry Camp",
+    "nightwatch": "Night Sentinel|Midnight Signal|Violet Guard|Watch Glass|Dark Relay|Moonlit Trace|Quiet Circuit|Night Shift|Dim Beacon|Black Register|Late Patrol|Shadow Print|Low Signal|Steel Dusk|Watch Mark|Night Dust",
+    "outrider": "Trailbreaker|Hunting Stripe|Copper Horizon|Scout Glass|Frontier Coil|Open Range|Field Matrix|Long Patrol|Sand Runner|Riding Line|Trail Mark|Dry Grass|Fine Spur|Dust Scout|Wind Print|Road Grain",
+    "quarry": "Bedrock|Mineral Glass|Copper Vein|Stone Prism|Jade Seam|Granite Cut|Drill Grid|Rock Circuit|Slate Ribbon|Crystal Line|Mica Fleck|Stone Dust|Grey Seam|Rough Cut|Pit Mark|Gravel",
+    "redoubt": "Last Bastion|Scarlet Alloy|Cobalt Shield|Guard Prism|Fortress Glass|Iron Relay|Defense Matrix|Steel Trace|Red Wire|Barrel Mark|Grey Guard|Field Stone|Wall Grain|Steel Chip|Watch Coat|Gate Dust",
+    "talisman": "Lucky Star|Jade Sigil|Royal Charm|Rune Glass|Copper Omen|Sacred Coil|Charm Matrix|Woven Sign|Hidden Glyph|Bright Thread|Old Charm|Fine Script|Pale Rune|Worn Token|Jade Dust|Faded Sign",
+    "undertow": "Deep Pull|Abyssal Glass|Cobalt Current|Trench Prism|Violet Tide|Sea Coil|Sonar Matrix|Cold Channel|Depth Trace|Kelp Thread|Brine Dust|Sea Print|Dark Shale|Lower Tide|Silt Grain|Deep Mark"
 }
+# These source finishes are weapon-specific. Keep their intended masks/UVs.
+FAMILY_BINDINGS = {
+    'forged': ('Crimson Foil','gsch_sport_ump45','weapon_ump45'),
+    'juggernaut': ('Crimson Foil','gsch_sport_ump45','weapon_ump45'),
+    'insignia': ('Crimson Foil','gsch_sport_ump45','weapon_ump45'),
+    'phantom_blade': ('Rainbow Spoon','aq_titanium_rainbow_galilar','weapon_galilar'),
+    'mosaic': ('Rainbow Spoon','aq_titanium_rainbow_galilar','weapon_galilar'),
+    'lodestar': ('Rainbow Spoon','aq_titanium_rainbow_galilar','weapon_galilar'),
+}
+# Compatibility exports for callers that previously read the authored donor lists.
+FALLBACKS = ()
+SLOT_DONORS = ()
 
-# A deliberate rank-by-rank mix: premium rifles and pistols at the top, then
-# SMGs, shotguns and utility weapons. The chase is removed before taking 15.
-WEAPON_ORDER = ('weapon_m4a1_silencer', 'weapon_deagle', 'weapon_usp_silencer',
-                'weapon_m4a1', 'weapon_fiveseven', 'weapon_p250', 'weapon_ump45',
-                'weapon_ssg08', 'weapon_mac10', 'weapon_nova', 'weapon_mp7',
-                'weapon_tec9', 'weapon_galilar', 'weapon_mag7', 'weapon_bizon',
-                'weapon_hkp2000', 'weapon_famas')
-
-# Distinct generic, recolourable patterns per collection. Each slot tries its
-# preferred donor first; alternatives are ordered and the actual selection is
-# reported. Unsupported materials never become renamed stock skins.
-SLOT_DONORS = (
-    ('am_chainmail', 'am_diamond_plate'),
-    ('am_gold_brick', 'am_metal_inlay'),
-    ('am_crystallized_silver', 'am_crystallized'),
-    ('am_jorm_green', 'am_jorm_blue', 'am_jorm_orange'),
-    ('am_carbon_fiber', 'am_navy_shine'),
-    ('am_geometric_steps', 'cg_pattern_vector_lattice'),
-    ('am_heist_plans_purple', 'am_heist_plans_green'),
-    ('aa_vertigogeo_neon', 'aa_wiring'),
-    ('am_gyrate', 'am_czv2_mf'),
-    ('am_zebra_dark', 'am_ossify_blue'),
-    ('am_bamboo_jungle', 'am_knots_brown'),
-    ('am_turqoise_halftone', 'am_ddpatdense_peacock'),
-    ('am_moro_textile_bright', 'am_mirage_flowers_metalic'),
-    ('am_ossify', 'cg_pattern_obsidian_fault'),
-    ('am_kimono_sunrise', 'am_seastorm_blood'),
-)
-FALLBACKS = tuple(dict.fromkeys(n for candidates in SLOT_DONORS for n in candidates))
+def all_designs():
+    from native_skins import REFINED_DESIGNS, ADDITIONAL_DESIGNS
+    result = dict(DESIGNS)
+    for icon,names in OLDER_NAMES.items():
+        chase,donor,themes = (REFINED_DESIGNS if icon in REFINED_DESIGNS else ADDITIONAL_DESIGNS)[icon]
+        result[icon] = Design(chase,(donor,),themes,tuple(names.split('|')),family_slots=(0,1))
+    return result
 
 
-def build(source_text, kits, titles, kit_path, source, families, made_kits, report):
-    """Same six-value result as native_skins.custom_cases; commit complete pools only."""
+def rename_retained(definitions, kits):
+    """Apply readable names to owned historical variants without changing any kit/ID."""
+    designs = all_designs()
+    output = []
+    bases = sorted(kits,key=lambda n:(-len(n),n))
+    for name,title,values in definitions:
+        if name.startswith('nc32_'):
+            output.append((name,title,values));continue
+        if name.startswith('nc31_'):
+            base = next((n for n in bases if '_'+n+'_' in '_'+name+'_'),None)
+            if base and ('Foil' in title or 'Rainbow Spoon' in title):
+                # Correct the old misleading aliases; retain the actual material.
+                from native_finishes import source_title
+                theme = next((t for d in designs.values() for t in d.themes
+                              if name.endswith('_'+t.lower())),None)
+                root = source_title(base,{})
+                title = rolled_name(root,theme) if theme else root
+        elif name.startswith(('cwf_','cw2f_','cw2v_','ccf_','ccv_')):
+            for icon,design in designs.items():
+                prefix = name.split('_',1)[0]+'_'+icon+'_'
+                if not name.startswith(prefix):
+                    continue
+                tail = name[len(prefix):]
+                slot = 0 if tail.startswith('chase_') else None
+                for tier,start,count in (('legendary',1,2),('mythical',3,3),('rare',6,4),('uncommon',10,6)):
+                    for index in range(count):
+                        if tail.startswith(tier+str(index)+'_'):
+                            slot=start+index
+                if slot is not None:
+                    title = design.names[slot]
+                    if name.startswith(('cw2v_','ccv_')):
+                        theme=next((t for t in design.themes if '_'+t.lower()+'_' in '_'+tail+'_'),None)
+                        if theme:
+                            title=rolled_name(title,theme)+(' Inverted' if '_inverted_' in name else '')
+                break
+        output.append((name,title,values))
+    return output
+
+
+def build(source_text, kits, titles, kit_path, source, families, made_kits, report, previous_entries=()):
     import native_finishes as finishes
     from native_skins import _collection_lists, weapon_rarity_tags, paint_rarity_for_weapon
-    available = set(re.findall(r'"name"\s+"(weapon_[a-z0-9_]+)"', source_text))
-    base_rarities = weapon_rarity_tags(source_text)
-    result, files, lists, names, items, icons = [], {}, [], [], [], {}
-    publication = report.setdefault('next_12', {})
-    used_rolls = set()
-    for icon, design in DESIGNS.items():
-        collection = 'set_cs2gc_case_' + icon
-        guns = [design.chase] + [w for w in WEAPON_ORDER if w != design.chase][:15]
-        row = {'status': 'unavailable', 'skins': [], 'reason': ''}
-        publication[icon] = row
-        if len(guns) != 16 or any(w not in available for w in guns):
-            row['reason'] = 'required weapon missing from installed schema'
-            continue
-        pending, pending_files, pending_families, tiers = [], {}, {}, {t: [] for t in RARITIES}
-        seen_materials, seen_titles = set(), set()
-        pending_rolls = set()
-        for slot, (weapon, tier, title) in enumerate(zip(guns, TIERS, design.names)):
-            variable = slot in design.family_slots
-            preferred = (design.chase_donors if slot == 0 else design.wave if slot == 1
-                         else SLOT_DONORS[slot - 1])
-            candidates = tuple(dict.fromkeys(preferred + FALLBACKS))
-            selected = None
-            for donor in candidates:
-                if donor not in kits:
+    available=set(re.findall(r'"name"\s+"(weapon_[a-z0-9_]+)"',source_text))
+    rarities=weapon_rarity_tags(source_text)
+    donors=catalog(source_text,kits,kit_path)
+    previously_used=previous_materials(previous_entries,kits,kit_path)
+    result,files,lists,names,items,icons=[],{},[],[],[],{}
+    counts={}
+    publication=report.setdefault('collection_upgrade',{})
+    report['next_12']={}
+    for icon,design in all_designs().items():
+        collection='set_cs2gc_case_'+icon
+        binding=FAMILY_BINDINGS.get(icon)
+        names_for=list(design.names)
+        first_wave=binding[2] if binding else None
+        guns=[design.chase]
+        if first_wave:
+            guns.append(first_wave)
+            names_for[1]=binding[0]
+        guns += [w for w in WEAPON_ORDER if w not in guns]
+        guns=guns[:16]
+        row={'status':'unavailable','skins':[],'reason':''}
+        publication[icon]=row
+        if icon in DESIGNS:
+            report['next_12'][icon]=row
+        if len(guns)!=16 or any(w not in available for w in guns):
+            row['reason']='required weapon missing from installed schema';continue
+        tiers={t:[] for t in RARITIES}
+        pending=[];pending_files={};pending_families={}
+        seen=set();local_counts=dict(counts)
+        for slot,(weapon,tier,title) in enumerate(zip(guns,TIERS,names_for)):
+            variable=slot in design.family_slots
+            if slot==1 and binding:
+                source_name=binding[1]
+                # Do not silently substitute a different finish under a real name.
+                choices=[donors[source_name]] if source_name in donors else []
+            else:
+                choices=candidates(donors,icon,weapon,previously_used if icon in DESIGNS else set(),
+                    local_counts,seen,limit=2 if icon in DESIGNS else 4)
+            selected=None
+            for donor in choices:
+                if donor.material in seen:
                     continue
-                original_path = kit_path(donor, kits[donor][1])
-                identity = original_path.replace('\\', '/').lower()
-                if identity in seen_materials:
+                if not donor.generic and weapon not in donor.weapons:
                     continue
-                paint_tier = paint_rarity_for_weapon(tier, weapon, base_rarities)
-                stem = 'nc31_%s_%02d_%s' % (icon, slot, donor)
-                local_entries, local_files, variants, palettes, chosen_themes = [], {}, [], set(), []
-                # Fixed chase uses its authored first theme; other fixed skins
-                # try the chosen colour first, then compatible collection colours.
-                shift = 0 if slot == 0 else slot % len(design.themes)
-                themes = design.themes[shift:] + design.themes[:shift]
+                stem='nc32_%s_%02d_%s'%(icon,slot,donor.name)
+                shift=slot%len(design.themes)
+                themes=design.themes[shift:]+design.themes[:shift]
+                entries=[];assets={};variants=[];colors=[];signatures=set()
+                actual_material=None
                 for theme in themes:
-                    roll = (identity, weapon, tier, theme)
-                    if roll in used_rolls:
-                        continue
-                    material = stem + '_' + theme.lower()
-                    palette_report = {}
+                    name=stem+'_'+theme.lower()
+                    palette_report={}
                     try:
-                        made = finishes.make_finish(source, donor, original_path, material, theme,
-                            report=palette_report, weapon_palette=tier, weapon_inverse=False, weapon_tone=3)
+                        made=finishes.make_finish(source,donor.name,donor.material,name,theme,
+                            report=palette_report,weapon_palette=tier,weapon_tone=3,detail_policy=True)
                     except ValueError as error:
-                        if str(error).startswith(('Unsupported KV3', 'KV3 dictionaries and binary blobs')):
+                        if str(error).startswith(('Unsupported KV3','KV3 dictionaries and binary blobs')):
                             continue
                         raise
-                    if made is None:
+                    if not made:
                         continue
-                    palette = palette_report.get(donor + ':' + tier, {}).get('themes', {}).get(theme)
-                    if palette:
-                        signature = tuple(round(v, 4) for colour in palette for v in colour)
-                        if signature in palettes:
-                            continue
-                        palettes.add(signature)
-                    values = {k: v for k, v in kits[donor][1].items() if isinstance(v, str)
-                              and k not in ('name', 'description_string', 'description_tag')}
-                    path = finishes.COMPMAT_DIR + material + '.vcompmat'
-                    values.update(composite_material_path=path, _rarity=paint_tier)
-                    kit = material
-                    rolled_title = theme + ' ' + title if variable else title
-                    local_entries.append((kit, rolled_title, values))
-                    local_files[path + '_c'], local_files[finishes.VMAT_DIR + material + '.vmat_c'] = made
-                    variants.append(kit)
-                    chosen_themes.append(theme)
+                    evidence=palette_report.get(donor.name+':'+tier,{})
+                    palette=evidence.get('themes',{}).get(theme)
+                    # A reported palette is required: prove distinct colours, not just different names.
+                    if not palette:
+                        continue
+                    signature=tuple(round(v,4) for c in palette for v in c)
+                    if signature in signatures:
+                        continue
+                    signatures.add(signature)
+                    actual_material=evidence.get('source_material',donor.material)
+                    if actual_material in seen:
+                        break
+                    values={k:v for k,v in kits[donor.name][1].items()
+                        if isinstance(v,str) and k not in ('name','description_string','description_tag')}
+                    path=finishes.COMPMAT_DIR+name+'.vcompmat'
+                    values.update(composite_material_path=path,
+                        _rarity=paint_rarity_for_weapon(tier,weapon,rarities))
+                    entries.append((name,rolled_name(title,theme) if variable else title,values))
+                    assets[path+'_c'],assets[finishes.VMAT_DIR+name+'.vmat_c']=made
+                    variants.append(name);colors.append(theme)
                     if not variable:
                         break
-                if len(variants) < (2 if variable else 1):
+                if actual_material in seen or len(variants)<(2 if variable else 1):
                     continue
-                active = variants[0]
+                active=variants[0]
                 if variable:
-                    active = stem + '_family'
-                    local_entries.append((active, title, dict(local_entries[0][2])))
-                selected = (active, donor, identity, original_path, local_entries, local_files,
-                            variants, chosen_themes)
+                    active=stem+'_family'
+                    entries.append((active,title,dict(entries[0][2])))
+                selected=(donor,active,entries,assets,variants,colors,actual_material)
                 break
             if selected is None:
-                row['reason'] = 'no distinct compatible recolour donor for slot %d (%s)' % (slot, title)
+                row['reason']=('required family donor unavailable or not safely recolourable: '+binding[1]
+                    if slot==1 and binding else
+                    'no unused compatible Weekly/Armory donor for slot %d (%s)'%(slot,title))
                 break
-            active, donor, identity, original_path, local_entries, local_files, variants, chosen_themes = selected
-            if title in seen_titles:
-                raise ValueError('Duplicate authored skin title: ' + title)
-            seen_materials.add(identity)
-            seen_titles.add(title)
-            pending.extend(local_entries)
-            pending_files.update(local_files)
-            pending_rolls.update((identity, weapon, tier, theme) for theme in chosen_themes)
+            donor,active,entries,assets,variants,colors,actual_material=selected
+            pending.extend(entries);pending_files.update(assets)
+            seen.update((donor.material,actual_material))
+            local_counts[donor.material]=local_counts.get(donor.material,0)+1
             if variable:
-                pending_families[active] = variants
-            tiers[tier].append('[%s]%s' % (active, weapon))
-            row['skins'].append({'slot': slot, 'weapon': weapon, 'rarity': tier,
-                'title': title, 'kit': active, 'donor': donor, 'source_material': original_path,
-                'family': variable, 'themes': chosen_themes, 'variants': variants if variable else [],
-                'fallback': donor not in preferred})
-        if [len(tiers[t]) for t in RARITIES] != [1, 2, 3, 4, 6]:
-            # No orphan definitions, families or material files escape a failed pool.
-            row['skins'] = []
-            continue
-        if len(pending_families) != 2:
-            raise ValueError('Expected two family skins in ' + icon)
-        result.extend(entry for entry in pending if entry[0] not in made_kits)
-        files.update(pending_files)
-        used_rolls.update(pending_rolls)
-        families.update(pending_families)
-        lists.append(_collection_lists(collection, tiers, RARITIES))
-        names.append(collection)
-        items.extend(entry for t in RARITIES for entry in tiers[t])
-        icons[collection] = icon
-        row.update(status='ready', reason='', fixed_skins=14, family_skins=2)
-    return result, files, '\n'.join(lists), names, items, icons
+                pending_families[active]=variants
+            tiers[tier].append('[%s]%s'%(active,weapon))
+            row['skins'].append(dict(slot=slot,weapon=weapon,rarity=tier,title=title,kit=active,
+                donor=donor.name,source_material=donor.material,material_template=actual_material,
+                source_collections=list(donor.collections),source_weapons=list(donor.weapons),
+                family=variable,themes=colors,variants=variants if variable else [],
+                previously_used=donor.material in previously_used,detail_policy='source-detail-v1',
+                required_family=bool(slot==1 and binding)))
+        if [len(tiers[t]) for t in RARITIES]!=[1,2,3,4,6]:
+            row['skins']=[];continue
+        result.extend(e for e in pending if e[0] not in made_kits)
+        files.update(pending_files);families.update(pending_families);counts=local_counts
+        lists.append(_collection_lists(collection,tiers,RARITIES));names.append(collection)
+        items.extend(e for t in RARITIES for e in tiers[t]);icons[collection]=icon
+        row.update(status='ready',reason='',fixed_skins=14,family_skins=2)
+    return result,files,'\n'.join(lists),names,items,icons
+
+
+def replace_pools(baseline, upgraded):
+    """Replace active loot only for complete upgrades. Keep all owned definitions/assets."""
+    definitions,files,lists,names,items,icons=baseline
+    old_items=set()
+    for name in upgraded[3]:
+        for suffix in ('',)+tuple('_'+t for t in RARITIES):
+            pattern=r'(?m)^\s*"'+re.escape(name+suffix)+r'"\s*\{[^}]*\}'
+            for block in re.findall(pattern,lists):
+                old_items.update(re.findall(r'"(\[[^\]]+\]weapon_[a-z0-9_]+)"',block))
+            lists=re.sub(pattern,'',lists)
+    return (definitions+upgraded[0],dict(files,**upgraded[1]),lists+'\n'+upgraded[2],
+        [n for n in names if n not in upgraded[3]]+upgraded[3],
+        [e for e in items if e not in old_items]+upgraded[4],dict(icons,**upgraded[5]))

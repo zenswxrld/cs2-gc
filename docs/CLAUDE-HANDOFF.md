@@ -1,3 +1,43 @@
+# NEXT: mission progress tracking (Claude, design + evidence; NOT implemented yet)
+
+User test (build 33): the mission tile and in-match mission panel SHOW ("Get kills with the AWP", DM on Defusal Group
+Delta, 0/120, 600 XP) but progress never moves in bot matches. The listen server never sends 9136 MatchEndRunRewardDrops
+(quest data) or 1074 IncrementKillCountAttribute, although it does ServerHello (4007) and we already ServerWelcome. So WE
+must count. Recorded welcome: SO type 16 = CSOAccountRecurringMission {1 account_id, 2 mission_id, 3 period, 4 progress}
+(recorded: 11012 / 1779843600 / 6). Protobufs (GameTracking-CS2 609b2ac, Protobufs/cstrike15_gcmessages.proto):
+CMsgRecurringMissionSchema { repeated MissionTemplateList missions = 1 { uint32 period = 1; repeated bytes
+mission_templates = 2; } } answer to 9225 (gc_endpoint.cpp maps 9225 -> replayed 9226).
+User supplied cs2_gc_replay/9226.bin (NOT committed). tools/decode_mission_schema.py decodes it: weekly periods
+(1791939600 = Wed 2026-10-14 01:00 UTC, +7 days...; only Oct 14 (15 templates 11003-11017) and Oct 21 (11016, 11017)
+have templates, so after Oct 28 there are NO missions -> must generate a rotating schedule).
+Templates (binary KV, key = mission id): name, gamemode, gamemodeflags, mapgroup, map, points "40, 80, 120",
+expression, xp_expr "200, 200, 200", xp_round_to, loc_description "#quest_<id>_var_desc:f", string_tokens, gc.random.
+Only three expressions: "act_kill_human && !![weapon_a|weapon_b...]" (DM), "act_win_round" (competitive, map given),
+"act_win_match" (rush). "![a|b]" / "!![a|b]" = random pick (client rolled AWP + mg_casualdelta for this user).
+Client (mission_tile.js / mainmenu_missions.js / hud/hudmissions.js): MissionsAPI.GetRecurringMission() ->
+progress_saved, goal_points[], xp_reward[], progress_this_match; HUD uses GameStateAPI.GetActiveQuestID().
+
+Plan:
+1. Prepare step (Python, light): read proxy/cs2_gc_replay/9226.bin, pool the templates, build periods from 2 weeks ago
+   to +8 weeks (recorded base + k*604800), ONE template per period rotating through the pool, and concretize every
+   random list to a single option seeded by period (keep the syntax: "!![weapon_awp]", "![mg_casualdelta]", update
+   gc.random to match) so the client shows exactly what we count. Write cs2_gc_missions.bin (protobuf 9226 body) and
+   cs2_gc_missions.json (period -> mission id, mode, map/mapgroup, weapon, points, xp) incl. mapgroup -> maps from
+   gamemodes.txt in pak01 (mapgroups block, e.g. "mg_casualdelta").
+2. DLL: on 9225 reply 9226 with cs2_gc_missions.bin when present; publish SO type 16 objects from
+   cs2_gc_mission_progress.txt ("<mission_id> <period> <progress>" lines, written by the helper) in the welcome
+   (replace the recorded 11012) and on change (SO Create/Update, poll in PollProgression).
+3. Helper (gsi_rewards.py): add "player_weapons" "1" (and "round" "1") to the GSI config; for the mission whose period
+   is current and whose mode (map.mode) and map/mapgroup match: kill while weapons[*].state == "active" is the mission
+   weapon -> +1 (count bot kills; offline there are no humans); own team score increment -> act_win_round +1; gameover
+   with own team ahead -> act_win_match +1. Crossing a points tier adds that tier's xp_expr XP to the helper total.
+   Grenade kills can not be attributed (weapon left the hand); say so.
+4. Tests: KV binary round trip, concretize, schedule rotation, GSI evaluation fixtures, SO encoding.
+Other queued user requests: custom-collection trade-ups, multi-sell via popup_select_item_for_capability
+(casketstore multi-select, user approved the plan), build-folder cleanup + leftover-file removal tool (last),
+detail-preserving palette rotation recolour + texture recolours (Rainbow Spoon / Crimson Foil style).
+A star-economy loop audit was started by Claude in this worktree (uncommitted results may be present: check git status).
+
 # Build 33 (Claude) - care packages from level-ups only; claimed package stays on show
 
 User confirmed build 32: the favourite-route claim works and the rewards (cases) open. Extra packages appeared at once

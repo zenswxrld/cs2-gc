@@ -18,7 +18,7 @@ struct GameplayConfig
     std::uint32_t armory_capsule_slots{2};
     std::uint32_t armory_limited_slots{1};
     std::uint32_t armory_agent_slots{1};
-    std::uint32_t armory_agent_price{50};
+    std::uint32_t armory_agent_price{25};
     std::uint32_t reward_rare_case_per_10000{100}; // combined Black Market/Gauntlet chance within case offers
     std::uint32_t custom_collection_drop_percent{15}; // within weapon reward slots; never changes case chance
     std::uint32_t care_packages_enabled{1}; // four reserved offers, claim exactly three

@@ -1268,3 +1268,11 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   placeholder (ensure_first_game_path). Refuses to overwrite foreign addons folders. Not verified live.
   Queued next (user): Armory agent tab -> rotating collections of agents grouped by their operation, using the
   operations' own artwork for the tile.
+- Build 40 (22 Oct): Armory agent tab = rotating operation agent collections (user; 25 stars, armory_agent_price
+  default 25). armory_rotation_catalog.agent_collections groups the official dossier tier lists per operation
+  (op09 Shattered Web, op10 Broken Fang, op11 Riptide) into new top lists lootlist_cs2gc_agents_<op> (appended to
+  client_loot_lists after the tiers; the only new loot lists in the catalogue), callout #CSGO_set_opN_characters,
+  ui_set_image set_opN_characters (the dossier char_pack_* pictures were removed in CS2; the set emblems exist).
+  The page shows the operation's own agents. GC: agent rows with a loot list roll 55/28/12/5% by rarity rank (equal
+  rarities share), then a uniform agent; LootTiers strips trailing digits from tier suffixes (ancient1/2 were
+  rarity 0 = never dropped). The old Random Agent row only ever gave op09 ancient agents. Not verified live.

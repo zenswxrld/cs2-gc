@@ -634,7 +634,10 @@ std::vector<LootTier> Schema::LootTiers(std::string_view lootListName) const
                 const std::size_t underscore = name.rfind('_');
                 if (underscore != std::string::npos)
                 {
-                    const auto rarity = schema.m_rarities.find(name.substr(underscore + 1));
+                    // "..._ancient1" / "..._ancient2": the operation dossiers number their split top tiers.
+                    auto suffix = name.substr(underscore + 1);
+                    while (!suffix.empty() && suffix.back() >= '0' && suffix.back() <= '9') suffix.pop_back();
+                    const auto rarity = schema.m_rarities.find(suffix);
                     if (rarity != schema.m_rarities.end())
                         tier.rarity = rarity->second;
                 }

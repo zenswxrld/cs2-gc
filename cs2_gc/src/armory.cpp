@@ -65,6 +65,42 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
         if (const auto howl = m_schema.ResolveLootItem(HowlEntry))
             item = MakeLootItem(*howl, m_schema.SkinRarity(howl->weaponDefIndex, howl->paintKitIndex).value_or(0), random, 0);
     }
+    else if (goods->rotationSlot == "agent" && goods->itemName.starts_with(LootListPrefix))
+    {
+        // An operation's agent collection (armory_rotation_catalog.agent_collections): a tier by rarity rank,
+        // 55% / 28% / 12% / 5% from the most common up (tiers of one rarity share theirs), then an agent in it.
+        auto tiers = m_schema.LootTiers(goods->itemName.substr(LootListPrefix.size()));
+        std::erase_if(tiers, [](const auto &tier) { return tier.rarity == 0; });
+        std::map<std::uint32_t, std::vector<std::uint32_t>> byRarity;
+        for (const auto &tier : tiers)
+            for (const auto &entry : tier.items)
+                if (const auto definition = m_schema.ItemDefIndex(entry)) byRarity[tier.rarity].push_back(*definition);
+        const std::uint32_t weights[] = {5500, 2800, 1200, 500};
+        std::uint64_t total = 0;
+        std::size_t rank = 0;
+        for (std::size_t i = 0; i < byRarity.size(); ++i) total += weights[std::min<std::size_t>(i, 3)];
+        if (total)
+        {
+            const auto below = [&random](std::uint64_t bound) {
+                const auto limit = UINT64_MAX - UINT64_MAX % bound;
+                std::uint64_t value;
+                do { value = random(); } while (value >= limit);
+                return value % bound;
+            };
+            auto roll = below(total);
+            rank = 0;
+            for (const auto &[rarity, definitions] : byRarity)
+            {
+                const auto weight = weights[std::min<std::size_t>(rank++, 3)];
+                if (roll >= weight) { roll -= weight; continue; }
+                InventoryItem agent;
+                agent.defIndex = definitions[below(definitions.size())];
+                agent.rarity = m_schema.ItemRarity(agent.defIndex);
+                item = agent;
+                break;
+            }
+        }
+    }
     else if (goods->rotationSlot == "agent")
     {
         const auto agents = m_schema.AgentDefinitions();

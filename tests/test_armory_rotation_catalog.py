@@ -506,4 +506,20 @@ class ConsoleControls(unittest.TestCase):
             self.assertIn('cs2_gc_give_stars', (cfg / 'cs2_gc_console.cfg').read_text())
 
 
-if __name__ == '__main__': unittest.main()
+
+class AgentCollections(unittest.TestCase):
+    def test_one_collection_per_operation_with_its_emblem(self):
+        lists = {n: [] for n in ('lootlist_character_operator_dossier_op09_rare', 'lootlist_character_operator_dossier_op09_ancient',
+                                 'lootlist_character_operator_dossier_op10_ancient1', 'lootlist_character_operator_dossier_op10_ancient2',
+                                 'lootlist_character_operator_dossier_op10_rare', 'other_list')}
+        found = catalog.agent_collections(lists, {'set_op9_characters': []})
+        self.assertEqual(found, {
+            'lootlist_cs2gc_agents_op09': (['lootlist_character_operator_dossier_op09_ancient',
+                                            'lootlist_character_operator_dossier_op09_rare'], 'set_op9_characters'),
+            'lootlist_cs2gc_agents_op10': (['lootlist_character_operator_dossier_op10_ancient1',
+                                            'lootlist_character_operator_dossier_op10_ancient2',
+                                            'lootlist_character_operator_dossier_op10_rare'], None)})
+
+
+if __name__ == '__main__':
+    unittest.main()

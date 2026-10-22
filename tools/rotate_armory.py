@@ -323,7 +323,10 @@ PREPARE = '''        // Resolve each tile from its own native row, without inher
             entry.local_souvenir = slot === 'souvenir';
             entry.local_direct_case = entry.item_name === 'crate_cs2gc_black_market' || entry.item_name === 'crate_cs2gc_gauntlet';
             if (slot === 'agent') {
-                entry.lootlist = m_localRotation.agents.map(name => InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
+                // An operation's agent collection shows its own agents; older rows show every agent.
+                const own = String(entry.item_name).startsWith('lootlist:lootlist_cs2gc_agents_') ?
+                    _GetLootListForReward(entry.item_name).filter(id => id && id !== '0' && id !== entry.item_name) : [];
+                entry.lootlist = own.length ? own : m_localRotation.agents.map(name => InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
                     InventoryAPI.GetItemDefinitionIndexFromDefinitionName(name), 0));
                 entry.local_agent = true;
                 entry.entry_type = 'lootlist'; entry.lootlist_item_type = 'agent';

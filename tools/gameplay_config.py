@@ -11,7 +11,7 @@ DEFAULTS = {
     'armory_capsule_slots': 2,
     'armory_limited_slots': 1,
     'armory_agent_slots': 1,
-    'armory_agent_price': 50,
+    'armory_agent_price': 25,
     'reward_rare_case_per_10000': 100,
     'care_packages_enabled': 1, 'care_packages_from_matches': 0,
     'bot_hide_tag': 1, 'hide_mainmenu_promo': 1, 'offline_mission_launch': 1,

@@ -3891,7 +3891,7 @@ void WeeklyPoolAndItemSales()
     skin.statTrak = true;
     Check(ItemSaleValue(*schema, config, skin) == 5, "StatTrak has the same OfflineCS base sale value");
     InventoryItem agent; agent.defIndex = 100;
-    Check(ItemSaleValue(*schema, config, agent) == 25, "agent buyback uses half of configured price");
+    Check(ItemSaleValue(*schema, config, agent) == config.armory_agent_price / 2, "agent buyback uses half of configured price");
     InventoryItem sticker; sticker.defIndex = 1209; sticker.stickerKit = 1; sticker.rarity = 6;
     Check(ItemSaleValue(*schema, config, sticker) == 25, "sticker buyback uses half of rarity price");
     InventoryItem crate; crate.defIndex = 60;
@@ -4233,6 +4233,12 @@ void CustomSkinFamilies()
         colours.insert(result.item.paintKitIndex);
     }
     Check(colours.size()==2,"every colour of the next tier can come out of a contract");
+    // Operation dossiers number their split top tiers (_ancient1/_ancient2): still the ancient rarity.
+    auto dossier=Schema::Load(R"("items_game" { "rarities" { "rare" { "value" "3" } "ancient" { "value" "6" } }
+      "items" { "7" { "name" "weapon_test" "item_rarity" "rare" } }
+      "client_loot_lists" { "d_ancient1" { "weapon_test" "1" } "d_rare" { "weapon_test" "1" } "top" { "d_ancient1" "1" "d_rare" "1" } } })");
+    const auto dossierTiers=dossier->LootTiers("top");
+    Check(dossierTiers.size()==2 && dossierTiers[0].rarity==6 && dossierTiers[1].rarity==3,"numbered tier names keep their rarity");
 }
 
 void NativeCarePackages()

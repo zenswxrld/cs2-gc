@@ -4250,30 +4250,23 @@ void NativeCarePackages()
     auto endpointInventory=std::make_shared<LiveInventory>(saved);LocalGameCoordinator endpoint({});int saves=0;
     endpoint.EnableContainers(endpointInventory,shared,[]{return 500ull;},[&]{++saves;});
     Check(endpoint.ApplyMatchRewards(1,[&]{++saves;}),"native choice package queues through the coordinator");
-    bool personal=false,oldDrop=false;std::vector<std::uint64_t> choiceTokens,offerItems;std::uint32_t size=0;
-    const auto econField=[](const std::vector<std::uint8_t> &data,std::uint32_t number) {
-        PbReader reader(data);PbField field;std::uint64_t value=0;
-        while(reader.Next(field))if(field.number==number && field.wire==0)value=field.value;
-        return value;
-    };
+    bool personal=false,oldDrop=false,unsafePreview=false;std::vector<std::uint64_t> choiceTokens;std::uint32_t size=0;
     while(endpoint.IsMessageAvailable(&size)) {
         std::vector<std::uint8_t> bytes(size);std::uint32_t type=0,got=0;endpoint.RetrieveMessage(&type,bytes.data(),size,&got);
         oldDrop|=(type&~ProtobufMask)==gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_MatchEndRewardDropsNotification;
         FrameView frame;ReadProtobufFrame(type,bytes,frame);
         if((type&~ProtobufMask)==gc_msg::ESOMsg::k_ESOMsg_Create) {
             const auto object=DecodeSoSingleObject(frame.body);
-            // Offers are real econ items of the account, outside the backpack (inventory position 0).
-            if(object && object->typeId==1 && econField(object->data,3)==0)offerItems.push_back(econField(object->data,1));
+            if(object && object->typeId==1)unsafePreview=true;
             if(object && object->typeId==4) {
                 personal=true;PbReader store(object->data);PbField field;
                 while(store.Next(field))if(field.number==3 && field.wire==0)choiceTokens.push_back(field.value);
             }
         }
     }
-    Check(personal && !oldDrop && saves==1 && choiceTokens.size()==4 &&
-          std::set<std::uint64_t>(choiceTokens.begin(),choiceTokens.end()).size()==4 && offerItems==choiceTokens &&
-          choiceTokens.front()>CustomItemIdBase && choiceTokens.front()<2*CustomItemIdBase,
-          "match end publishes the four offers as econ items whose ids the store lists, no end-match drops");
+    Check(personal && !oldDrop && !unsafePreview && saves==1 && choiceTokens.size()==4 &&
+          std::set<std::uint64_t>(choiceTokens.begin(),choiceTokens.end()).size()==4,
+          "match end publishes only choice descriptors, no preview econ items or end-match drops");
     {
         const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
         Check(disk.has_value(),"queued package reloads for reconnect");
@@ -4282,7 +4275,7 @@ void NativeCarePackages()
         PbWriter hello;std::vector<std::uint8_t> wire;
         WriteProtobufFrame(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello,{},hello.bytes(),wire);
         reconnect.SendMessage(gc_msg::EGCBaseClientMsg::k_EMsgGCClientHello|ProtobufMask,wire.data(),wire.size());
-        std::uint32_t available=0;bool storeFound=false;unsigned offerCount=0;
+        std::uint32_t available=0;bool storeFound=false;unsigned previewCount=0;
         while(reconnect.IsMessageAvailable(&available)) {
             std::vector<std::uint8_t> message(available);std::uint32_t type=0,got=0;
             reconnect.RetrieveMessage(&type,message.data(),available,&got);
@@ -4291,11 +4284,11 @@ void NativeCarePackages()
             Check(welcome.has_value(),"reconnected welcome decodes");
             for(const auto &cache:welcome->outOfDateCaches)for(const auto &object:cache.types) {
                 if(object.typeId==4)storeFound=object.objects.size()==1;
-                if(object.typeId==1)for(const auto &item:object.objects)offerCount+=econField(item,3)==0;
+                if(object.typeId==1)previewCount+=static_cast<unsigned>(object.objects.size());
             }
         }
-        Check(storeFound && offerCount==4 && resumed->Items().Items().empty(),
-              "reconnect restores the store and its four offer items without granting them");
+        Check(storeFound && previewCount==0 && resumed->Items().Items().empty(),
+              "reconnect restores choice descriptors without recreating the crashing unowned econ previews");
     }
     {
         // Build 27 log: the native StoreRedeemFreeRewards sent nothing for choice tokens. The patched popup
@@ -4333,6 +4326,30 @@ void NativeCarePackages()
               (used[0]=true,CareChoiceSlot(twins,faux(twins.offers[0]),used))==std::optional<std::size_t>{1},
               "identical offers stay independently selectable through their faux ids");
     }
+    {
+        // Build 30: the patched page sends the claim as an Armory redemption (9209); the cost carries the
+        // package stamp (generation % 1000000) and the mask of the three chosen slots.
+        const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
+        auto routeInventory=std::make_shared<LiveInventory>(*disk);LocalGameCoordinator routeGc({});int routeSaves=0;
+        auto armory=std::make_shared<Armory>(*schema,11,30);
+        routeGc.EnableArmory(armory,routeInventory,[]{return 1ull;},[&]{++routeSaves;});
+        routeGc.EnableContainers(routeInventory,shared,[]{return 1ull;},[&]{++routeSaves;});
+        const auto package=routeInventory->Items().CarePackages().front();
+        const auto redeem=[&](std::uint32_t cost) {
+            PbWriter message;message.Varint(1,11);message.Varint(2,12345);message.Varint(3,0);message.Varint(4,cost);
+            std::vector<std::uint8_t> wire;WriteProtobufFrame(9209,{},message.bytes(),wire);
+            routeGc.SendMessage(9209|ProtobufMask,wire.data(),wire.size());
+        };
+        const std::uint32_t base=2000000000u+(package.generation%1000000u)*16u;
+        redeem(base+3);redeem(base+15);redeem(base+16+11);
+        Check(routeInventory->Items().Items().empty() && routeInventory->Items().CarePackages().size()==1 && routeSaves==0 &&
+              armory->Balance()==30,"armory-route claims with two/four slots or another package's stamp grant nothing");
+        redeem(base+11);redeem(base+11);
+        std::set<std::uint64_t> got,want{package.offers[0].id,package.offers[1].id,package.offers[3].id};
+        for(const auto &item:routeInventory->Items().Items())got.insert(item.id);
+        Check(got==want && routeInventory->Items().CarePackages().empty() && routeSaves==1 && armory->Balance()==30,
+              "armory-route claim grants the three chosen slots once without spending Armory credits");
+    }
     const auto &offer=endpointInventory->Items().CarePackages().front();
     PbWriter request;request.Varint(1,offer.generation);request.Varint(2,0);
     for(unsigned i=0;i<3;++i)request.Varint(3,choiceTokens[i]);
@@ -4341,25 +4358,6 @@ void NativeCarePackages()
     endpoint.SendMessage(9219|ProtobufMask,body.data(),body.size());
     Check(endpointInventory->Items().Items().size()==3 && endpointInventory->Items().CarePackages().empty() && saves==2,
           "native StoreRedeemFreeRewards path pays three once and saves before notification");
-    {
-        // The claim destroys all four offer objects before the chosen three are created as new owned items.
-        std::vector<std::pair<std::uint32_t,std::uint64_t>> events;std::uint32_t pending=0;
-        while(endpoint.IsMessageAvailable(&pending)) {
-            std::vector<std::uint8_t> bytes(pending);std::uint32_t type=0,got=0;endpoint.RetrieveMessage(&type,bytes.data(),pending,&got);
-            FrameView frame;ReadProtobufFrame(type,bytes,frame);const auto kind=type&~ProtobufMask;
-            if(kind!=gc_msg::ESOMsg::k_ESOMsg_Create && kind!=gc_msg::ESOMsg::k_ESOMsg_Destroy)continue;
-            const auto object=DecodeSoSingleObject(frame.body);
-            if(object && object->typeId==1)events.push_back({kind,econField(object->data,1)});
-        }
-        std::set<std::uint64_t> destroyed,created;bool ordered=true;
-        for(const auto &[kind,id]:events) {
-            if(kind==gc_msg::ESOMsg::k_ESOMsg_Destroy){destroyed.insert(id);ordered&=created.empty();}
-            else created.insert(id);
-        }
-        Check(destroyed==std::set<std::uint64_t>(choiceTokens.begin(),choiceTokens.end()) && created.size()==3 && ordered &&
-              created==std::set<std::uint64_t>(choiceTokens.begin(),choiceTokens.begin()+3),
-              "a claim replaces the four offer items by the three chosen owned items");
-    }
     Inventory opens;const auto crate=opens.Add({0,60});
     Check(OpenCase(opens,*schema,crate,0,[]{return 0ull;}).error==OpenError::None && opens.Items().size()==1,
           "free case opens with no key object");

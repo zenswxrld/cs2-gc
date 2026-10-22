@@ -1,4 +1,16 @@
-# Build 29 (Claude) - care packages: offers are real econ items
+# Build 30 (Claude) - care-package claim through the Armory message; build 29 reverted
+
+Build 29 (offers published as type-1 econ items, inventory position 0) made the game show them as NEW owned items
+the GC does not own: the user could not open/sell them ("unable to retrieve your item"), and the claim still timed
+out. Reverted to the build-28 store (choice tokens, no offer econ items).
+StoreRedeemFreeRewards never sends local claims, so the patched page now calls
+MissionsAPI.ActionRedeemOperationGoods(GetSeasonalOperationXpShopIndex(), 0, cost) with
+cost = 2000000000 + (generation % 1000000) * 16 + slot mask (token slot = (token - 3e12) >> 32). The 9209 handler
+treats expectedCost >= CareClaimCost as a care claim (stamp must match the front package, exactly 3 slots) and runs
+the shared m_careClaim (same path as 9219). No Armory credits are spent. The Armory message was confirmed to reach the
+GC (9209 frames in every log). Live test pending: GC log "care claim received (armory route)".
+
+# (superseded) Build 29 (Claude) - care packages: offers are real econ items
 
 DLL tag claude-20261022-29. User's build-28 console.log: StoreRedeemFreeRewards got three faux ids the client
 recognised (IsItemInfoValid/IsValidItemID true) and STILL sent no 9219 (no frame in cs2_gc_log.txt). Valve's recorded

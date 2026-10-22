@@ -39,7 +39,8 @@ class NativeCarePackages(unittest.TestCase):
 let store={generation_time:10,redeemable_balance:3,items:['3000000000001','3004294967297','3008589934593','3012884901889']};
 const title={},vars={},panel={FindChildrenWithClassTraverse:()=>[title],SetDialogVariable:(key,value)=>vars[key]=value,RemoveClass:()=>{}};
 const $={GetContextPanel:()=>panel,Schedule:()=>1,CancelScheduled:()=>cancelled++,Msg:()=>{}};
-const StoreAPI={StoreRedeemFreeRewards:()=>sent++};
+const StoreAPI={StoreRedeemFreeRewards:()=>sent++};let routed=[];
+const MissionsAPI={GetSeasonalOperationXpShopIndex:()=>11,ActionRedeemOperationGoods:(track,index,cost)=>{routed.push([track,index,cost]);sent++;}};
 const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:()=>'faux',IsItemInfoValid:()=>true,IsValidItemID:()=>true};
 const _GetSelectedItems=()=>Array(count).fill({item_id:'3000000000001'}),_PulseItems=()=>pulses++;
 ''' +care.patch(source)+'''
@@ -50,6 +51,7 @@ _UpdateTime();assert.equal(title.text,'CARE PACKAGE');assert.equal(vars['frame-b
 store={generation_time:11,redeemable_balance:3,items:store.items};OnInventoryUpdated();assert.equal(cancelled,1);
 store={generation_time:0,redeemable_balance:0,items:[]};m_redeemableBalance=0;_UpdateTime();assert.equal(vars['frame-badge-text'],'REWARDS CLAIMED');
 store={generation_time:9,redeemable_balance:2,items:['123']};count=2;OnRedeem();assert.equal(sent,2);
+assert.equal(routed.length,1,'official stores still use the native claim');
 '''
         self.run_js(script)
 
@@ -122,22 +124,20 @@ let selected=['3000000004186','3004381212712','3012884906436'];
 const _GetSelectedItems=()=>selected.map(item_id=>({item_id}));const _PulseItems=()=>{};
 const $={Msg:text=>logs.push(text)};
 const StoreAPI={StoreRedeemFreeRewards:list=>sent.push(list)};
+const MissionsAPI={GetSeasonalOperationXpShopIndex:()=>11,ActionRedeemOperationGoods:(track,index,cost)=>sent.push([track,index,cost])};
 const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:(def,paint)=>'F'+def+'p'+paint,
     IsItemInfoValid:id=>{if(throwing)throw new Error('x');return id[0]==='F';},IsValidItemID:id=>id[0]==='F'};
 """+care.patch(source)+"""
 OnRedeem();
-assert.deepEqual(sent,['F4186p0,F40p1316,F4548p0']);
+// Slots 0, 1 and 3 (tokens carry slot << 32): mask 0b1011; generation 7.
+assert.deepEqual(sent,[[11,0,2000000000+7*16+11]]);
+assert.ok(logs.some(line=>line.includes('claim via armory route: generation=7 mask=11 cost=2000000123')));
 assert.ok(logs[0].startsWith('cs2_gc care: claim generation=7 balance=3 tokens=3000000004186,3004381212712,3012884906436'));
 assert.ok(logs[0].includes('known=false/false,false/false,false/false submitted=F4186p0,F40p1316,F4548p0 known=true/true,true/true,true/true'));
 throwing=true;OnRedeem();assert.equal(sent.length,2,'a failing diagnostic never blocks the claim');
 _RedemptionTimedOut();assert.ok(logs[logs.length-1].includes('claim timed out'));
 store={generation_time:1,redeemable_balance:2,items:['52275636417']};selected=['52275636417'];
 OnRedeem();assert.equal(sent[2],'52275636417','official stores keep their native item ids');
-// Build 29: the offers are real items of the account; their ids go to the native call unchanged.
-store={generation_time:8,redeemable_balance:3,items:['1000000000101','1000000000102','1000000000103','1000000000104']};
-selected=['1000000000101','1000000000103','1000000000104'];logs.length=0;throwing=false;
-OnRedeem();assert.equal(sent[3],'1000000000101,1000000000103,1000000000104');
-assert.ok(logs[0].includes('submitted=1000000000101,1000000000103,1000000000104'));
 """
         self.run_js(script)
 

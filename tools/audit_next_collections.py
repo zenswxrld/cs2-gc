@@ -23,10 +23,17 @@ def audit(game, output, full=False):
         added, pattern_titles, pattern_files, _ = native_patterns.plan(source, kits, titles)
         result = next_collection_lineups.build(schema, dict(kits, **added), dict(titles, **pattern_titles),
             finishes.kit_path, native_patterns.GeneratedSource(source, pattern_files), families, set(), report)
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    (output / 'collections-audit.json').write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf-8')
     definitions, files, lists, names, items, icons = result
     lookup = {n: (title, values) for n, title, values in definitions}
     if len(lookup) != len(definitions):
         raise ValueError('Duplicate paint kit definitions')
+    all_rows = report.get('collection_upgrade', {})
+    if full and (len(all_rows) != 36 or any(r['status'] != 'ready' for r in all_rows.values())):
+        missing = {name:row['reason'] for name,row in all_rows.items() if row['status'] != 'ready'}
+        raise ValueError('Not all 36 collections upgraded; see collections-audit.json: ' + json.dumps(missing))
     rows = report.get('next_12', {})
     if len(rows) != 12 or any(r['status'] != 'ready' for r in rows.values()):
         raise ValueError('Incomplete new collections: ' + json.dumps(rows))

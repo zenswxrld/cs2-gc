@@ -19,9 +19,9 @@ an eligible style and a generic donor name.
 
 The detail palette rotates existing painted accents together. It retains relative
 hue spacing, exact value/alpha, muted saturation, dark ink and neutral silver or
-white details. An entirely neutral donor gets at most one accent. Texture, shader,
-foil/iridescence settings, roughness, wear and masks are copied unchanged. Only
-the existing four-colour material layout is accepted. Unsupported layouts are
+white details. An entirely neutral donor gets at most one accent. Shader, foil/iridescence settings, roughness, wear and masks are retained.
+Four-colour finishes edit their actual colour controls. The two named texture
+families use the selective lacquer/ramp treatment described below. Unsupported layouts are
 reported; a different donor is never substituted for a named required family.
 This is structural preservation, not a claim of rendered visual approval.
 
@@ -45,8 +45,8 @@ the cache/Armory fixes from PR #26, so its helper artifact includes them.
 ## Validation limits
 
 GitHub Actions runs Windows core build and CTest, then packages changed helper
-sources only. It separately audits publicly tracked schema metadata. No builds
-or generated material packs are made on the user's PC during development.
+sources only. It separately audits publicly tracked schema metadata. No builds or generated material packs are made on the user's PC during
+development. Installed donor metadata was read without writing to the game.
 No proprietary game binaries, installed assets, inventory or config are committed.
 
 CI material fixtures establish property preservation and source-selection rules,

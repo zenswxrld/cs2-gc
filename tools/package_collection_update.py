@@ -8,7 +8,7 @@ FILES = (
     'kv3.py','native_skins.py','native_finishes.py','weapon_palettes.py',
     'native_patterns.py','next_collection_lineups.py','retained_collection_lineups.py',
     'collection_detail.py','collection_donors.py','collection_material.py','prepare_native.py',
-    'preparation_cache.py','rotate_armory.py',
+    'preparation_cache.py','rotate_armory.py','audit_next_collections.py',
 )
 
 def main():

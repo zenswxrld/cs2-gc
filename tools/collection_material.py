@@ -82,12 +82,13 @@ def owned_texture(data,rgba):
     if len(rgba)!=width*height*4:raise ValueError('Decoded texture length mismatch')
     pixels=bytearray(rgba)
     pixels[0::4],pixels[2::4]=rgba[2::4],rgba[0::4]
-    header=struct.pack('<HH4fHHHBBIII',1,flags,0,0,0,1,width,height,1,28,1,0,8,0)
+    reflect=[sum(rgba[i::4])/(width*height*255) for i in range(4)]
+    header=struct.pack('<HH4fHHHBBIII',1,flags,*reflect,width,height,1,28,1,0,8,0)
     # Extra mip/metadata tables describe the original BC7 stream; replace DATA.
     return kv3.write_resource(version,[[name,header if name=='DATA' else value] for name,value in blocks])+pixels
 
 def make_texture(source,path,theme,ramps,finishes):
-    key=(id(source),path,theme,ramps)
+    key=(source,path,theme,ramps)
     if key in _TEXTURES:return _TEXTURES[key]
     import os
     decoder=Path(os.environ.get('CS2_GC_TEXTURE_DECODER',str(Path(__file__).with_name('cs2_gc_texture_decode.exe'))))

@@ -283,6 +283,7 @@ public:
         }
         PollTradeUpRequest();
         PollTerminalRequest();
+        PollCareClaims();
         PollCarePackageRequest();
 #ifdef CS2_GC_DEBUG_TOOLS
         {
@@ -303,6 +304,29 @@ public:
                 m_gc.SetLocalPremier({static_cast<std::uint32_t>(rating), static_cast<std::uint32_t>(wins),
                                       static_cast<std::uint32_t>(placements)});
         }
+    }
+    // Care-package claims (build 31): the native claim and Armory calls refuse to send local claims (build 28-30
+    // logs), so the patched page prints the claim and this reads lines appended to csgo/console.log (-condebug)
+    // since launch. The GC still validates the package generation and the three choices.
+    void PollCareClaims()
+    {
+        const auto path = m_rewardPath.parent_path().parent_path().parent_path() / "csgo" / "console.log";
+        std::error_code error;
+        const auto size = std::filesystem::file_size(path, error);
+        if (error) return;
+        if (!m_consoleOffset || size < *m_consoleOffset) { m_consoleOffset = size; return; } // launch or new file
+        if (size == *m_consoleOffset) return;
+        std::ifstream log(path, std::ios::binary);
+        log.seekg(static_cast<std::streamoff>(*m_consoleOffset));
+        std::string text(static_cast<std::size_t>(std::min<std::uintmax_t>(size - *m_consoleOffset, 1u << 20)), '\0');
+        log.read(text.data(), static_cast<std::streamsize>(text.size()));
+        text.resize(static_cast<std::size_t>(log.gcount()));
+        const auto complete = text.rfind('\n');
+        if (complete == std::string::npos) { if (text.size() == (1u << 20)) *m_consoleOffset += text.size(); return; }
+        text.resize(complete + 1);
+        *m_consoleOffset += text.size();
+        for (const auto &claim : ParseCareConsoleClaims(text))
+            if (m_gc.ClaimCareFromConsole(claim.generation, claim.tokens, m_afterReward)) m_log.Write("care package: console claim granted");
     }
     void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange)
     {
@@ -437,6 +461,7 @@ private:
     }
     LocalGameCoordinator m_gc;
     std::filesystem::path m_rewardPath;
+    std::optional<std::uintmax_t> m_consoleOffset; // console.log bytes already read (care claims)
     std::function<void()> m_afterReward;
     std::chrono::steady_clock::time_point m_nextRewardPoll{};
     std::mutex m_rewardMutex;
@@ -1028,7 +1053,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: codex-20261022-27");
+        s.log->Write("test build: claude-20261022-31");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");

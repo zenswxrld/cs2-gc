@@ -11,6 +11,18 @@ import sys
 
 VERSION = 1
 FILENAME = 'cs2_gc_prepare_cache.json'
+# Helpers used only by the quick UI patch steps (or not by preparation at all). A change to one of these, or to
+# the DLL/launcher, re-runs only those steps instead of regenerating every collection material (user, build 30:
+# "still takes a while with each change"). Everything else feeds the schema/material stage.
+LIGHT_HELPERS = frozenset(name + '.py' for name in (
+    'rotate_armory', 'native_scoreboard', 'native_store', 'skip_container_confirm', 'native_item_sales',
+    'native_endmatch', 'native_offer_numbers', 'skip_key_select', 'native_endmatch_stock', 'native_care_packages',
+    'native_mainmenu', 'native_mission_launch', 'native_knife_reel', 'native_bot_names', 'prepare_native',
+    'preparation_cache', 'vpk_signatures', 'gsi_rewards', 'console_controls', 'grant_test_items',
+    'grant_custom_cases', 'mixed_tradeup', 'terminal_purchase', 'study_skins', 'extract_vpk_asset',
+    'extract_finish_materials', 'extract_gc_protocol', 'inspect_cs2', 'make_collection_icons',
+    'audit_next_collections', 'audit_collection_sources', 'package_collection_update', 'reset_profile',
+    'care_package_bridge', 'package_care_update'))
 
 
 def digest(path):
@@ -37,12 +49,12 @@ class PreparationCache:
         self.path = self.proxy / FILENAME
         self.reason = 'no complete preparation cache'
 
-    def inputs(self):
+    def inputs(self, heavy=False):
         required = [self.proxy / 'items_game.txt', self.game / 'csgo/pak01_dir.vpk']
         if not all(p.is_file() for p in required):
             return None
         files = set(required)
-        files.update(self.helpers.glob('*.py'))
+        files.update(p for p in self.helpers.glob('*.py') if not (heavy and p.name in LIGHT_HELPERS))
         for folder in ('collection_icons', 'weapon_patterns'):
             files.update(p for p in (self.helpers / folder).rglob('*') if p.is_file())
         files.update(self.helpers.glob('*.png'))
@@ -53,7 +65,7 @@ class PreparationCache:
                    'python': list(sys.version_info[:3]),
                    'files': {str(p): digest(p) for p in sorted(files)},
                    'archives': {str(p): stamp(p) for p in sorted((self.game / 'csgo').glob('pak*.vpk'))},
-                   'binaries': {str(p): stamp(p) for p in
+                   'binaries': {} if heavy else {str(p): stamp(p) for p in
                        (self.proxy / 'steam_api64.dll', self.proxy / 'cs2_gc_debug.exe') if p.is_file()}}
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode('utf-8')).hexdigest()
 
@@ -93,11 +105,22 @@ class PreparationCache:
         except (OSError, ValueError, TypeError):
             return False
 
+    def heavy_hit(self):
+        """True when only UI-step helpers or the binaries changed: the schema and materials can be reused."""
+        try:
+            cached = json.loads(self.path.read_text(encoding='utf-8'))
+            current = self.inputs(heavy=True)
+            if not isinstance(cached, dict) or current is None or cached.get('heavy') != current:
+                return False
+            return cached.get('outputs') == self.outputs()
+        except (OSError, ValueError, TypeError):
+            return False
+
     def save(self):
         inputs = self.inputs()
         if inputs is None:
             return
-        data = dict(inputs=inputs, outputs=self.outputs())
+        data = dict(inputs=inputs, heavy=self.inputs(heavy=True), outputs=self.outputs())
         temporary = self.path.with_suffix('.json.tmp')
         temporary.write_text(json.dumps(data, sort_keys=True, indent=1) + '\n', encoding='utf-8')
         temporary.replace(self.path)

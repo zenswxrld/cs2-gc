@@ -1,3 +1,18 @@
+# Build 28 test (Claude)
+
+Close CS2 and the helper. Back up cs2_gc_inventory.txt and cs2_gc_finish_ids.json. Extract EVERYTHING into
+game\bin\win64 (replace). Start CS2 with cs2_gc_debug.exe; the first start rebuilds the materials (slower).
+
+1. Armory: the custom collections are new. Each has 16 skins; no skin should look like an existing official one,
+   no artwork should sit wrong on a gun. Report any that look broken or unchanged with the collection + gun name.
+2. Chases roll a colour from the collection's palette; 6 collections use Doppler/Gamma/Marble Fade/Fade/Tiger Tooth/
+   Damascus colours.
+3. Skins you already own from the old collections must still look the same.
+4. Care package: claim three rewards. Then send cs2_gc_log.txt AND csgo\console.log (lines "cs2_gc care:").
+5. Knife/glove cases are unchanged.
+
+---
+
 # Helper27c — collection art pass: accent gradients and inversions
 
 Same DLL tag codex-20261022-27; Python/helper update. Includes27a/27b fixes.

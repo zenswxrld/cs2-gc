@@ -4290,6 +4290,84 @@ void NativeCarePackages()
         Check(storeFound && previewCount==0 && resumed->Items().Items().empty(),
               "reconnect restores choice descriptors without recreating the crashing unowned econ previews");
     }
+    {
+        // Build 27 log: the native StoreRedeemFreeRewards sent nothing for choice tokens. The patched popup
+        // now submits the client-resolved faux ids of the displayed tiles; they map back to saved offers.
+        const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
+        auto fauxInventory=std::make_shared<LiveInventory>(*disk);LocalGameCoordinator fauxGc({});int fauxSaves=0;
+        fauxGc.EnableContainers(fauxInventory,shared,[]{return 1ull;},[&]{++fauxSaves;});
+        const auto package=fauxInventory->Items().CarePackages().front();
+        const auto faux=[](const InventoryItem &item){return 0xF000000000000000ull|(std::uint64_t{item.paintKitIndex}<<16)|item.defIndex;};
+        const auto claim=[&](std::uint32_t generation,const std::vector<std::uint64_t> &ids) {
+            PbWriter message;message.Varint(1,generation);
+            for(const auto id:ids)message.Varint(3,id);
+            std::vector<std::uint8_t> wire;WriteProtobufFrame(9219,{},message.bytes(),wire);
+            fauxGc.SendMessage(9219|ProtobufMask,wire.data(),wire.size());
+        };
+        auto wrong=package.offers[0];wrong.paintKitIndex+=1;
+        claim(package.generation,{faux(package.offers[0]),faux(package.offers[1]),faux(wrong)});
+        claim(package.generation+1,{faux(package.offers[0]),faux(package.offers[1]),faux(package.offers[3])});
+        claim(package.generation,{faux(package.offers[0]),faux(package.offers[0])|(1ull<<32),faux(package.offers[3])});
+        Check(fauxInventory->Items().Items().empty() && fauxInventory->Items().CarePackages().size()==1 && fauxSaves==0,
+              "faux claims with a wrong finish, stale generation or extra id bits are rejected");
+        claim(package.generation,{faux(package.offers[0]),faux(package.offers[1]),faux(package.offers[3])});
+        claim(package.generation,{faux(package.offers[0]),faux(package.offers[1]),faux(package.offers[3])});
+        // Faux ids carry definition + finish only (what the tile shows), so identical-looking offers are
+        // interchangeable: the first unused matching slot is granted.
+        const auto &owned=fauxInventory->Items().Items();
+        std::multiset<std::pair<std::uint32_t,std::uint32_t>> got,want;
+        for(const auto &item:owned)got.insert({item.defIndex,item.paintKitIndex});
+        for(const auto slot:{0,1,3})want.insert({package.offers[slot].defIndex,package.offers[slot].paintKitIndex});
+        Check(owned.size()==3 && got==want && fauxInventory->Items().CarePackages().empty() && fauxSaves==1,
+              "client faux ids of the displayed tiles claim exactly the three chosen offers once");
+        auto twins=package;twins.offers[1]=twins.offers[0];twins.offers[1].id=package.offers[1].id;
+        std::vector<bool> used(4,false);
+        Check(CareChoiceSlot(twins,faux(twins.offers[0]),used)==std::optional<std::size_t>{0} &&
+              (used[0]=true,CareChoiceSlot(twins,faux(twins.offers[0]),used))==std::optional<std::size_t>{1},
+              "identical offers stay independently selectable through their faux ids");
+    }
+    {
+        // Build 30's Armory-route claim was never sent by the game and is gone: an Armory redemption with an
+        // oversized cost is an ordinary rejected purchase and never touches the care package.
+        const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
+        auto routeInventory=std::make_shared<LiveInventory>(*disk);LocalGameCoordinator routeGc({});int routeSaves=0;
+        auto armory=std::make_shared<Armory>(*schema,11,30);
+        routeGc.EnableArmory(armory,routeInventory,[]{return 1ull;},[&]{++routeSaves;});
+        routeGc.EnableContainers(routeInventory,shared,[]{return 1ull;},[&]{++routeSaves;});
+        const auto package=routeInventory->Items().CarePackages().front();
+        PbWriter message;message.Varint(1,11);message.Varint(2,12345);message.Varint(3,0);
+        message.Varint(4,2000000000u+(package.generation%1000000u)*16u+11u);
+        std::vector<std::uint8_t> wire;WriteProtobufFrame(9209,{},message.bytes(),wire);
+        routeGc.SendMessage(9209|ProtobufMask,wire.data(),wire.size());
+        Check(routeInventory->Items().Items().empty() && routeInventory->Items().CarePackages().size()==1 && routeSaves==0 &&
+              armory->Balance()==30,"an Armory redemption never claims a care package or spends credits for one");
+    }
+    {
+        // Build 31: claims printed by the patched page to console.log (the user's build-30 line, verbatim shape).
+        const auto parsed=ParseCareConsoleClaims(
+            "10/22 23:40:29 [PanoramaScript] cs2_gc care: claim generation=1792574030 balance=3 tokens=3000000004186,3008680177725,3012884906436 known=false/false submitted=1 known=true\n"
+            "10/22 23:40:29 [PanoramaScript] cs2_gc care: claim via armory route: generation=1792574030 mask=13 cost=2009184493\n"
+            "cs2_gc care: claim generation=5 balance=3 tokens=1,2 known=x\n"
+            "cs2_gc care: claim generation=5 balance=3 tokens=1,2,x,3 known=x\n");
+        Check(parsed.size()==1 && parsed[0].generation==1792574030u &&
+              parsed[0].tokens==std::vector<std::uint64_t>{3000000004186ull,3008680177725ull,3012884906436ull},
+              "console claim lines parse; route lines and malformed token lists are ignored");
+        const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
+        auto consoleInventory=std::make_shared<LiveInventory>(*disk);LocalGameCoordinator consoleGc({});int consoleSaves=0;
+        consoleGc.EnableContainers(consoleInventory,shared,[]{return 1ull;},[&]{++consoleSaves;});
+        const auto package=consoleInventory->Items().CarePackages().front();
+        const std::function<void()> save=[&]{++consoleSaves;};
+        const auto token=[&](std::size_t slot)->std::uint64_t{ // the store's choice token for a slot
+            return 3000000000000ull+(std::uint64_t{slot}<<32)+(std::uint64_t{package.offers[slot].paintKitIndex}<<16)+package.offers[slot].defIndex;};
+        Check(!consoleGc.ClaimCareFromConsole(package.generation+1,{token(0),token(1),token(3)},save) &&
+              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(0),token(3)},save) &&
+              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1)},save) && consoleSaves==0,
+              "console claims with another package, a repeated choice or two choices grant nothing");
+        Check(consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1),token(3)},save) &&
+              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1),token(3)},save) &&
+              consoleInventory->Items().Items().size()==3 && consoleSaves==1,
+              "a console claim grants the three chosen offers once");
+    }
     const auto &offer=endpointInventory->Items().CarePackages().front();
     PbWriter request;request.Varint(1,offer.generation);request.Varint(2,0);
     for(unsigned i=0;i<3;++i)request.Varint(3,choiceTokens[i]);

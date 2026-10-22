@@ -30,6 +30,34 @@ class PreparationCaching(unittest.TestCase):
         (proxy/'cs2_gc_finish_ids.json').write_text('{"owned":30001}',encoding='utf-8')
         return game,proxy,helpers
 
+    def test_ui_helper_or_binary_changes_keep_the_schema_and_materials(self):
+        with tempfile.TemporaryDirectory() as root:
+            game,proxy,helpers=self.fixture(root)
+            (helpers/'native_care_packages.py').write_text('ui patch',encoding='utf-8')
+            cache=PreparationCache(proxy,{'enabled':True},helpers)
+            cache.save()
+            (helpers/'native_care_packages.py').write_text('ui patch v2',encoding='utf-8')
+            (proxy/'steam_api64.dll').write_bytes(b'new dll')
+            self.assertFalse(cache.hit())
+            self.assertTrue(cache.heavy_hit())  # only the quick UI steps re-run
+            cache.save()
+            (helpers/'native_finishes.py').write_text('generator v2',encoding='utf-8')
+            self.assertFalse(cache.heavy_hit())  # a material/schema helper changed: full rebuild
+            (helpers/'native_finishes.py').write_text('generator',encoding='utf-8')
+            self.assertTrue(cache.heavy_hit())
+            (game/'cs2_gc_native/pak01_000.vpk').write_bytes(b'damaged')
+            self.assertFalse(cache.heavy_hit())  # changed generated packs are never reused
+
+    def test_cache_written_before_the_split_rebuilds_once(self):
+        with tempfile.TemporaryDirectory() as root:
+            game,proxy,helpers=self.fixture(root)
+            cache=PreparationCache(proxy,{'enabled':True},helpers)
+            cache.save()
+            data=json.loads((proxy/FILENAME).read_text(encoding='utf-8'));data.pop('heavy')
+            (proxy/FILENAME).write_text(json.dumps(data),encoding='utf-8')
+            (proxy/'steam_api64.dll').write_bytes(b'new dll')
+            self.assertFalse(cache.heavy_hit())
+
     def test_warm_cache_reuses_outputs_and_detects_changed_or_missing_packs(self):
         with tempfile.TemporaryDirectory() as root:
             game,proxy,helpers=self.fixture(root)
@@ -112,6 +140,14 @@ class PreparationCaching(unittest.TestCase):
                 with contextlib.redirect_stdout(io.StringIO()):
                     prepare_native.prepare(proxy,force_rebuild=True)
                 self.assertEqual(actions['recipes'].call_count,2)
+                # A UI helper change re-runs the patch steps only; the schema/material stage is reused.
+                (helpers/'native_care_packages.py').write_text('changed',encoding='utf-8')
+                output=io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    prepare_native.prepare(proxy)
+                self.assertEqual(actions['recipes'].call_count,2)
+                self.assertEqual(actions['care_packages'].call_count,3)
+                self.assertIn('UI patch steps only',output.getvalue())
 
     def test_failed_build_never_saves_a_complete_preparation_cache(self):
         with tempfile.TemporaryDirectory() as root:

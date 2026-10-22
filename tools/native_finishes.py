@@ -749,6 +749,14 @@ def prepare(proxy_directory, config, items_game_text):
         if config.get('custom_cases', 1):
             case_kits, case_files, case_lists, case_specs, case_items, icons = native_skins.custom_cases(
                 items_game_text, kits, titles, kit_path, source, families, {n for n, _, _ in family_kits}, report=weapon_palettes, retained_titles=retained_titles)
+            # 22 Oct rebuild (gun_collections.py): the pools come from every gun finish, sorted by what its shader
+            # can do. The older generators above still run only so the skins they made keep rendering.
+            import gun_collections
+            gc_kits, gc_files, case_lists, case_specs, case_items, icons = gun_collections.build(
+                items_game_text, kits, titles, kit_path, source, families, lineup_path=proxy / gun_collections.LINEUP_FILE,
+                report=weapon_palettes.setdefault('gun_collections', {}))
+            case_kits += gc_kits
+            case_files.update(gc_files)
             atomic_write(proxy / 'cs2_gc_weapon_palettes.json', json.dumps(weapon_palettes,sort_keys=True,indent=1)+'\n')
             family_kits += case_kits
             files.update(case_files)

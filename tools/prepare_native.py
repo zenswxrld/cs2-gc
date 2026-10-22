@@ -32,6 +32,8 @@ def prepare(directory, force_rebuild=False):
     cached = not force_rebuild and cache.hit()
     if cached:
         print('Preparation cache: hit; reusing validated native packs, schema and collection materials.', flush=True)
+    elif not force_rebuild and cache.heavy_hit():
+        print('Preparation cache: schema and collection materials unchanged; re-running the UI patch steps only.', flush=True)
     else:
         print('Preparation cache: rebuild requested' if force_rebuild else 'Preparation cache: miss; ' + cache.reason, flush=True)
         step = time.perf_counter()

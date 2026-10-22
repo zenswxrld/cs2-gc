@@ -3,6 +3,7 @@ import argparse
 import contextlib
 from pathlib import Path
 import traceback
+import time
 from gameplay_config import load
 from native_tradeups import prepare as recipes
 from rotate_armory import prepare as armory
@@ -21,30 +22,46 @@ from native_mission_launch import prepare as missions
 from native_knife_reel import prepare as knife_reel
 from native_resources import ensure_first_game_path
 from vpk_signatures import update as signatures
+from preparation_cache import PreparationCache
 
 
-def prepare(directory):
+def prepare(directory, force_rebuild=False):
+    started = time.perf_counter()
     config = load(directory)
-    print('Recipes/catalogue: ' + recipes(directory, bool(config['mixed_stattrak_tradeups']), config), flush=True)
-    for name, action in [('Armory', armory), ('Scoreboard', scoreboard), ('Store', store),
+    cache = PreparationCache(directory, config)
+    cached = not force_rebuild and cache.hit()
+    if cached:
+        print('Preparation cache: hit; reusing validated native packs, schema and collection materials.', flush=True)
+    else:
+        print('Preparation cache: rebuild requested' if force_rebuild else 'Preparation cache: miss; ' + cache.reason, flush=True)
+        step = time.perf_counter()
+        print('Recipes/catalogue: ' + recipes(directory, bool(config['mixed_stattrak_tradeups']), config) +
+              ' [%.2fs]' % (time.perf_counter() - step), flush=True)
+    actions = [('Armory', armory), ('Scoreboard', scoreboard), ('Store', store),
                          ('Opening confirmation', confirmation), ('Item sales', sales),
                          ('Match results', results), ('Terminal offers', offers), ('Key picker', key_select),
-                         ('Stock XP/rating panels', stock_results), ('Main-menu promotion', mainmenu), ('Care packages', care_packages), ('Bot mission launch', missions), ('Black Market reel', knife_reel)]:
-        print(name + ': ' + action(directory, config), flush=True)
+                         ('Stock XP/rating panels', stock_results), ('Main-menu promotion', mainmenu), ('Care packages', care_packages), ('Bot mission launch', missions), ('Black Market reel', knife_reel)]
+    if not cached:
+        for name, action in actions:
+            step = time.perf_counter()
+            print(name + ': ' + action(directory, config) + ' [%.2fs]' % (time.perf_counter()-step), flush=True)
     try: print('Bot names: ' + bot_names(directory, config, reshuffle=True), flush=True)
     except (OSError, ValueError, KeyError) as error: print('Bot names skipped (bots keep their normal names): ' + str(error), flush=True)
     print(ensure_first_game_path(directory), flush=True)
     print(signatures(directory), flush=True)
+    cache.save()
+    print('Preparation time: %.2fs (%s).' % (time.perf_counter()-started, 'cache hit' if cached else 'rebuilt'), flush=True)
     print('Native preparation complete; safe to start CS2.', flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--proxy-dir', type=Path, required=True)
+    parser.add_argument('--rebuild', action='store_true', help='Ignore the preparation cache and regenerate all owned packs')
     args = parser.parse_args()
     with (args.proxy_dir / 'cs2_gc_prepare.log').open('w', encoding='utf-8', buffering=1) as output:
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-            try: prepare(args.proxy_dir)
+            try: prepare(args.proxy_dir, force_rebuild=args.rebuild)
             except Exception:
                 traceback.print_exc()
                 return 1

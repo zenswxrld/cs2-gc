@@ -128,7 +128,7 @@ class NativeFinishes(unittest.TestCase):
         self.assertIsNotNone(made)
         entry=report['aa_fade:ancient']
         self.assertTrue(is_new_colourway(entry['original_colors'],entry['themes']['Vapor / inverted']))
-        self.assertEqual(entry['policy'],'weapon-accent-gradient-v1')
+        self.assertEqual(entry['policy'],'weapon-accent-gradient-v2')
         _,blocks=kv3.read_resource(made[1]);guid,root=kv3.read_kv3(dict(blocks)['DATA'])
         _,oldblocks=kv3.read_resource(files[entry['source_material']+'_c'])
         olddata=dict(oldblocks)['DATA'];_,oldroot=kv3.read_kv3(olddata)

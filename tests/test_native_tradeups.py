@@ -87,7 +87,7 @@ class NativeTradeUps(unittest.TestCase):
             proxy = game / 'bin/win64'; proxy.mkdir(parents=True)
             info = game / 'csgo/gameinfo.gi'; info.parent.mkdir()
             native.atomic_write(info, GAMEINFO)
-            source = proxy / 'items_game.txt'; source.write_text(schema_text())
+            source = proxy / 'items_game.txt'; source.write_text(schema_text(), encoding='utf-8', newline='')
             self.assertIn('RESTART', native.prepare(proxy))
             self.assertIn('Mod\tcs2_gc_native', native.read_text(info))
             self.assertEqual(native.read_text(source), schema_text())

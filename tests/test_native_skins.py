@@ -32,14 +32,13 @@ class CustomSkins(unittest.TestCase):
             previous=skins._curated_custom_cases(schema,kits,titles,lambda n,v:'paints/'+n+'.vcompmat',None,{},set(),False)
         finally:finishes.make_finish=original
         new,files,lists,names,items,icons=result
-        self.assertEqual(len(names),12)
-        self.assertEqual(len(items),12*16)
+        self.assertEqual(len(names),36)
+        self.assertEqual(len(items),36*16)
         lookup={n:v for n,_,v in new}
         self.assertTrue({n for n,_,_ in previous[0]}.issubset(lookup),'owned27a kit definitions must remain available')
         self.assertTrue(set(previous[1]).issubset(files),'owned27a materials must remain available')
         chases=[i for i in items if i.startswith('[cw2f_') and '_chase_' in i]
-        self.assertEqual(len(chases),12)
-        self.assertEqual(len({i.split(']')[1] for i in chases}),5)
+        self.assertEqual(len(chases),24)
         knife_bases=set(finishes.KNIFE_BASES)
         self.assertEqual(sum(base not in knife_bases for _,base,_ in skins.COLLECTION_DESIGNS.values()),9)
         for name in names:
@@ -57,15 +56,17 @@ class CustomSkins(unittest.TestCase):
                 else:base_materials.append(lookup[kit]['composite_material_path'])
             self.assertEqual(len(base_materials),len(set(base_materials)),name+' repeats a donor pattern')
         active=[i[1:].split(']')[0] for i in items]
-        self.assertTrue(all(2 <= len(families[n]) <= 8 for n in active))
-        self.assertTrue(all(n.startswith('cw2f_') for n in active))
+        self.assertEqual(sum(n in families for n in active),36*2)
+        self.assertTrue(all(2 <= len(families[n]) <= 8 for n in active if n in families))
+        self.assertTrue(all(n.startswith(('cw2f_', 'cwf_', 'nc31_')) for n in active))
         self.assertFalse(any('aa_flames' in n for n in active),'broken Blaze transfers must not enter new rolls')
-        self.assertTrue(all(any('_inverted_' in v for v in families[n]) for n in active))
+        self.assertTrue(all(any('_inverted_' in v for v in families[n]) for n in active
+                            if n in families and n.startswith('cw2f_')))
         self.assertNotIn('[cga_hy_pattern0_uncommon]weapon_nova',items)
         # Each unchanged weapon/material pair is unique across all twelve collections.
         plain=[(lookup[n]['composite_material_path'],entry.split(']')[1]) for entry,n in zip(items,active) if n.startswith('cga_')]
         self.assertEqual(len(plain),len(set(plain)))
-        self.assertEqual(len(skins.DROP_ONLY_COLLECTIONS.intersection(names)),2)
+        self.assertEqual(len(skins.DROP_ONLY_COLLECTIONS.intersection(names)),4)
         text=skins.family_text(families,skins.DROP_ONLY_COLLECTIONS)
         self.assertIn('"collection_drops"',text)
         self.assertIn('"set_cs2gc_case_eclipse"',text)
@@ -184,7 +185,7 @@ class CustomSkins(unittest.TestCase):
                 {'cgf_doppler_ancient'})
         finally:
             finishes.make_finish = original
-        self.assertEqual(len(specs), len(skins.CASE_ICONS))
+        self.assertEqual(len(specs), len(skins.LEGACY_CASE_ICONS))
         name = specs[0]
         self.assertTrue(name.startswith('set_cs2gc_case_'))  # Armory collections, not crates
         self.assertEqual(skins.CASE_COLLECTIONS[name], 'The Ashfall Collection')

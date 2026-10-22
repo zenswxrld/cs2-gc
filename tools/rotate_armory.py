@@ -174,6 +174,9 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
         if (m_localRotationLogged !== offset) {
             m_localRotationLogged = offset;
             $.Msg('cs2_gc armory rotation hook: offset=' + offset + ' raw=[' + GameInterfaceAPI.GetSettingString('cs2_gc_rotation_offset') + ']');
+            // Tell the GC (SetEventFavorite reaches it; console aliases never do live) so the GC Armory and the missions
+            // rotate with this page: pseudo event 4300000000000000 + offset, on page load and after every Refresh.
+            if (offset >= 0 && offset <= 1000000) TournamentsAPI.SetTournamentFavorite(4300000000000000 + offset, true);
         }
         const cycle = Math.floor(now / m_localRotation.seconds) + Math.max(0, Math.min(1000000, offset));
         const pools = {};

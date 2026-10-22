@@ -1213,3 +1213,14 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   (`sell_sticker_*`, `sell_sticker_percent` now a cap). All Armory weapon cases cost `armory_case_price` (native Fever
   case was 2); collection/charm/sticker tiles never below 4/3/1. Audit after: no loops; returns ~45-55% cases/terminals,
   35-48% collections, 25-33% souvenirs, ~1-3% capsules, 20-30% sticker packs, 68-85% charms, trade-ups <=80%.
+- Build 35 (22 Oct): missions rotate with the Armory (user: "make the missions rotate with the armory"). native_missions
+  now writes a pool (cs2_gc_missions.bin: repeated {1 index, 2 template blob}; .json {'variants': [...]}) with every
+  combination of each playable recorded template's random lists (49 on the user's 9226.bin), interleaved by template.
+  The DLL (LocalGameCoordinator::MissionTick) serves variant (now / armory_rotation_seconds + offset) % pool size as the
+  9226 period, pushes the new 9226 when the cycle changes once the game has asked (9225), and the proxy writes
+  cs2_gc_mission_current.txt ("variant period") for mission_tracker.py (progress key "period:variant"). REFRESH ARMORY:
+  the page sends SetTournamentFavorite(4300000000000000 + offset) on page load and after each Refresh; the 9200 handler
+  sets the GC Armory rotation offset and the mission offset from it. Targets stay full; each step reached pays its XP and
+  ceil(xp/100) stars (cumulative "stars N" line in cs2_gc_mission_progress.txt -> Inventory::ApplyMissionStars,
+  persisted as mission_star_total). Armory passes auto-renew (armory_pass_auto_renew, default 1): a full 40-star track
+  restarts and carries over XP. "Add more missions" waits for the user to confirm tracking works live. Not verified live.

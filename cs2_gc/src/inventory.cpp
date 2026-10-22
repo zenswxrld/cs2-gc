@@ -48,9 +48,18 @@ bool Inventory::ApplyEarnedXp(std::uint64_t cumulativeXp)
     std::uint64_t stars = m_armoryCredits.value_or(0);
     for (auto &track : m_xpTracks)
     {
-        const auto previous = std::min(track, maxPassXp);
-        track = previous + static_cast<std::uint32_t>(std::min<std::uint64_t>(m_gameplay.stars_enabled ? delta : 0, maxPassXp - previous));
-        stars += track / m_trackXpPerStar - previous / m_trackXpPerStar;
+        std::uint64_t remaining = m_gameplay.stars_enabled ? delta : 0;
+        do
+        {
+            if (track >= maxPassXp && m_gameplay.armory_pass_auto_renew) track = 0; // a full pass starts over
+            const auto previous = std::min(track, maxPassXp);
+            const auto added = static_cast<std::uint32_t>(std::min<std::uint64_t>(remaining, maxPassXp - previous));
+            track = previous + added;
+            remaining -= added;
+            stars += track / m_trackXpPerStar - previous / m_trackXpPerStar;
+        } while (remaining && m_gameplay.armory_pass_auto_renew);
+        // A pass the page should keep drawing needs some XP (an empty track is not shown).
+        if (m_gameplay.armory_pass_auto_renew && track == 0) track = 1;
     }
     m_armoryCredits = static_cast<std::uint32_t>(std::min<std::uint64_t>(stars, UINT32_MAX));
     return true;
@@ -152,6 +161,7 @@ std::string Inventory::ToText() const
     out << "\t\"case_pity\"\t\"" << m_casePity << "\"\n";
     out << "\t\"match_reward_total\" \"" << m_matchRewardTotal << "\"\n";
     out << "\t\"console_star_total\" \"" << m_consoleStarTotal << "\"\n";
+    out << "\t\"mission_star_total\" \"" << m_missionStarTotal << "\"\n";
     out << "\t\"level_reward_total\" \"" << m_levelRewardTotal << "\"\n";
     out << "\t\"track_xp_per_star\" \"" << m_trackXpPerStar << "\"\n";
     if (!m_terminalPity.empty())
@@ -265,6 +275,9 @@ std::optional<Inventory> Inventory::FromText(std::string_view sourceText)
             return std::nullopt;
     if (const auto *stars = root->Find("console_star_total"))
         if (stars->block || !ParseNumber(stars->value, inventory.m_consoleStarTotal))
+            return std::nullopt;
+    if (const auto *stars = root->Find("mission_star_total"))
+        if (stars->block || !ParseNumber(stars->value, inventory.m_missionStarTotal))
             return std::nullopt;
 
     if (const auto *pities = root->Find("terminal_pity"))
@@ -576,6 +589,16 @@ std::optional<Inventory> Inventory::Load(const std::filesystem::path &path)
 
 namespace cs2_gc
 {
+bool Inventory::ApplyMissionStars(std::uint64_t cumulative)
+{
+    if (cumulative <= m_missionStarTotal) return false;
+    const auto delta = cumulative - m_missionStarTotal;
+    const auto balance = static_cast<std::uint64_t>(m_armoryCredits.value_or(0));
+    m_armoryCredits = static_cast<std::uint32_t>(balance + std::min<std::uint64_t>(delta, UINT32_MAX - balance));
+    m_missionStarTotal = cumulative;
+    return true;
+}
+
 bool Inventory::ApplyConsoleStars(std::uint64_t cumulative)
 {
     if (cumulative <= m_consoleStarTotal) return false;

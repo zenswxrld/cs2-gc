@@ -30,6 +30,8 @@ constexpr std::uint64_t FauxItemIdBase = 0xF000000000000000ull;
 constexpr std::uint64_t MissionTypeId = 16; // CSOAccountRecurringMission in the recorded welcome
 // Pseudo event ids of care claims (below 2^53, so Panorama numbers are exact): base + generation * 16 + slot mask.
 constexpr std::uint64_t CareEventBase = 4200000000000000ull;
+// Pseudo event ids of Armory refreshes: base + the page's rotation offset.
+constexpr std::uint64_t RotationEventBase = 4300000000000000ull;
 }
 // Maps one submitted id to an unused offer slot. Accepts the local choice token, or the client-side
 // faux id that Panorama derives for the displayed tile with GetFauxItemIDFromDefAndPaintIndex:
@@ -166,8 +168,11 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
         if (!store->Find(rule.reply))
             continue;
         SetHandler(rule.request, [store, reply = rule.reply](const FrameView &, LocalGameCoordinator &gc) {
-            if (reply == gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema && !gc.m_missionSchema.empty())
-                gc.Reply(reply, gc.m_missionSchema); // the local weekly rotation instead of the recorded fortnight
+            if (reply == gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema && !gc.m_missionPool.empty()) {
+                gc.MissionTickLocked(static_cast<std::uint64_t>(std::time(nullptr)));
+                gc.m_missionsRequested = true;
+                gc.Reply(reply, gc.m_missionSchema); // the Armory-rotation mission instead of the recorded fortnight
+            }
             else
                 gc.Reply(reply, *store->Find(reply));
         });
@@ -187,10 +192,43 @@ std::vector<std::vector<std::uint8_t>> LocalGameCoordinator::EncodedMissionProgr
     return objects;
 }
 
-void LocalGameCoordinator::SetMissions(std::vector<std::uint8_t> schema, std::vector<MissionProgress> progress)
+std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::MissionTick(std::uint64_t unixSeconds)
 {
     std::lock_guard lock(m_mutex);
-    if (!schema.empty()) m_missionSchema = std::move(schema);
+    return MissionTickLocked(unixSeconds);
+}
+
+std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::MissionTickLocked(std::uint64_t unixSeconds)
+{
+    if (m_missionPool.empty()) return std::nullopt;
+    const std::uint64_t interval = m_live ? std::max(10u, m_live->Items().Gameplay().armory_rotation_seconds) : 900u;
+    const auto cycle = unixSeconds / interval + m_missionOffset;
+    if (m_missionCycle == cycle) return std::nullopt;
+    m_missionCycle = cycle;
+    const auto variant = static_cast<std::uint32_t>(cycle % m_missionPool.size());
+    const auto period = static_cast<std::uint32_t>(unixSeconds / interval * interval);
+    PbWriter list; list.Varint(1, period); list.Bytes(2, m_missionPool[variant]);
+    PbWriter schema; schema.Message(1, list);
+    m_missionSchema = schema.bytes();
+    if (m_missionsRequested) // the game already asked: push the new rotation's mission
+        Reply(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema, m_missionSchema);
+    return std::pair{variant, period};
+}
+
+void LocalGameCoordinator::SetMissions(std::vector<std::uint8_t> pool, std::vector<MissionProgress> progress)
+{
+    std::lock_guard lock(m_mutex);
+    if (!pool.empty()) {
+        m_missionPool.clear();
+        PbReader reader(pool); PbField field;
+        while (reader.Next(field)) {
+            if (field.number != 1 || field.wire != 2) continue;
+            PbReader entry(field.bytes); PbField part; std::vector<std::uint8_t> blob;
+            while (entry.Next(part)) if (part.number == 2 && part.wire == 2) blob.assign(part.bytes.begin(), part.bytes.end());
+            if (!blob.empty()) m_missionPool.push_back(std::move(blob));
+        }
+        m_missionCycle.reset();
+    }
     const auto before = m_missionProgress;
     m_missionProgress = std::move(progress);
     if (!before) return; // first load: the welcome carries it
@@ -316,6 +354,33 @@ bool LocalGameCoordinator::ClaimCareFromConsole(std::uint32_t generation, const 
         selected.push_back(package.offers[*slot].id);
     }
     return CompleteCareClaimLocked(m_live, generation, selected, afterChange);
+}
+
+bool LocalGameCoordinator::ApplyMissionStars(std::uint64_t cumulativeStars, const std::function<void()> &afterChange)
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_live || !m_live->ApplyMissionStars(cumulativeStars)) return false;
+    PublishArmoryCreditsLocked();
+    if (afterChange) afterChange();
+    return true;
+}
+
+void LocalGameCoordinator::PublishArmoryCreditsLocked()
+{
+    const auto credits = m_live->Items().ArmoryCredits().value_or(0);
+    m_armoryCredits = credits;
+    if (m_armory) m_armory->SetBalance(credits);
+    std::lock_guard passLock(m_txnMutex);
+    if (auto pass = WithXpShopBalance(m_xpShop, credits))
+    {
+        m_xpShop = *pass;
+        SoSingleObject updated;
+        updated.typeId = static_cast<std::int32_t>(XpShopTypeId);
+        updated.data = *pass;
+        updated.version = ++m_soVersion;
+        updated.owner = m_config.owner;
+        Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+    }
 }
 
 bool LocalGameCoordinator::ApplyConsoleControl(std::uint64_t cumulativeStars, std::uint32_t rotationOffset,
@@ -732,6 +797,14 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
         [inventory,afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
             PbReader reader(frame.body); PbField field; std::uint64_t eventId=0;
             while (reader.Next(field)) if (field.number==1 && field.wire==0) eventId=field.value;
+            if (!reader.Failed() && eventId>=RotationEventBase && eventId<=RotationEventBase+1000000) {
+                // The Armory page's Refresh button: the GC and the missions follow its rotation offset.
+                gc.m_missionOffset=static_cast<std::uint32_t>(eventId-RotationEventBase);
+                if (gc.m_armory) gc.m_armory->SetRotationOffset(gc.m_missionOffset);
+                gc.MissionTickLocked(static_cast<std::uint64_t>(std::time(nullptr)));
+                if (gc.m_config.diagnostic) gc.m_config.diagnostic("armory refresh: rotation offset "+std::to_string(gc.m_missionOffset));
+                return;
+            }
             if (reader.Failed() || eventId<CareEventBase || eventId>=CareEventBase+(1ull<<36)) { ++gc.m_ignored; return; }
             const auto generation=static_cast<std::uint32_t>((eventId-CareEventBase)>>4);
             const auto mask=static_cast<std::uint32_t>((eventId-CareEventBase)&15u);

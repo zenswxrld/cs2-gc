@@ -107,6 +107,8 @@ public:
     std::optional<std::uint32_t> ArmoryCredits() const { return m_armoryCredits; }
     void SetArmoryCredits(std::uint32_t credits) { m_armoryCredits = credits; }
     bool ApplyConsoleStars(std::uint64_t cumulative);
+    // Stars paid by mission steps: the rewards helper's cumulative total, so a step never pays twice.
+    bool ApplyMissionStars(std::uint64_t cumulative);
     const LocalProgress &Progress() const { return m_progress; }
     bool ApplyEarnedXp(std::uint64_t cumulativeXp);
     std::uint64_t MatchRewardTotal() const { return m_matchRewardTotal; }
@@ -155,6 +157,7 @@ private:
     LocalProgress m_progress;
     std::uint64_t m_matchRewardTotal{};
     std::uint64_t m_consoleStarTotal{};
+    std::uint64_t m_missionStarTotal{};
     std::uint32_t m_levelRewardTotal{}; // profile levels already rewarded, excluding starting level 1
     std::uint32_t m_casePity{};
     std::map<std::uint32_t, std::uint32_t> m_terminalPity;

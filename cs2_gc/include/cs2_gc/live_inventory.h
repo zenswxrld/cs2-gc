@@ -34,6 +34,7 @@ public:
     std::optional<TerminalChange> AcceptTerminal(const Schema &schema, std::uint64_t gameId);
     void SetArmoryCredits(std::uint32_t credits) { m_inventory.SetArmoryCredits(credits); }
     bool ApplyConsoleStars(std::uint64_t cumulative) { return m_inventory.ApplyConsoleStars(cumulative); }
+    bool ApplyMissionStars(std::uint64_t cumulative) { return m_inventory.ApplyMissionStars(cumulative); }
     void SetArmoryPity(const std::string &collection, std::uint32_t misses) { m_inventory.SetArmoryPity(collection, misses); }
     std::optional<std::vector<InventoryItem>> GrantMatchRewards(const Schema &schema, std::uint64_t completed,
                                                                const RandomSource &random)

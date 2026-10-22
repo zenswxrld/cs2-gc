@@ -93,10 +93,15 @@ public:
                           RandomSource random, std::function<void()> afterChange);
     // Consume cumulative XP from the local GSI bridge, idempotently, on the game's callback thread.
     bool ApplyEarnedXp(std::uint64_t cumulativeXp, const std::function<void()> &afterChange);
-    // Weekly missions (native_missions.py / mission_tracker.py): the 9226 body served for 9225, and the progress
-    // shown as CSOAccountRecurringMission (SO type 16). Changed progress is pushed to the client.
+    // Missions rotating with the Armory (native_missions.py / mission_tracker.py). `pool`: repeated {1 index,
+    // 2 template blob}; progress is shown as CSOAccountRecurringMission (SO type 16), changes pushed to the client.
     struct MissionProgress { std::uint32_t mission{}, period{}, progress{}; };
-    void SetMissions(std::vector<std::uint8_t> schema, std::vector<MissionProgress> progress);
+    void SetMissions(std::vector<std::uint8_t> pool, std::vector<MissionProgress> progress);
+    // The mission of the current Armory rotation (cycle = now / armory_rotation_seconds + Refresh offset). Returns
+    // {variant, period} when it changed (the new schema is pushed once the game has asked for missions).
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> MissionTick(std::uint64_t unixSeconds);
+    // Stars for reached mission steps (the helper's cumulative "stars N" line).
+    bool ApplyMissionStars(std::uint64_t cumulativeStars, const std::function<void()> &afterChange);
     // A care-package claim the patched page printed to console.log (build 31): generation + the three choice tokens.
     bool ClaimCareFromConsole(std::uint32_t generation, const std::vector<std::uint64_t> &tokens,
                               const std::function<void()> &afterChange);
@@ -143,9 +148,15 @@ private:
                                  const std::vector<std::uint64_t> &selected,
                                  const std::function<void()> &afterChange);
     void NotifyCarePackage(); // caller holds m_mutex
+    void PublishArmoryCreditsLocked(); // caller holds m_mutex
     std::uint32_t m_sentCareGeneration{};
     std::vector<std::uint8_t> m_sentCareStore;
     std::vector<std::uint8_t> m_missionSchema;
+    std::vector<std::vector<std::uint8_t>> m_missionPool;
+    std::optional<std::uint64_t> m_missionCycle;
+    std::uint32_t m_missionOffset{};
+    bool m_missionsRequested{};
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> MissionTickLocked(std::uint64_t unixSeconds);
     std::optional<std::vector<MissionProgress>> m_missionProgress;
     std::vector<std::vector<std::uint8_t>> EncodedMissionProgress() const;
     void NotifyRewardDrops(const std::vector<InventoryItem> &drops); // caller holds m_mutex

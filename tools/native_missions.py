@@ -1,12 +1,13 @@
-"""Rotating weekly missions for the local GC (user: missions that change, and track progress).
+"""Missions that rotate with the Armory (user: "make the missions rotate with the armory").
 
 The recorded RecurringMissionSchema (cs2_gc_replay/9226.bin, the answer to 9225) has templates only for two weeks of
-October 2026. This builds a schedule from those templates: one mission per weekly period from four weeks ago to a year
-ahead, rotating through the playable templates. Every random choice in a template ("![a|b]" / "!![a|b]") is resolved
-to one option per period, keeping the template syntax, so the game shows exactly what the rewards helper counts.
+October 2026. This builds a pool of mission variants from the playable templates: every combination of each template's
+random choices ("![a|b]" / "!![a|b]" resolved to one option, keeping the syntax), interleaved by template. The DLL
+serves variant (cycle % pool size) for the current Armory rotation, so the game shows exactly what the rewards helper
+counts, and switches when the Armory rotates or is refreshed.
 
-Outputs (next to the proxy): cs2_gc_missions.bin (the 9226 body the DLL serves) and cs2_gc_missions.json (what each
-period's mission counts, read by gsi_rewards.MissionTracker). Template format: binary KeyValues, objects end with 0x0b.
+Outputs (next to the proxy): cs2_gc_missions.bin (pool: repeated {1: index, 2: template blob}) and
+cs2_gc_missions.json (what each variant counts). Template format: binary KeyValues, objects end with 0x0b.
 """
 from pathlib import Path
 import json
@@ -18,7 +19,6 @@ import time
 RECORDED = 'cs2_gc_replay/9226.bin'
 SCHEMA_FILE = 'cs2_gc_missions.bin'
 PLAN_FILE = 'cs2_gc_missions.json'
-WEEK = 7 * 86400
 # lobby_mapveto is Premier's map veto and rush_001 the Rush mode: neither launches as a local bot match.
 UNPLAYABLE = ('lobby_mapveto', 'rush')
 END, SUBKEY, STRING, INT32, FLOAT, UINT64, BYTE, ZERO = 0x0b, 0, 1, 2, 3, 7, 9, 10
@@ -159,22 +159,43 @@ def mapgroups_from(gamemodes_text):
     return groups
 
 
-def build(recorded, gamemodes_text, now=None, weeks_back=4, weeks_ahead=52):
-    """(9226 body bytes, plan dict). Deterministic for the same inputs and week."""
+def variants(entries, limit=40):
+    """Every combination of a template's random lists (each "![a|b]" fixed to one option), at most `limit`."""
+    texts = []
+    def collect(items):
+        for _, kind, value in items:
+            if kind == SUBKEY: collect(value)
+            elif kind == STRING:
+                for match in re.finditer(r'(!!?)\[([^\]]*)\]', value):
+                    if match.group(0) not in texts: texts.append(match.group(0))
+    collect(entries)
+    combos = [{}]
+    for text in texts:
+        options = list(dict.fromkeys(o for o in re.match(r'!!?\[([^\]]*)\]', text).group(1).split('|') if o))
+        combos = [dict(c, **{text: o}) for c in combos for o in options][:limit]
+    return [resolve(entries, lambda text, c=c: _Fixed(c[text])) for c in combos]
+
+
+class _Fixed:
+    def __init__(self, value): self.value = value
+    def choice(self, options): return self.value
+
+
+def build(recorded, gamemodes_text):
+    """(pool bytes, plan dict). The pool rotates with the Armory: the DLL serves variant (cycle % size) as the mission
+    of the current Armory rotation (cycle = now / armory_rotation_seconds + Refresh offset)."""
     templates = [t for t in recorded_templates(recorded) if playable(t[2])]
     if not templates: raise ValueError('The recorded mission schema has no playable templates')
-    base = min(period for period, _, _ in templates)
-    now = int(time.time() if now is None else now)
-    current = (now - base) // WEEK
     mapgroups = mapgroups_from(gamemodes_text)
-    body, plan = bytearray(), {'week': WEEK, 'periods': {}}
-    for index in range(current - weeks_back, current + weeks_ahead + 1):
-        period = base + index * WEEK
-        _, mission, entries = templates[index % len(templates)]
-        resolved = resolve(entries, lambda text: random.Random('%d:%s:%s' % (period, mission, text)))
-        blob = write_kv([(mission, SUBKEY, resolved)])
-        body += _field(1, _field(1, period) + _field(2, blob))
-        plan['periods'][str(period)] = describe(mission, resolved, mapgroups)
+    per_template = [[(mission, v) for v in variants(entries)] for _, mission, entries in templates]
+    pool = []
+    for round_index in range(max(len(v) for v in per_template)):  # interleave so consecutive missions differ
+        pool += [v[round_index % len(v)] for v in per_template if round_index < len(v)]
+    body = bytearray()
+    plan = {'variants': []}
+    for index, (mission, resolved) in enumerate(pool):
+        body += _field(1, _field(1, index) + _field(2, write_kv([(mission, SUBKEY, resolved)])))
+        plan['variants'].append(describe(mission, resolved, mapgroups))
     return bytes(body), plan
 
 
@@ -192,6 +213,4 @@ def prepare(proxy_directory, config):
     body, plan = build(recorded.read_bytes(), data.decode('utf-8', 'replace') if data else '')
     (proxy / SCHEMA_FILE).write_bytes(body)
     atomic_write(proxy / PLAN_FILE, json.dumps(plan, indent=1, sort_keys=True) + '\n')
-    week = plan['periods'].get(str(max(int(p) for p in plan['periods'] if int(p) <= time.time())), {})
-    return 'weekly rotation written; this week: mission %s (%s %s%s)' % (
-        week.get('mission'), week.get('kind'), week.get('weapon') or '', ' on ' + (week.get('map') or week.get('mapgroup') or ''))
+    return '%d mission variants written; they rotate with the Armory' % len(plan['variants'])

@@ -38,7 +38,7 @@ DEFAULTS = {
     'premier_bot_spread': 1200,
 
     'rewards_auto_start': 1,
-    'xp_enabled': 1, 'stars_enabled': 1, 'armory_xp_per_star': 400,
+    'xp_enabled': 1, 'stars_enabled': 1, 'armory_xp_per_star': 400, 'armory_pass_auto_renew': 1,
     'kill_xp': 5, 'headshot_xp': 3, 'mvp_xp': 25, 'match_complete_xp': 600,
     'match_drops_enabled': 1, 'match_drop_count': 3, 'match_case_percent': 50, 'match_skin_min_rarity': 3,
     'mixed_stattrak_tradeups': 1, 'souvenir_tradeups': 1, 'pity_enabled': 1, 'pity_soft_at': 10, 'pity_hard_at': 100,

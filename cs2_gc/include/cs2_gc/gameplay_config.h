@@ -52,6 +52,7 @@ struct GameplayConfig
     std::uint32_t rewards_auto_start{1};
     std::uint32_t xp_enabled{1}, stars_enabled{1};
     std::uint32_t armory_xp_per_star{400};
+    std::uint32_t armory_pass_auto_renew{1}; // user: a full pass starts over instead of needing a new purchase
     std::uint32_t kill_xp{5}, headshot_xp{3}, mvp_xp{25}, match_complete_xp{600};
     std::uint32_t match_drops_enabled{1}, match_drop_count{3}, match_case_percent{50}, match_skin_min_rarity{3};
     std::uint32_t mixed_stattrak_tradeups{1};

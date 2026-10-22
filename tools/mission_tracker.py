@@ -1,8 +1,8 @@
 """Count this week's mission from Game State Integration packets (bot matches never report quest progress).
 
-Plan: cs2_gc_missions.json (native_missions.py). Progress: cs2_gc_mission_progress.txt, one "mission period progress"
-line per period, read by the DLL (shown as the native CSOAccountRecurringMission progress). Reaching a points tier pays
-that tier's XP through the helper's normal XP total.
+Plan: cs2_gc_missions.json (native_missions.py) + cs2_gc_mission_current.txt (the DLL's current variant). Progress: cs2_gc_mission_progress.txt, one "mission period progress"
+line per period plus a cumulative "stars N" line, read by the DLL (shown as the native CSOAccountRecurringMission
+progress). Reaching a points tier pays that tier's XP through the helper's normal XP total and 1 star per 100 XP.
 
 Counting, local player only and only in the mission's mode on one of its maps:
   kill  - kills that rise while the mission weapon is the active weapon (bots count: offline there are no humans;
@@ -16,6 +16,7 @@ import json
 import time
 
 PROGRESS_FILE = 'cs2_gc_mission_progress.txt'
+CURRENT_FILE = 'cs2_gc_mission_current.txt'  # "variant period", written by the DLL each rotation
 
 
 class MissionTracker:
@@ -25,15 +26,14 @@ class MissionTracker:
         self.last = None
 
     def plan(self):
+        """(progress key, mission) of the current Armory rotation, from the DLL's cs2_gc_mission_current.txt."""
         try:
-            data = json.loads((self.directory / 'cs2_gc_missions.json').read_text(encoding='utf-8'))
-        except (OSError, ValueError):
+            variants = json.loads((self.directory / 'cs2_gc_missions.json').read_text(encoding='utf-8'))['variants']
+            index, period = (int(x) for x in (self.directory / CURRENT_FILE).read_text().split()[:2])
+        except (OSError, ValueError, KeyError):
             return None, None
-        now, week = self.now(), data.get('week', 604800)
-        for period, mission in data.get('periods', {}).items():
-            if int(period) <= now < int(period) + week:
-                return int(period), mission
-        return None, None
+        if not 0 <= index < len(variants): return None, None
+        return '%d:%d' % (period, index), variants[index]
 
     def observe(self, provider, player, game_map, stats):
         """XP earned by mission tiers for this packet (0 when nothing changed)."""
@@ -65,26 +65,30 @@ class MissionTracker:
             gained = 1
         return self.add(period, mission, gained) if gained > 0 else 0
 
-    def add(self, period, mission, gained):
-        key = str(period)
+    def add(self, key, mission, gained):
         goals, rewards = mission.get('points') or [0], mission.get('xp') or []
         before = self.state['missions'].get(key, 0)
         after = min(goals[-1], before + gained)
         self.state['missions'][key] = after
         xp = sum(reward for goal, reward in zip(goals, rewards) if before < goal <= after)
+        # User: missions also pay stars, 1 per 100 XP of each step reached (rounded up).
+        stars = sum(-(-reward // 100) for goal, reward in zip(goals, rewards) if before < goal <= after)
+        self.state['mission_stars'] = self.state.get('mission_stars', 0) + stars
         self.publish()
         print('Mission %s: %d/%d%s' % (mission.get('mission'), after, goals[-1],
-                                       ' (+%d XP)' % xp if xp else ''), flush=True)
+                                       ' (+%d XP, +%d stars)' % (xp, stars) if xp else ''), flush=True)
         return xp
 
     def publish(self):
         from native_tradeups import atomic_write
-        period, mission = self.plan()
-        lines = []
         try:
-            plan = json.loads((self.directory / 'cs2_gc_missions.json').read_text(encoding='utf-8'))['periods']
+            variants = json.loads((self.directory / 'cs2_gc_missions.json').read_text(encoding='utf-8'))['variants']
         except (OSError, ValueError, KeyError):
-            plan = {}
+            variants = []
+        lines = []
         for key, progress in sorted(self.state['missions'].items()):
-            if key in plan: lines.append('%d %s %d\n' % (plan[key]['mission'], key, progress))
+            period, _, index = key.partition(':')
+            if index.isdigit() and int(index) < len(variants):
+                lines.append('%d %s %d\n' % (variants[int(index)]['mission'], period, progress))
+        lines.append('stars %d\n' % self.state.get('mission_stars', 0))
         atomic_write(self.directory / PROGRESS_FILE, ''.join(lines))

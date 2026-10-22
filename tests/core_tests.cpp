@@ -3270,10 +3270,24 @@ void SavedProgressionAndServerItems()
           "the reward checkpoint and rank survive relaunch together");
     restored->ApplyEarnedXp(5001);
     Check(restored->Progress().level == 2 && restored->Progress().xp == 1, "profile levels roll over at 5000 XP");
+    {
+        // Renewing passes (default): a full pass starts over and keeps paying, extra XP carried into the next one.
+        Inventory renewing; renewing.SetArmoryCredits(0); renewing.XpTracks() = {1};
+        renewing.ApplyEarnedXp(15999);
+        Check(renewing.ArmoryCredits() == 40 && renewing.XpTracks() == std::vector<std::uint32_t>({16000}),
+              "a pass fills to 40 stars");
+        renewing.ApplyEarnedXp(15999 + 400);
+        Check(renewing.ArmoryCredits() == 41 && renewing.XpTracks() == std::vector<std::uint32_t>({400}),
+              "a full pass starts over and keeps paying");
+        renewing.ApplyEarnedXp(15999 + 400 + 16000 + 800);
+        Check(renewing.ArmoryCredits() == 41 + 42 && renewing.XpTracks() == std::vector<std::uint32_t>({1200}),
+              "XP beyond a full pass carries into the renewed one");
+    }
+    GameplayConfig oneShot; oneShot.armory_pass_auto_renew = 0; restored->SetGameplay(oneShot);
     restored->ApplyEarnedXp(1000000);
     Check(restored->Progress().level == 40 && restored->Progress().xp == 0 && restored->ArmoryCredits() == 110 &&
               restored->XpTracks() == std::vector<std::uint32_t>({16000, 16000}),
-          "passes stop at 40 stars each and profile stops at level 40");
+          "with armory_pass_auto_renew = 0 passes stop at 40 stars each and profile stops at level 40");
     LiveInventory finished(*restored);
     Check(finished.AddXpTrack(1) && finished.Items().XpTracks() == std::vector<std::uint32_t>{1},
           "completed passes can be replaced by a newly activated pass");
@@ -4428,6 +4442,19 @@ void NativeCarePackages()
         auto broken=favInventory->Items().ToText();
         broken.replace(broken.find("\"slot3\" \""),9,"\"slot3\" \"x");
         Check(!Inventory::FromText(broken),"a malformed claimed record is refused, not half-loaded");
+        // Missions rotate with the Armory: variant = (now / armory_rotation_seconds + Refresh offset) % pool size.
+        PbWriter pool;
+        for(std::uint8_t i=0;i<3;++i){PbWriter entry;entry.Varint(1,i);entry.Bytes(2,std::vector<std::uint8_t>{0,'7',0,i,0x0b});pool.Message(1,entry);}
+        favGc.SetMissions(pool.bytes(),{});
+        const std::uint64_t interval=favInventory->Items().Gameplay().armory_rotation_seconds,t=interval*3000+5;
+        const auto first=favGc.MissionTick(t);
+        Check(first && first->first==0 && first->second==interval*3000 && !favGc.MissionTick(t+1),"the mission follows the Armory cycle");
+        const auto next=favGc.MissionTick(t+interval);
+        Check(next && next->first==1 && next->second==interval*3001,"the next Armory rotation serves the next mission");
+        favourite(4300000000000000ull+1);
+        const auto refreshed=favGc.MissionTick(t+interval);
+        Check(refreshed && refreshed->first==2 && favInventory->Items().Items().size()==3,
+              "an Armory Refresh moves the missions on with the page and grants nothing");
     }
     {
         // Weekly missions: progress loaded before the welcome is not pushed; a change afterwards is, as SO type 16.

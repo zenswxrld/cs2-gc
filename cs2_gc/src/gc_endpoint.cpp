@@ -26,6 +26,8 @@ std::uint64_t CareChoiceToken(const InventoryItem &item, std::size_t slot)
         (static_cast<std::uint64_t>(item.paintKitIndex) << 16) + item.defIndex;
 }
 constexpr std::uint64_t FauxItemIdBase = 0xF000000000000000ull;
+// Pseudo event ids of care claims (below 2^53, so Panorama numbers are exact): base + generation * 16 + slot mask.
+constexpr std::uint64_t CareEventBase = 4200000000000000ull;
 }
 // Maps one submitted id to an unused offer slot. Accepts the local choice token, or the client-side
 // faux id that Panorama derives for the displayed tile with GetFauxItemIDFromDefAndPaintIndex:
@@ -670,6 +672,29 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                 selected.push_back(package.offers[*slot].id);
             }
             gc.CompleteCareClaimLocked(inventory,*generation,selected,afterChange);
+        });
+    // Build 32: the game's claim/Armory calls never send local claims and console.log is only written when CS2
+    // exits (the helper never sees it live), so the patched page marks a pseudo event "favourite"
+    // (CMsgGCCStrike15_v2_SetEventFavorite: eventid 1, is_favorite 2). Event ids in the CareEventBase range carry
+    // generation * 16 + the mask of the three chosen slots; any other event id is ignored as before.
+    SetHandler(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_SetEventFavorite,
+        [inventory,afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
+            PbReader reader(frame.body); PbField field; std::uint64_t eventId=0;
+            while (reader.Next(field)) if (field.number==1 && field.wire==0) eventId=field.value;
+            if (reader.Failed() || eventId<CareEventBase || eventId>=CareEventBase+(1ull<<36)) { ++gc.m_ignored; return; }
+            const auto generation=static_cast<std::uint32_t>((eventId-CareEventBase)>>4);
+            const auto mask=static_cast<std::uint32_t>((eventId-CareEventBase)&15u);
+            const auto &queue=inventory->Items().CarePackages();
+            if (gc.m_config.diagnostic) gc.m_config.diagnostic("care claim received (favorite route): generation="+std::to_string(generation)+
+                " mask="+std::to_string(mask)+" pending="+std::to_string(queue.empty()?0:queue.front().generation));
+            if (!inventory->Items().Gameplay().care_packages_enabled || queue.empty() || queue.front().generation!=generation ||
+                queue.front().offers.size()!=4 || (mask!=7 && mask!=11 && mask!=13 && mask!=14)) {
+                if (gc.m_config.diagnostic) gc.m_config.diagnostic("care claim rejected: no matching pending package or not three slots");
+                ++gc.m_ignored; return;
+            }
+            std::vector<std::uint64_t> selected;
+            for (unsigned slot=0;slot<4;++slot) if (mask&(1u<<slot)) selected.push_back(queue.front().offers[slot].id);
+            gc.CompleteCareClaimLocked(inventory,generation,selected,afterChange);
         });
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCDelete,
                [inventory, schema, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {

@@ -38,7 +38,8 @@ class NativeCarePackages(unittest.TestCase):
         script='''const assert=require('assert');let count=2,sent=0,pulses=0,weekly=0,updated=0,cancelled=0;
 let store={generation_time:10,redeemable_balance:3,items:['3000000000001','3004294967297','3008589934593','3012884901889']};
 const title={},vars={},panel={FindChildrenWithClassTraverse:()=>[title],SetDialogVariable:(key,value)=>vars[key]=value,RemoveClass:()=>{}};
-const claims=[];const $={GetContextPanel:()=>panel,Schedule:()=>1,CancelScheduled:()=>cancelled++,Msg:text=>claims.push(text)};
+const claims=[],favourites=[];const $={GetContextPanel:()=>panel,Schedule:()=>1,CancelScheduled:()=>cancelled++,Msg:text=>claims.push(text)};
+const TournamentsAPI={SetTournamentFavorite:(id,on)=>favourites.push([id,on])};
 const StoreAPI={StoreRedeemFreeRewards:()=>sent++};
 const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:()=>'faux',IsItemInfoValid:()=>true,IsValidItemID:()=>true};
 const _GetSelectedItems=()=>Array(count).fill({item_id:'3000000000001'}),_PulseItems=()=>pulses++;
@@ -46,6 +47,7 @@ const _GetSelectedItems=()=>Array(count).fill({item_id:'3000000000001'}),_PulseI
 OnRedeem(); assert.equal(sent,0);assert.equal(pulses,1);
 count=4;OnRedeem();assert.equal(sent,0);
 count=3;OnRedeem();assert.equal(sent,0,'local claims never call the native claim');assert.equal(claims.length,1);
+assert.deepEqual(favourites,[[4200000000000000+10*16+1,true]]);
 _UpdateTime();assert.equal(title.text,'CARE PACKAGE');assert.equal(vars['frame-badge-text'],'CHOOSE 3 OF 4 REWARDS');assert.equal(weekly,0);
 store={generation_time:11,redeemable_balance:3,items:store.items};OnInventoryUpdated();assert.equal(cancelled,1);
 store={generation_time:0,redeemable_balance:0,items:[]};m_redeemableBalance=0;_UpdateTime();assert.equal(vars['frame-badge-text'],'REWARDS CLAIMED');
@@ -122,7 +124,8 @@ store={items:['123']};_CreateItemPanel('123',0,false);assert.equal(classes['item
 let store={generation_time:7,redeemable_balance:3,items:['3000000004186','3004381212712','3008680177725','3012884906436']};
 let selected=['3000000004186','3004381212712','3012884906436'];
 const _GetSelectedItems=()=>selected.map(item_id=>({item_id}));const _PulseItems=()=>{};
-const $={Msg:text=>logs.push(text)};
+const $={Msg:text=>logs.push(text)};const favourites=[];
+const TournamentsAPI={SetTournamentFavorite:(id,on)=>favourites.push([id,on])};
 const StoreAPI={StoreRedeemFreeRewards:list=>sent.push(list)};
 const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:(def,paint)=>'F'+def+'p'+paint,
     IsItemInfoValid:id=>{if(throwing)throw new Error('x');return id[0]==='F';},IsValidItemID:id=>id[0]==='F'};
@@ -131,6 +134,9 @@ OnRedeem();
 // The exact line the DLL parses (ParseCareConsoleClaims); nothing goes to the native claim.
 assert.deepEqual(logs,['cs2_gc care: claim generation=7 balance=3 tokens=3000000004186,3004381212712,3012884906436']);
 assert.deepEqual(sent,[]);
+// Slots 0, 1 and 3 (tokens carry slot << 32): mask 0b1011, generation 7; exact as a Panorama number (< 2^53).
+assert.deepEqual(favourites,[[4200000000000000+7*16+11,true]]);
+assert.ok(Number.isSafeInteger(4200000000000000+4294967295*16+15));
 _RedemptionTimedOut();assert.ok(logs[logs.length-1].includes('claim timed out'));
 store={generation_time:1,redeemable_balance:2,items:['52275636417']};selected=['52275636417'];
 OnRedeem();assert.deepEqual(sent,['52275636417'],'official stores keep the native claim and item ids');

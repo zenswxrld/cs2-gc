@@ -4368,6 +4368,27 @@ void NativeCarePackages()
               consoleInventory->Items().Items().size()==3 && consoleSaves==1,
               "a console claim grants the three chosen offers once");
     }
+    {
+        // Build 32: the claim as a pseudo tournament favourite (CMsgGCCStrike15_v2_SetEventFavorite, 9200).
+        const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
+        auto favInventory=std::make_shared<LiveInventory>(*disk);LocalGameCoordinator favGc({});int favSaves=0;
+        favGc.EnableContainers(favInventory,shared,[]{return 1ull;},[&]{++favSaves;});
+        const auto package=favInventory->Items().CarePackages().front();
+        const auto favourite=[&](std::uint64_t eventId) {
+            PbWriter message;message.Varint(1,eventId);message.Varint(2,1);
+            std::vector<std::uint8_t> wire;WriteProtobufFrame(9200,{},message.bytes(),wire);
+            favGc.SendMessage(9200|ProtobufMask,wire.data(),wire.size());
+        };
+        const std::uint64_t base=4200000000000000ull+std::uint64_t{package.generation}*16u;
+        favourite(1001);favourite(base+3);favourite(base+15);favourite(base+16+11);
+        Check(favInventory->Items().Items().empty() && favInventory->Items().CarePackages().size()==1 && favSaves==0,
+              "real events, two/four slots or another package's generation grant nothing");
+        favourite(base+11);favourite(base+11);
+        std::set<std::uint64_t> got,want{package.offers[0].id,package.offers[1].id,package.offers[3].id};
+        for(const auto &item:favInventory->Items().Items())got.insert(item.id);
+        Check(got==want && favInventory->Items().CarePackages().empty() && favSaves==1,
+              "a favourite-route claim grants the three chosen slots once");
+    }
     const auto &offer=endpointInventory->Items().CarePackages().front();
     PbWriter request;request.Varint(1,offer.generation);request.Varint(2,0);
     for(unsigned i=0;i<3;++i)request.Varint(3,choiceTokens[i]);

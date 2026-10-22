@@ -1,3 +1,16 @@
+# Build 32 (Claude) - care-package claim as a tournament favourite
+
+Build 31 log: the page printed the claim line but the DLL never saw it. The rewards helper's own log shows
+"console.log does not exist after a minute" every session: CS2 writes csgo/console.log only at exit, so NO console-log
+channel (build 31's PollCareClaims, Codex's care bridge, the console star controls) works live.
+GameTracking-CS2 (609b2aca32e129e094990e163771d6b86880f65f) has no AsyncWebRequest; mainmenu_watch_eventsched.js calls
+TournamentsAPI.SetTournamentFavorite(Number(event_id), bool), and Protobufs/cstrike15_gcmessages.proto defines
+CMsgGCCStrike15_v2_SetEventFavorite { uint64 eventid = 1; bool is_favorite = 2; } (9200; 9201/9203 already flow at startup).
+The page now calls SetTournamentFavorite(4200000000000000 + generation*16 + mask, true); the GC's new 9200 handler claims
+(CompleteCareClaimLocked) only for ids in that range with a matching front generation and exactly three slots.
+Live test: GC log must show ">> GAME->GC type=9200" and "care claim received (favorite route)". If the game validates
+event ids and sends nothing, the log shows no 9200.
+
 # Build 31 (Claude) - care-package claim from console.log; main merged
 
 Build 30 log: the page called MissionsAPI.ActionRedeemOperationGoods with the marker cost, and the game sent no 9209,

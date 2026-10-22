@@ -262,7 +262,7 @@ std::optional<ArmoryRedeemable> Armory::HowlOffer(const GameplayConfig &config) 
 {
     if (!config.armory_rotation_enabled || !config.armory_howl_enabled) return std::nullopt;
     const auto item = m_schema.ResolveLootItem(HowlEntry);
-    if (!item || item->kind != LootKind::Skin || m_schema.SkinRarity(item->weaponDefIndex, item->paintKitIndex) != 7)
+    if (!item || item->kind != LootKind::Skin || m_schema.SkinRarity(item->weaponDefIndex, item->paintKitIndex) != 7u)
         return std::nullopt;
     ArmoryRedeemable offer;
     offer.campaignId = m_campaignId;

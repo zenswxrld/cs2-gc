@@ -233,9 +233,9 @@ std::string Inventory::ToText() const
     return out.str();
 }
 
-std::optional<Inventory> Inventory::FromText(std::string_view text)
+std::optional<Inventory> Inventory::FromText(std::string_view sourceText)
 {
-    const auto parsed = ParseKeyValues(text);
+    const auto parsed = ParseKeyValues(sourceText);
     const KvNode *root = parsed ? parsed->Find("inventory") : nullptr;
     const KvNode *items = root ? root->Find("items") : nullptr;
     if (!root || !root->block || !items || !items->block)

@@ -49,6 +49,23 @@ store={generation_time:9,redeemable_balance:2,items:['123']};count=2;OnRedeem();
 '''
         self.run_js(script)
 
+
+    def test_local_claim_transports_selected_slots_not_preview_ids(self):
+        script = """const assert=require('assert');let commands=[],popups=0,nonce='a'.repeat(32);
+const store={generation_time:4294967295,items:['3000000000001','3004294967297','3008589934593','3012884901889']};
+const GetPersonalStore=()=>store;let picks=[0,2,3];
+const _GetSelectedItems=()=>picks.map(i=>({item_id:store.items[i]}));
+const GameInterfaceAPI={GetSettingString:()=>nonce,ConsoleCommand:c=>commands.push(c)};
+const UiToolkitAPI={ShowGenericPopup:()=>popups++};
+""" + care.HELPER + """
+assert.equal(_SendLocalCareClaim(),true);
+assert.equal(commands.length,1);
+assert.equal(commands[0], 'setinfo cs2gc_'+'a'.repeat(32)+'_care_4294967295_13 0; incrementvar cs2gc_'+'a'.repeat(32)+'_care_4294967295_13 0 1 1');
+picks=[0,0,3];assert.equal(_SendLocalCareClaim(),false);assert.equal(commands.length,1);
+picks=[0,2,3];nonce='';assert.equal(_SendLocalCareClaim(),false);assert.equal(popups,1);assert.equal(commands.length,1);
+"""
+        self.run_js(script)
+
     def test_catalogue_preview_decode_preserves_unique_choice_tokens(self):
         script="""const assert=require('assert');let itemId='3008590589965',seen;
 const InventoryAPI={GetFauxItemIDFromDefAndPaintIndex:(def,paint)=>{seen=[def,paint];return 'faux';}};

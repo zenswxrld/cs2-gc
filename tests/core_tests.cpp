@@ -4334,7 +4334,7 @@ void NativeCarePackages()
               decoded->nonce==nonce,"care transport preserves exact integer choices");
         for (const auto &bad : {"0 123 13 "+nonce, "42 0 13 "+nonce, "42 123 15 "+nonce,
              "4294967296 123 13 "+nonce, "42 4294967296 13 "+nonce, "42 123 13 "+nonce+" extra",
-             "42 123 13 nope", "42 123 13 "+nonce+"\n42 124 7 "+nonce})
+             std::string{"42 123 13 nope"}, "42 123 13 "+nonce+"\n42 124 7 "+nonce})
             Check(!DecodeLocalCareRequest(bad),"care request decoder rejects invalid/sessionless data");
     }
     Inventory opens;const auto crate=opens.Add({0,60});

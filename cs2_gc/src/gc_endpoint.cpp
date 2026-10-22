@@ -1281,18 +1281,18 @@ bool LocalGameCoordinator::CompleteCareClaimLocked(std::shared_ptr<LiveInventory
     const std::function<void()> &afterChange)
 {
     const auto chosen=inventory->ClaimCarePackage(generation,selected);
-            if (!chosen) {
-                if(m_config.diagnostic)m_config.diagnostic("care claim rejected: stale generation or duplicate/partial choices");
-                ++m_ignored;return false;
-            }
-            // Preview descriptors never enter the econ cache. Only the three chosen owned items are published.
-            if (afterChange) afterChange();
-            NotifyCarePackage(); NotifyRewardDrops(*chosen);
-            PbWriter notification;
-            for(const auto &item:*chosen) notification.Varint(1,CustomItemIdBase+item.id);
-            notification.Varint(2,gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemFreeReward);
-            Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,notification.bytes());
-            if(m_config.diagnostic)m_config.diagnostic("care package: three chosen rewards granted and saved");
+    if (!chosen) {
+        if(m_config.diagnostic)m_config.diagnostic("care claim rejected: stale generation or duplicate/partial choices");
+        ++m_ignored;return false;
+    }
+    // Preview descriptors never enter the econ cache. Only the three chosen owned items are published.
+    if (afterChange) afterChange();
+    NotifyCarePackage(); NotifyRewardDrops(*chosen);
+    PbWriter notification;
+    for(const auto &item:*chosen) notification.Varint(1,CustomItemIdBase+item.id);
+    notification.Varint(2,gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemFreeReward);
+    Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,notification.bytes());
+    if(m_config.diagnostic)m_config.diagnostic("care package: three chosen rewards granted and saved");
     return true;
 }
 

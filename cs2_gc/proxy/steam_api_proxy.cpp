@@ -995,7 +995,7 @@ State &Init()
                                  "the item); saved to cs2_gc_inventory.txt");
                     std::uint32_t campaign = 0;
                     for (const ArmoryRedeemable &goods : schema->ArmoryRedeemables())
-                        campaign = std::max(campaign, goods.campaignId);
+                        campaign = (std::max)(campaign, goods.campaignId);
                     if (!campaign)
                         s.log->Write("armory: items_game.txt lists no Armory goods; purchases stay unanswered");
                     else

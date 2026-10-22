@@ -25,6 +25,16 @@ HELPERS = '''
         for (let i = 0; i < _m_elItemList.selectedItemCount; i++) ids.push(_m_elItemList.GetSelectedItemId(i).toString());
         return ids;
     }
+    // User: "can we make it show only sellable items". The native list has no sale filter, so tiles worth 0 stars
+    // (default loadout items, storage units, tools) are hidden; re-checked while open since the list refills.
+    function _LocalSellableOnly() {
+        if (!_m_cp.IsValid() || !SelectItemForCapability.oCapabilityInfo.popupVisible) return;
+        _m_elItemList.Children().forEach(tile => {
+            const sellable = _LocalSalePrice(tile.GetAttributeString('itemid', '0')) > 0;
+            if (tile.visible !== sellable) tile.visible = sellable;
+        });
+        $.Schedule(0.25, _LocalSellableOnly);
+    }
     function _LocalMultiSell(ids) {
         const prices = _LocalMultiSellPrices(ids);
         if (!prices.sellable.length) {
@@ -58,7 +68,7 @@ def patch(source, data):
         'init': '        if (%s) SelectItemForCapability.oCapabilityInfo.bIsMultiSelect = true;\n' % IS_SELL,
         'title': ("        if (%s) { _m_cp.AddClass('PopupSelectItemForCapability_casketstore'); "
                   "_m_cp.SetDialogVariable('title', 'Select items to sell for stars'); }\n") % IS_SELL,
-        'filter': "        if (%s) capabilityFilter = '';  // the whole inventory; unsellable picks are kept\n" % IS_SELL,
+        'filter': "        if (%s) { capabilityFilter = ''; $.Schedule(0.05, _LocalSellableOnly); }  // sellable tiles only\n" % IS_SELL,
         'display': ("        if (%s) {\n"
                     "            const total = _LocalMultiSellPrices(_LocalSelectedIds()).total;\n"
                     "            const button = _m_cp.FindChildInLayoutFile('id-popup-select-multi-item-btn');\n"

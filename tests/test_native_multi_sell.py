@@ -58,12 +58,13 @@ class MultiSell(unittest.TestCase):
     def test_storage_picker_sells_the_selected_items_after_confirmation(self):
         script = '''const assert = require('assert'); let closed = 0, stored = 0, confirm, ok; const filters = [], deleted = [];
 const selected = []; const caption = {paneltype: 'Label', text: 'Store', Children: () => []};
-const panels = {'id-popup-select-item-list': {get selectedItemCount() { return selected.length; }, GetSelectedItemId: i => selected[i],
+const panels = {'id-popup-select-item-list': {Children: () => tiles, get selectedItemCount() { return selected.length; }, GetSelectedItemId: i => selected[i],
   OnItemActivated: id => { const at = selected.indexOf(id); at < 0 ? selected.push(id) : selected.splice(at, 1); }},
  'id-popup-select-multi-item-display': {}, 'id-popup-select-multi-item-btn': {Children: () => [{paneltype: 'Panel', Children: () => [caption]}]}};
-const root = {FindChildInLayoutFile: id => panels[id], GetAttributeString: () => 'cs2gc_sell', AddClass: c => root.cls = c,
+const root = {IsValid: () => true, FindChildInLayoutFile: id => panels[id], GetAttributeString: () => 'cs2gc_sell', AddClass: c => root.cls = c,
  SetDialogVariable: (k, v) => root[k] = v};
-const $ = {GetContextPanel: () => root, Localize: s => s};
+const scheduled = []; const $ = {GetContextPanel: () => root, Localize: s => s, Schedule: (t, fn) => scheduled.push(fn)};
+const tiles = ['1000000000001', '1000000000003', '0'].map(id => ({visible: true, GetAttributeString: () => id}));
 const rarity = {'1000000000001': 3, '1000000000002': 5, '1000000000003': 0};
 const InventoryAPI = {GetItemDefinitionName: () => 'weapon', GetItemDefinitionIndexFromDefinitionName: () => 7,
  GetItemRarity: id => rarity[id], DeleteItem: id => deleted.push(id)};
@@ -76,6 +77,8 @@ Init();
 assert.equal(SelectItemForCapability.oCapabilityInfo.bIsMultiSelect, true);
 assert.deepEqual(filters, ['']);  // the whole inventory
 assert.equal(root.title, 'Select items to sell for stars');
+scheduled.shift()();  // the list filled: only sellable tiles stay visible, and it keeps checking
+assert.deepEqual(tiles.map(t => t.visible), [true, false, false]); assert.equal(scheduled.length, 1);
 const tile = {FindAncestor: () => panels['id-popup-select-item-list']};
 for (const id of ['1000000000001', '1000000000002', '1000000000003']) _OnItemTileActivated(tile, id);
 assert.equal(closed, 0); assert.equal(selected.length, 3);

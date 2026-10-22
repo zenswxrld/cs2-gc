@@ -50,8 +50,9 @@ def main():
         print("DONOR " + json.dumps(row,ensure_ascii=True))
     for name, (index, values) in kits.items():
         title = titles.get(name,"")
-        if title in ("Rainbow Spoon", "Crimson Foil"):
+        if title in ("Rainbow Spoon", "Crimson Foil") or name in ("aq_titanium_rainbow_galilar", "gsch_sport_ump45"):
             print("REQUIRED " + json.dumps(dict(donor=name,index=index,title=title,values=values)))
+            print("TOKENS " + json.dumps([line for line in english.splitlines() if name.lower() in line.lower() or "rainbow spoon" in line.lower() or "crimson foil" in line.lower()]))
 
 if __name__ == "__main__":
     main()

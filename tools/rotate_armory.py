@@ -1,6 +1,7 @@
 """Prepare the installed native Armory script for matching per-category rotation."""
 import argparse
 import json
+import re
 from pathlib import Path
 from gameplay_config import load
 
@@ -9,6 +10,14 @@ END = '''            _MakeNavButton(element);
         });'''
 INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_gc_gameplay.cfg.
     const m_localRotation = __SETTINGS__;
+    function _LocalSetCollectionIcon(image, name) {
+        if (String(name).startsWith('set_cs2gc_')) {
+            image.SetImage('file://{images}/econ/set_icons/' + name + '.png');
+            return;
+        }
+        IconUtil.SetupFallbackItemSetIcon(image, name);
+        IconUtil.SetItemSetSVGImage(image, name);
+    }
     function _LocalOpenEntry(entry) {
         // The stock InventoryUpdate re-activates whichever tab button is checked. Check this entry's button too,
         // otherwise the next inventory update jumps back to an older tab.
@@ -284,6 +293,10 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
             const main = root.FindChildInLayoutFile('id-nav-show-main-tiles-btn');
             if (main) $.DispatchEvent('Activated', main, 'mouse');
         }
+        if (m_localRotationCycle !== cycle) {
+            const visibleCollections = entries.filter(entry => view.indexOf(entry.item_name) !== -1 && m_localRotation.categories[entry.item_name] === 'collection');
+            $.Msg('cs2_gc armory visible collections: ' + visibleCollections.map(entry => entry.item_name + '=' + (entry.callout || '')).join(', '));
+        }
         m_localRotationCycle = cycle;
         m_localRotationTick = $.Schedule(1, _LocalRotationRefresh);
     }
@@ -293,6 +306,15 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
 PREPARE = '''        // Resolve each tile from its own native row, without inherited thumbnails or shared model artwork.
         aShopItemsData.forEach(entry => {
             const slot = m_localRotation.categories[entry.item_name];
+            const collectionTitle = m_localRotation.collectionNames?.[entry.item_name];
+            if (collectionTitle) {
+                entry.callout = collectionTitle;
+                entry.ui_set_image = String(entry.item_name).replace('lootlist:', '');
+                entry.lootlist = _GetLootListForReward(entry.item_name);
+                entry.entry_type = 'lootlist'; entry.lootlist_item_type = 'weapon';
+                entry.ui_order = '2'; entry.tile_width = m_tileWidth; entry.tile_height = m_tileHeight;
+                entry.on_item_activate = _OpenFullScreenInspectItem;
+            }
             entry.local_terminal = slot === 'terminal';
             entry.local_souvenir = slot === 'souvenir';
             entry.local_direct_case = entry.item_name === 'crate_cs2gc_black_market' || entry.item_name === 'crate_cs2gc_gauntlet';
@@ -443,9 +465,13 @@ def patch(source, config, categories=None, agents=None, previews=None):
     if source.count(ANCHOR) != 1 or source.count(END) != 1 or 'const m_elContentPanel =' not in source:
         raise ValueError('Target xpshop.js differs from the inspected build')
     if 'm_localRotation' in source: raise ValueError('Source is already patched')
+    from native_skins import CASE_COLLECTIONS
+    collection_names = {'lootlist:' + name: title for name, title in CASE_COLLECTIONS.items()
+                        if (categories or {}).get('lootlist:' + name) == 'collection'}
     settings = {'enabled': bool(config['armory_rotation_enabled']),
                 'seconds': config['armory_rotation_seconds'], 'slots': config['armory_rotation_slots'],
                 'categories': categories or {}, 'agents': agents or [], 'previews': previews or {},
+                'collectionNames': collection_names,
                 'counts': {slot: config.get('armory_' + slot + '_slots', 1) for slot in
                            ('collection', 'case', 'capsule', 'charm', 'sticker', 'limited', 'agent', 'terminal', 'souvenir')}}
     source = source.replace('    function _UpdateShopGoods(m_nTrack) {',
@@ -454,7 +480,7 @@ def patch(source, config, categories=None, agents=None, previews=None):
     empty = '        if (!count) {\n            itemsList.push(rewardId);'
     if previews and source.count(empty) == 1:
         # Custom collections (native_finishes PREVIEW_FILE): the native count is 0 for their lootlist rewards.
-        source = source.replace(empty, '''        const localPreview = !count && m_localRotation.previews[String(rewardId).replace('lootlist:', '')];
+        source = source.replace(empty, '''        const localPreview = m_localRotation.previews[String(rewardId).replace('lootlist:', '')];
         if (localPreview) {
             localPreview.forEach(entry => itemsList.push(InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
                 InventoryAPI.GetItemDefinitionIndexFromDefinitionName(entry[0]), entry[1])));
@@ -465,6 +491,9 @@ def patch(source, config, categories=None, agents=None, previews=None):
         source = patch_collection_tile_models(source)
     source = source.replace(END, END + '''
         m_localRotationItems = aShopItemsData;
+        const custom = aShopItemsData.filter(entry => m_localRotation.collectionNames[entry.item_name]);
+        const missing = Object.keys(m_localRotation.collectionNames).filter(name => !aShopItemsData.some(entry => entry.item_name === name));
+        $.Msg('cs2_gc armory catalogue: custom=' + custom.length + '/' + Object.keys(m_localRotation.collectionNames).length + ' missing=[' + missing.join(',') + ']');
         if (m_localRotationTick) $.CancelScheduled(m_localRotationTick);
         _LocalRotationRefresh();''', 1)
     purchase = 'MissionsAPI.ActionRedeemOperationGoods(m_nTrack, ShopEntry.shop_index,'
@@ -473,6 +502,14 @@ def patch(source, config, categories=None, agents=None, previews=None):
         source = source.replace(purchase, "if (m_localRotation.enabled && m_localRotationActive.indexOf(ShopEntry.item_name) === -1) return;\n                " + purchase, 1)
         source = source.replace('element.items_in_row = itemsInRows[element.ui_order];', "element.items_in_row = element.ui_order === '2' ? 3 : 4;")
         source = patch_previews(source)
+        # Custom emblems are packed PNG textures, not compiled SVG resources.
+        source = re.sub(r'IconUtil\.SetupFallbackItemSetIcon\(elImage, ShopEntry\.ui_set_image\);\s*'
+                        r'IconUtil\.SetItemSetSVGImage\(elImage, ShopEntry\.ui_set_image\);',
+                        '_LocalSetCollectionIcon(elImage, ShopEntry.ui_set_image);', source)
+        # Preserve the stock expression, but let authoritative custom names win
+        # even when a client row carries stale donor metadata.
+        source = source.replace("elTile.SetDialogVariable('name', ShopEntry.callout ? $.Localize(ShopEntry.callout) : ShopEntry.item_name);",
+            "elTile.SetDialogVariable('name', m_localRotation.collectionNames[ShopEntry.item_name] || (ShopEntry.callout ? $.Localize(ShopEntry.callout) : ShopEntry.item_name));")
         source = source.replace("elTile.SetDialogVariable('name', ShopEntry.callout ? $.Localize(ShopEntry.callout) : ShopEntry.item_name);",
             "elTile.SetDialogVariable('name', ShopEntry.callout ? $.Localize(ShopEntry.callout) : (ShopEntry.lootlist.length === 1 ? InventoryAPI.GetItemName(ShopEntry.lootlist[0]) : ShopEntry.item_name.replace('lootlist:', '')));")
     return source

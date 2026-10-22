@@ -1,3 +1,49 @@
+# Build 28 (Claude) - custom gun collections rebuilt from every gun finish; care-package claim ids
+
+DLL tag claude-20261022-28 (new DLL: care-package claim). Branch claude/collections-rebuild from main.
+
+## Why the old pools were wrong (from the user's cs2_gc_skin_study.zip, study_skins.py)
+- 1318 gun finishes inspected. What the game renders = the material's params overridden by the composite's
+  loose variables (modern finishes keep g_vColor*, g_tPattern... in "exposed_params"; the vmat is a shared template).
+- F_PAINT_STYLE 6 custom paint (373 finishes) has NO colour params; 7 patina, 8 gunsmith and F_CASE_HARDENING take
+  colour from textures. Recolouring them = identical copy ("copies with 0 change"). Codex pools had 53 such entries.
+- g_bIgnoreWeaponSizeScale=1 / g_bOverrideDefaultMasks=1 (per-gun paint-by-number masks) / styles 6+8 = artwork laid
+  out for one gun. Codex pools had 80 entries of that artwork on other guns ("super broken").
+- The old detail recolour kept neutral greys, so finishes whose visible parts are grey barely changed.
+
+## New generator: tools/gun_collections.py (wired in native_finishes.prepare after native_skins.custom_cases)
+- classify(): recolourable = style 0-5 with four colours and no case hardening; transferable = no gun layout flag,
+  no gun in the name. 594 finishes qualify; ~554 used once each across the 36 collections (15 reused once in another
+  collection, never an identical look).
+- Slots: chase = colour family (6 palette colours) on AK/M4A4/M4A1-S/AWP/Deagle, best anodized finishes first (chases
+  are planned before all other slots); 6 chases reuse the knife-finish families (cgf_*: doppler, gamma, marble fade,
+  fade, tiger tooth, damascus). Classified: 1 family + 1 fixed recolour; Restricted 3 fixed; Mil-Spec 3 fixed +
+  1 original-colour transfer; Industrial 4 fixed + 2 transfers. Transfers only onto guns that pattern never shipped on.
+- Recolour (make_recolour) writes the colours where the composite binds them (exposed params, else the material),
+  uses native_finishes.recolor (all four colours, greys tinted) and refuses changes below MIN_CHANGE.
+- IDENTITIES: one palette per collection spread round the colour wheel (not all red).
+- Lineup saved in game/bin/win64/cs2_gc_gun_collections.json (version 1) and reused; "history" keeps every kit it
+  ever named defined. Kit names gc3f_/gc3v_/gc3r_/gc3t_, materials gc3m_<donor>_<theme>.
+- The older Codex generators (custom_cases chain) still run only so owned skins keep rendering; their pools are
+  no longer published. Knives, gloves, Black Market and Gauntlet are untouched (user: "dont touch the knives and gloves").
+- Offline dry run on the user's data: 36/36 complete, no duplicate looks, no per-gun art on other guns, no copies.
+  NOT verified in game.
+
+## Care package (subagent investigation)
+- The user's log has no 9219 at all; after the welcome the client sent nothing to the GC. Original script: OnRedeem
+  calls StoreAPI.StoreRedeemFreeRewards(ids) then a 10 s timeout. Our ids were local tokens the client does not
+  know, so the native call returns silently.
+- Fix: the patch submits the faux ids the tiles render (GetFauxItemIDFromDefAndPaintIndex); the GC maps a faux id
+  (0xF000000000000000 | paint<<16 | def, bits 32-59 zero) back to an unused saved offer (CareChoiceSlot), old tokens
+  still accepted. Diagnostics: console "cs2_gc care: claim ..." / "claim timed out", GC log "care claim received" /
+  "care claim rejected: id N matches no pending offer". paint<<16 layout is unverified for painted offers.
+- If still no 9219: next option is real SO econ items for the offers (crash history in build 19) - ask the user first.
+
+## Tools
+- study_skins.py/.cmd: read-only dump of every gun finish (used for this work).
+
+---
+
 # Helper27c — collection art pass: accent gradients and inversions
 
 Same DLL tag codex-20261022-27; Python/helper update. Includes27a/27b fixes.

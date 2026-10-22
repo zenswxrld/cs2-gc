@@ -169,4 +169,8 @@ private:
 // The header for a reply to `request`: the job id the request carried, echoed back as the target so
 // the game can match the reply to it. Empty when the request has no job id.
 std::vector<std::uint8_t> ReplyHeaderFor(const FrameView &request);
+
+// Care-package claim (k_EMsgGCCStrike15_v2_ClientRedeemFreeReward): the unused offer slot an id names,
+// either the local choice token from the PersonalStore or the faux id Panorama resolved for the tile.
+std::optional<std::size_t> CareChoiceSlot(const CarePackage &package, std::uint64_t id, const std::vector<bool> &used);
 }

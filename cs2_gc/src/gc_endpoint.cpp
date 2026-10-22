@@ -23,6 +23,29 @@ std::uint64_t CareChoiceToken(const InventoryItem &item, std::size_t slot)
     return CareChoiceBase + (static_cast<std::uint64_t>(slot) << 32) +
         (static_cast<std::uint64_t>(item.paintKitIndex) << 16) + item.defIndex;
 }
+constexpr std::uint64_t FauxItemIdBase = 0xF000000000000000ull;
+}
+// Maps one submitted id to an unused offer slot. Accepts the local choice token, or the client-side
+// faux id that Panorama derives for the displayed tile with GetFauxItemIDFromDefAndPaintIndex:
+// 0xF000000000000000 | definition is the captured built-in form; paint in bits 16-31 follows the same
+// combined-id layout and is checked here only against the saved offer (a mismatch is rejected and logged).
+std::optional<std::size_t> CareChoiceSlot(const CarePackage &package, std::uint64_t id, const std::vector<bool> &used)
+{
+    if (id>=CareChoiceBase && id<CareChoiceBase+(4ull<<32)) {
+        const auto slot=static_cast<std::size_t>((id-CareChoiceBase)>>32);
+        if (slot<package.offers.size() && slot<used.size() && !used[slot] && id==CareChoiceToken(package.offers[slot],slot)) return slot;
+        return std::nullopt;
+    }
+    if ((id & 0xFFFFFFFF00000000ull)!=FauxItemIdBase) return std::nullopt;
+    for (std::size_t slot=0;slot<package.offers.size();++slot) {
+        const auto &offer=package.offers[slot];
+        if (slot<used.size() && !used[slot] && id==(FauxItemIdBase|(static_cast<std::uint64_t>(offer.paintKitIndex&0xFFFFu)<<16)|(offer.defIndex&0xFFFFu)) &&
+            offer.paintKitIndex<=0xFFFFu && offer.defIndex<=0xFFFFu) return slot;
+    }
+    return std::nullopt;
+}
+namespace
+{
 std::vector<std::uint8_t> EncodeCareStore(const Inventory &inventory)
 {
     PbWriter out;
@@ -552,8 +575,7 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
             while (reader.Next(field)) {
                 if (field.number==1 && field.wire==0 && !generation && field.value<=UINT32_MAX) generation=static_cast<std::uint32_t>(field.value);
                 else if (field.number==2 && field.wire==0 && !balance && field.value<=UINT32_MAX) balance=static_cast<std::uint32_t>(field.value);
-                else if (field.number==3 && field.wire==0 && ids.size()<4 && field.value>=CareChoiceBase && field.value<CareChoiceBase+(4ull<<32))
-                    ids.push_back(field.value);
+                else if (field.number==3 && field.wire==0) { if (ids.size()>=4) valid=false; else ids.push_back(field.value); }
                 else if (field.number==3 && field.wire==2) {
                     // proto2 repeated uint64 normally arrives unpacked; accept packed encoding too.
                     std::uint64_t value=0; unsigned shift=0;
@@ -562,7 +584,7 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                         value|=std::uint64_t{byte&127u}<<shift;
                         if (byte&128u) shift+=7;
                         else {
-                            if (value<CareChoiceBase || value>=CareChoiceBase+(4ull<<32) || ids.size()>=4) {valid=false;break;}
+                            if (ids.size()>=4) {valid=false;break;}
                             ids.push_back(value); value=0;shift=0;
                         }
                     }
@@ -570,23 +592,30 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                 }
                 else valid=false;
             }
+            std::string received;
+            for (const auto id:ids) received+=(received.empty()?"":",")+std::to_string(id);
+            const auto &queue=inventory->Items().CarePackages();
+            if(gc.m_config.diagnostic)gc.m_config.diagnostic("care claim received: generation="+std::to_string(generation.value_or(0))+
+                " pending="+std::to_string(queue.empty()?0:queue.front().generation)+" balance_hint="+std::to_string(balance.value_or(0))+
+                " ids=["+received+"]");
             // This proto field is an optional client snapshot, not authority to grant items.
             // Native clients may omit a zero (remaining) balance. Saved generation + exactly three
             // distinct, matching offers remain authoritative regardless of that hint.
-            if (!valid || reader.Failed() || !generation || balance.value_or(0)>3 || inventory->Items().CarePackages().empty()) {
+            if (!valid || reader.Failed() || !generation || balance.value_or(0)>3 || queue.empty()) {
                 if(gc.m_config.diagnostic)gc.m_config.diagnostic("care claim rejected: invalid frame/queue; choices="+std::to_string(ids.size())+
                     " balance_hint="+std::to_string(balance.value_or(0)));
                 ++gc.m_ignored;return;
             }
-            const auto &package=inventory->Items().CarePackages().front();
-            std::vector<std::uint64_t> selected;
-            for (const auto token:ids) {
-                const auto slot=static_cast<std::size_t>((token-CareChoiceBase)>>32);
-                if (slot>=package.offers.size() || token!=CareChoiceToken(package.offers[slot],slot)) {
-                    if(gc.m_config.diagnostic)gc.m_config.diagnostic("care claim rejected: offer descriptor mismatch");
+            const auto &package=queue.front();
+            std::vector<std::uint64_t> selected; std::vector<bool> used(package.offers.size(),false);
+            for (const auto id:ids) {
+                const auto slot=CareChoiceSlot(package,id,used);
+                if (!slot) {
+                    if(gc.m_config.diagnostic)gc.m_config.diagnostic("care claim rejected: id "+std::to_string(id)+" matches no pending offer");
                     ++gc.m_ignored;return;
                 }
-                selected.push_back(package.offers[slot].id);
+                used[*slot]=true;
+                selected.push_back(package.offers[*slot].id);
             }
             const auto chosen=inventory->ClaimCarePackage(*generation,selected);
             if (!chosen) {

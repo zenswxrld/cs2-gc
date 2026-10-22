@@ -4290,6 +4290,42 @@ void NativeCarePackages()
         Check(storeFound && previewCount==0 && resumed->Items().Items().empty(),
               "reconnect restores choice descriptors without recreating the crashing unowned econ previews");
     }
+    {
+        // Build 27 log: the native StoreRedeemFreeRewards sent nothing for choice tokens. The patched popup
+        // now submits the client-resolved faux ids of the displayed tiles; they map back to saved offers.
+        const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
+        auto fauxInventory=std::make_shared<LiveInventory>(*disk);LocalGameCoordinator fauxGc({});int fauxSaves=0;
+        fauxGc.EnableContainers(fauxInventory,shared,[]{return 1ull;},[&]{++fauxSaves;});
+        const auto package=fauxInventory->Items().CarePackages().front();
+        const auto faux=[](const InventoryItem &item){return 0xF000000000000000ull|(std::uint64_t{item.paintKitIndex}<<16)|item.defIndex;};
+        const auto claim=[&](std::uint32_t generation,const std::vector<std::uint64_t> &ids) {
+            PbWriter message;message.Varint(1,generation);
+            for(const auto id:ids)message.Varint(3,id);
+            std::vector<std::uint8_t> wire;WriteProtobufFrame(9219,{},message.bytes(),wire);
+            fauxGc.SendMessage(9219|ProtobufMask,wire.data(),wire.size());
+        };
+        auto wrong=package.offers[0];wrong.paintKitIndex+=1;
+        claim(package.generation,{faux(package.offers[0]),faux(package.offers[1]),faux(wrong)});
+        claim(package.generation+1,{faux(package.offers[0]),faux(package.offers[1]),faux(package.offers[3])});
+        claim(package.generation,{faux(package.offers[0]),faux(package.offers[0])|(1ull<<32),faux(package.offers[3])});
+        Check(fauxInventory->Items().Items().empty() && fauxInventory->Items().CarePackages().size()==1 && fauxSaves==0,
+              "faux claims with a wrong finish, stale generation or extra id bits are rejected");
+        claim(package.generation,{faux(package.offers[0]),faux(package.offers[1]),faux(package.offers[3])});
+        claim(package.generation,{faux(package.offers[0]),faux(package.offers[1]),faux(package.offers[3])});
+        // Faux ids carry definition + finish only (what the tile shows), so identical-looking offers are
+        // interchangeable: the first unused matching slot is granted.
+        const auto &owned=fauxInventory->Items().Items();
+        std::multiset<std::pair<std::uint32_t,std::uint32_t>> got,want;
+        for(const auto &item:owned)got.insert({item.defIndex,item.paintKitIndex});
+        for(const auto slot:{0,1,3})want.insert({package.offers[slot].defIndex,package.offers[slot].paintKitIndex});
+        Check(owned.size()==3 && got==want && fauxInventory->Items().CarePackages().empty() && fauxSaves==1,
+              "client faux ids of the displayed tiles claim exactly the three chosen offers once");
+        auto twins=package;twins.offers[1]=twins.offers[0];twins.offers[1].id=package.offers[1].id;
+        std::vector<bool> used(4,false);
+        Check(CareChoiceSlot(twins,faux(twins.offers[0]),used)==std::optional<std::size_t>{0} &&
+              (used[0]=true,CareChoiceSlot(twins,faux(twins.offers[0]),used))==std::optional<std::size_t>{1},
+              "identical offers stay independently selectable through their faux ids");
+    }
     const auto &offer=endpointInventory->Items().CarePackages().front();
     PbWriter request;request.Varint(1,offer.generation);request.Varint(2,0);
     for(unsigned i=0;i<3;++i)request.Varint(3,choiceTokens[i]);

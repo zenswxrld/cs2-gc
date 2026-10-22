@@ -1,7 +1,7 @@
-"""Read and write Source 2 compiled resources (*_c) and their binary KV3 blocks (version 5 only).
+"""Read and write Source 2 compiled resources (*_c) and their binary KV3 blocks (versions 4 and 5).
 
 Ported from the layout ValveResourceFormat reads and writes (BinaryKV3.cs / BinaryKV3.Serialization.cs).
-Only the parts the native finish generator needs: version 5 KV3 with no compression or LZ4, written back
+Only the parts the native finish generator needs: version 4/5 KV3 with no compression or LZ4, written back
 uncompressed. Python standard library only.
 
 Values decode to Node(type, value, flag) so a round trip keeps every KV3 type; objects are lists of
@@ -9,6 +9,7 @@ Values decode to Node(type, value, flag) so a round trip keeps every KV3 type; o
 """
 import struct
 
+MAGIC4 = 0x4B563304
 MAGIC5 = 0x4B563305
 NULL, BOOLEAN, INT64, UINT64, DOUBLE, STRING, BINARY_BLOB, ARRAY, OBJECT, ARRAY_TYPED = range(1, 11)
 INT32, UINT32, BOOLEAN_TRUE, BOOLEAN_FALSE, INT64_ZERO, INT64_ONE, DOUBLE_ZERO, DOUBLE_ONE, FLOAT = range(11, 20)
@@ -95,6 +96,7 @@ class _Lanes:
 
 def read_kv3(block):
     magic, = struct.unpack_from('<I', block, 0)
+    if magic == MAGIC4: return read_kv4(block)
     if magic != MAGIC5: raise ValueError('Only binary KV3 version 5 is supported, got %#x' % magic)
     guid = block[4:20]
     (method, dictionary, frame, bytes1, bytes4, bytes8, count_types, objects, arrays, total, compressed_total,
@@ -159,6 +161,86 @@ def read_kv3(block):
     root = value(*read_type(), main)
     if struct.unpack_from('<I', buffer2, main.end + count_types)[0] != TRAILER: raise ValueError('Missing KV3 trailer')
     return guid, root
+
+
+
+def read_kv4(block):
+    """Read the single-buffer KV3 v4 layout; owned copies are written as KV3 v5.
+
+    Layout reference: ValveResourceFormat BinaryKV3.ReadBuffer/ReadValue.
+    No binary blobs, dictionaries or Zstd are accepted by this small codec.
+    """
+    header = '<IHHiiiiHHiiiiii'
+    size = struct.calcsize(header)
+    if len(block) < 20+size:
+        raise ValueError('Truncated KV3 v4 header')
+    (method,dictionary,frame,b1,b4,b8,type_bytes,objects,arrays,total,compressed,
+     blocks,blob_bytes,b2,block_sizes) = struct.unpack_from(header,block,20)
+    if dictionary or blocks or blob_bytes or block_sizes:
+        raise ValueError('KV3 dictionaries and binary blobs are not supported')
+    if min(b1,b2,b4,b8,type_bytes,total,compressed)<0:
+        raise ValueError('Invalid KV3 v4 counts')
+    payload=block[20+size:]
+    if method==0:
+        data=payload[:total]
+        if len(data)!=total:
+            raise ValueError('Truncated KV3 v4 buffer')
+    elif method==1:
+        data=lz4_block_decompress(payload[:compressed],total)
+    else:
+        raise ValueError('Unsupported KV3 compression method %d'%method)
+    lane=_Lanes(data,0,(b1,b2,b4,b8))
+    string_count=lane.take(4,'<i')
+    position=lane.end if b8 else _align(lane.end,8)
+    strings_start=position
+    strings=[]
+    for _ in range(string_count):
+        end=data.index(b'\0',position)
+        strings.append(data[position:end].decode('utf-8'));position=end+1
+    length=type_bytes-(position-strings_start)
+    if length<1 or position+length+4>len(data):
+        raise ValueError('Invalid KV3 v4 type stream')
+    types=data[position:position+length]
+    if struct.unpack_from('<I',data,position+length)[0]!=TRAILER:
+        raise ValueError('Missing KV3 trailer')
+    cursor=0
+    def read_type():
+        nonlocal cursor
+        byte=types[cursor];cursor+=1
+        flag=0
+        if byte&0x80:
+            flag=types[cursor];cursor+=1
+        if byte&0x40:
+            cursor+=1
+        return byte&0x3f,flag
+    def string(index):
+        return strings[index] if 0<=index<len(strings) else ''
+    def value(kind,flag):
+        if kind in CONSTANTS:
+            return Node(kind,CONSTANTS[kind],flag)
+        if kind in LANES:
+            return Node(kind,lane.take(*LANES[kind]),flag)
+        if kind==STRING:
+            return Node(kind,string(lane.take(4,'<i')),flag)
+        if kind==OBJECT:
+            count=lane.take(4,'<i');members=[]
+            for _ in range(count):
+                subtype,subflag=read_type()
+                name=string(lane.take(4,'<i'))
+                members.append((name,value(subtype,subflag)))
+            return Node(kind,members,flag)
+        if kind==ARRAY:
+            count=lane.take(4,'<i')
+            return Node(kind,[value(*read_type()) for _ in range(count)],flag)
+        if kind in (ARRAY_TYPED,ARRAY_TYPE_BYTE_LENGTH,ARRAY_TYPE_AUXILIARY_BUFFER):
+            count=lane.take(4,'<i') if kind==ARRAY_TYPED else lane.take(1,'<B')
+            subtype,subflag=read_type()
+            return Node(kind,[value(subtype,subflag) for _ in range(count)],flag,subtype,subflag)
+        raise ValueError('Unsupported KV3 node type %d'%kind)
+    root=value(*read_type())
+    if cursor!=len(types):
+        raise ValueError('Unconsumed KV3 v4 types')
+    return block[4:20],root
 
 
 def write_kv3(guid, root):

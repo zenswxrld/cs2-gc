@@ -102,6 +102,50 @@ def vpk_files():
 
 
 class NativeFinishes(unittest.TestCase):
+    def test_localized_titles_survive_escaped_quotes_and_multiline_descriptions(self):
+        english = r'''"lang" { "Language" "English" "Tokens" {
+        "desc" "Some \"quoted\" text\nnext line"
+        "PaintKit_gsch_sport_ump45_Tag" "Crimson Foil"
+        "PaintKit_aq_titanium_rainbow_Tag" "Rainbow Spoon"
+        } }'''
+        kits={'foil':('1',{'description_tag':'#PaintKit_gsch_sport_ump45_Tag'}),
+              'spoon':('2',{'description_tag':'#PaintKit_aq_titanium_rainbow_Tag'})}
+        self.assertEqual(finishes.titles_from(english,kits),
+            {'foil':'Crimson Foil','spoon':'Rainbow Spoon'})
+
+    def test_detail_policy_protects_silver_dark_ink_values_alpha_and_hue_relationships(self):
+        from collection_detail import recolour_details,rolled_name
+        original=[[.04,.04,.04,.2],[.8,.12,.05,.4],[.94,.94,.94,.6],[.4,.16,.08,.8]]
+        changed=recolour_details(original,'Teal',finishes.THEMES,finishes.DUO_THEMES,finishes.GRADIENT_THEMES)
+        self.assertEqual(changed[0],original[0]);self.assertEqual(changed[2],original[2])
+        self.assertEqual([max(c[:3]) for c in changed],[max(c[:3]) for c in original])
+        self.assertEqual([c[3] for c in changed],[c[3] for c in original])
+        before=[colorsys.rgb_to_hsv(*c[:3])[0] for c in original]
+        after=[colorsys.rgb_to_hsv(*c[:3])[0] for c in changed]
+        self.assertAlmostEqual((before[1]-before[3])%1,(after[1]-after[3])%1)
+        self.assertEqual(rolled_name('Crimson Foil','Teal'),'Teal Foil')
+        neutral=[[.03,.03,.03,1],[.3,.3,.3,1],[.7,.7,.7,1],[.97,.97,.97,1]]
+        painted=recolour_details(neutral,'Violet',finishes.THEMES,finishes.DUO_THEMES,finishes.GRADIENT_THEMES)
+        self.assertEqual(sum(a!=b for a,b in zip(neutral,painted)),1)
+
+    def test_detail_material_policy_preserves_every_non_colour_property(self):
+        originals=vpk_files()
+        source=finishes.Source(folder=None);source.read=originals.get
+        report={}
+        made=finishes.make_finish(source,'aa_fade','weapons/paints/legacy/aa_fade.vcompmat',
+            'detail_test','Teal',report=report,weapon_palette='ancient',detail_policy=True)
+        self.assertIsNotNone(made)
+        self.assertEqual(report['aa_fade:ancient']['policy'],'source-detail-v1')
+        _,oldblocks=kv3.read_resource(originals[report['aa_fade:ancient']['source_material']+'_c'])
+        old_data=dict(oldblocks)['DATA'];_,old_root=kv3.read_kv3(old_data)
+        _,newblocks=kv3.read_resource(made[1]);guid,root=kv3.read_kv3(dict(newblocks)['DATA'])
+        root.get('m_materialName').value=old_root.get('m_materialName').value
+        for key,node in finishes._vector_params(root).items():
+            for value,old in zip(node.value,finishes._vector_params(old_root)[key].value):
+                value.value=old.value
+        self.assertEqual(kv3.write_kv3(guid,root),old_data)
+
+
     def test_weapon_palette_preserves_neutral_details_and_changes_accents(self):
         from weapon_palettes import recolour,is_new_colourway,invert_panels
         original=[[.08,.08,.08,.4],[.8,.2,.12,.6],[.94,.94,.94,.8],[.35,.1,.08,1]]

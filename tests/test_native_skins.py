@@ -32,8 +32,8 @@ class CustomSkins(unittest.TestCase):
             previous=skins._curated_custom_cases(schema,kits,titles,lambda n,v:'paints/'+n+'.vcompmat',None,{},set(),False)
         finally:finishes.make_finish=original
         new,files,lists,names,items,icons=result
-        self.assertEqual(len(names),36)
-        self.assertEqual(len(items),36*16)
+        self.assertEqual(len(names),24)
+        self.assertEqual(len(items),24*16)
         lookup={n:v for n,_,v in new}
         self.assertTrue({n for n,_,_ in previous[0]}.issubset(lookup),'owned27a kit definitions must remain available')
         self.assertTrue(set(previous[1]).issubset(files),'owned27a materials must remain available')
@@ -56,7 +56,7 @@ class CustomSkins(unittest.TestCase):
                 else:base_materials.append(lookup[kit]['composite_material_path'])
             self.assertEqual(len(base_materials),len(set(base_materials)),name+' repeats a donor pattern')
         active=[i[1:].split(']')[0] for i in items]
-        self.assertEqual(sum(n in families for n in active),36*2)
+        self.assertEqual(sum(n in families for n in active),24*2)
         self.assertTrue(all(2 <= len(families[n]) <= 8 for n in active if n in families))
         self.assertTrue(all(n.startswith(('cw2f_', 'cwf_', 'nc31_')) for n in active))
         self.assertFalse(any('aa_flames' in n for n in active),'broken Blaze transfers must not enter new rolls')

@@ -309,6 +309,7 @@ PREPARE = '''        // Resolve each tile from its own native row, without inher
             const collectionTitle = m_localRotation.collectionNames?.[entry.item_name];
             if (collectionTitle) {
                 entry.callout = collectionTitle;
+                delete entry.suffix_loc_string;
                 entry.ui_set_image = String(entry.item_name).replace('lootlist:', '');
                 entry.lootlist = _GetLootListForReward(entry.item_name);
                 entry.entry_type = 'lootlist'; entry.lootlist_item_type = 'weapon';

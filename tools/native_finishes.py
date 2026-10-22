@@ -287,7 +287,7 @@ def _with_block(data, name, content):
     return kv3.write_resource(version, blocks)
 
 
-def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_palette=None, weapon_inverse=False, weapon_tone=2):
+def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_palette=None, weapon_inverse=False, weapon_tone=2, detail_policy=False):
     """(vcompmat bytes, vmat bytes) for a recolour of `kit`, or None when it is not a four-colour finish."""
     compmat = source.read(kit_path + '_c')
     if compmat is None: return None
@@ -296,7 +296,7 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_pale
     if data is None: return None
     # Older official donors can use KV3 v4. They cannot be recoloured by this
     # writer; skip the donor rather than aborting the entire schema generation.
-    if len(data) < 4 or struct.unpack_from('<I', data)[0] != kv3.MAGIC5: return None
+    if len(data) < 4 or struct.unpack_from('<I', data)[0] not in ((kv3.MAGIC4,kv3.MAGIC5) if detail_policy else (kv3.MAGIC5,)): return None
     guid, root = kv3.read_kv3(data)
     specific = _specific_material(root)
     if specific is None: return None
@@ -305,9 +305,14 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_pale
     m_version, m_blocks = kv3.read_resource(material)
     m_data = dict(m_blocks).get('DATA')
     if m_data is None: return None
-    if len(m_data) < 4 or struct.unpack_from('<I', m_data)[0] != kv3.MAGIC5: return None
+    if len(m_data) < 4 or struct.unpack_from('<I', m_data)[0] not in ((kv3.MAGIC4,kv3.MAGIC5) if detail_policy else (kv3.MAGIC5,)): return None
     m_guid, m_root = kv3.read_kv3(m_data)
-    partial=weapon_palette and kit.startswith('soe_')
+    if detail_policy:
+        from collection_material import make as make_composite
+        handled,made=make_composite(source,kit,new_name,theme,compmat,guid,root,specific,
+            material,m_guid,m_root,report,weapon_palette)
+        if handled:return made
+    partial=weapon_palette and kit.startswith('soe_') and not detail_policy
     colors = _vector_params(m_root,allow_partial=partial)
     if colors is None: return None
     channels=sorted(colors)
@@ -323,6 +328,9 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_pale
     if weapon_palette:
         from weapon_palettes import recolour, is_new_colourway, invert_panels
         new_colors = recolour(current, theme, weapon_palette, THEMES, DUO_THEMES, GRADIENT_THEMES,tone=weapon_tone)
+        if detail_policy:
+            from collection_detail import recolour_details
+            new_colors = recolour_details(current, theme, THEMES, DUO_THEMES, GRADIENT_THEMES)
         if weapon_inverse: new_colors = invert_panels(current,new_colors,tone=weapon_tone)
         if not is_new_colourway(current,new_colors):
             if report is not None:
@@ -332,7 +340,7 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_pale
         report_key = kit + ':' + weapon_palette if weapon_palette else kit
         entry = report.setdefault(report_key, {'source_compmat': kit_path, 'source_material': specific.value,
             'shader': m_root.get('m_shaderName').value if m_root.get('m_shaderName') else '',
-            'original_colors': current, 'policy': ('weapon-accent-gradient-v%d'%weapon_tone if weapon_palette else
+            'original_colors': current, 'policy': ('source-detail-v1' if detail_policy else 'weapon-accent-gradient-v%d'%weapon_tone if weapon_palette else
                 'hardened-metal-accents-v1' if kit == 'aq_oiled' else
                 'related-metal-tones-v1' if kit == 'am_gold_brick' else 'ranked-theme-v1'),
             'themes': {}})
@@ -558,7 +566,12 @@ def localization(english_text, tokens):
 
 
 def titles_from(english_text, kits):
-    tokens = {k.lower(): v for k, v in re.findall(r'"([^"\n]+)"\s+"([^"\n]*)"', english_text)}
+    # A regex can pair the closing quote of an escaped description with the
+    # following token, silently dropping real finish names. Use the KV lexer.
+    root = as_dict(parse(english_text))
+    language = as_dict(root.get('lang', []))
+    tokens = {key.lower(): value for key, value in language.get('Tokens', [])
+              if isinstance(value, str)}
     return {name: tokens.get(values.get('description_tag', '').lstrip('#').lower(), '')
             for name, (_, values) in kits.items()}
 
@@ -670,6 +683,11 @@ def prepare(proxy_directory, config, items_game_text):
     except ValueError:
         known = {}
     titles = titles_from(english, kits)
+    # Preserve historical pool selection for owned definitions: the old regex's
+    # omissions affected its seeded donor shuffle. Only new upgrades use the fixed lexer.
+    legacy_tokens = {k.lower(): v for k,v in re.findall(r'"([^"\n]+)"\s+"([^"\n]*)"',english)}
+    retained_titles = {name:legacy_tokens.get(v.get('description_tag','').lstrip('#').lower(),'')
+                       for name,(_,v) in kits.items()}
     knife_palettes = {}
     files, entries, case, tokens = plan(items_game_text, gold, titles, source, known, report=knife_palettes)
     atomic_write(proxy / PALETTE_REPORT, json.dumps(knife_palettes, sort_keys=True, indent=1) + '\n')
@@ -730,7 +748,7 @@ def prepare(proxy_directory, config, items_game_text):
         weapon_palettes = {}
         if config.get('custom_cases', 1):
             case_kits, case_files, case_lists, case_specs, case_items, icons = native_skins.custom_cases(
-                items_game_text, kits, titles, kit_path, source, families, {n for n, _, _ in family_kits}, report=weapon_palettes)
+                items_game_text, kits, titles, kit_path, source, families, {n for n, _, _ in family_kits}, report=weapon_palettes, retained_titles=retained_titles)
             atomic_write(proxy / 'cs2_gc_weapon_palettes.json', json.dumps(weapon_palettes,sort_keys=True,indent=1)+'\n')
             family_kits += case_kits
             files.update(case_files)

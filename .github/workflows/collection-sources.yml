@@ -1,0 +1,25 @@
+name: Collection source audit
+on:
+  push:
+    branches: [codex/collection-variety-and-names]
+  pull_request:
+    paths:
+      - 'tools/audit_collection_sources.py'
+      - '.github/workflows/collection-sources.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve finish donors from tracked game schema
+        run: python tools/audit_collection_sources.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: collection-source-audit
+          path: source-audit/

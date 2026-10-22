@@ -151,3 +151,16 @@ if(CS2_GC_BUILD_PROXY)
         target_link_options(cs2_gc_proxy PRIVATE -static)
     endif()
 endif()
+
+
+# Small, dependency-free BC7 texture utility for the collection helper.
+add_executable(cs2_gc_texture_decode tools/texture_decode.cpp)
+if(MSVC)
+    set_property(TARGET cs2_gc_texture_decode PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+if(BUILD_TESTING AND Python3_FOUND)
+    add_test(NAME cs2_collection_materials COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_collection_material.py -v)
+    set_tests_properties(cs2_collection_materials PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
+endif()

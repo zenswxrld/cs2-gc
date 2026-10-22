@@ -46,7 +46,7 @@ class PreparationCache:
         for folder in ('collection_icons', 'weapon_patterns'):
             files.update(p for p in (self.helpers / folder).rglob('*') if p.is_file())
         files.update(self.helpers.glob('*.png'))
-        files.update(self.proxy / n for n in ('gold_pools.txt',))
+        files.update(self.proxy / n for n in ('gold_pools.txt','cs2_gc_texture_decode.exe'))
         files.add(self.game / 'csgo/steam.inf')
         files.add(self.proxy / 'cs2_gc_replay/2501.bin')
         payload = {'version': VERSION, 'game': str(self.game), 'config': self.config,

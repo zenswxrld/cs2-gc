@@ -1,4 +1,5 @@
 #include "cs2_gc/gc_endpoint.h"
+#include <algorithm>
 #include "cs2_gc/econ_item.h"
 #include "cs2_gc/item_sales.h"
 #include "cs2_gc/gc_msg_ids.h"
@@ -25,8 +26,6 @@ std::uint64_t CareChoiceToken(const InventoryItem &item, std::size_t slot)
         (static_cast<std::uint64_t>(item.paintKitIndex) << 16) + item.defIndex;
 }
 constexpr std::uint64_t FauxItemIdBase = 0xF000000000000000ull;
-// Armory-route care claims: expectedCost = CareClaimCost + (generation % 1000000) * 16 + slot mask (below 2^31).
-constexpr std::uint32_t CareClaimCost = 2000000000u;
 }
 // Maps one submitted id to an unused offer slot. Accepts the local choice token, or the client-side
 // faux id that Panorama derives for the displayed tile with GetFauxItemIDFromDefAndPaintIndex:
@@ -244,10 +243,11 @@ void LocalGameCoordinator::RefreshServerInventory()
     Reply(gc_msg::ESOMsg::k_ESOMsg_CacheSubscribed, cache.bytes());
 }
 
-bool LocalGameCoordinator::ClaimCareFromConsole(std::uint32_t generation, const std::vector<std::uint64_t> &tokens)
+bool LocalGameCoordinator::ClaimCareFromConsole(std::uint32_t generation, const std::vector<std::uint64_t> &tokens,
+                                                const std::function<void()> &afterChange)
 {
     std::lock_guard lock(m_mutex);
-    if (!m_live || !m_careClaim) return false;
+    if (!m_live || !m_live->Items().Gameplay().care_packages_enabled) return false;
     const auto &queue = m_live->Items().CarePackages();
     if (m_config.diagnostic) m_config.diagnostic("care claim received (console route): generation=" + std::to_string(generation) +
         " pending=" + std::to_string(queue.empty() ? 0 : queue.front().generation));
@@ -262,7 +262,7 @@ bool LocalGameCoordinator::ClaimCareFromConsole(std::uint32_t generation, const 
         used[*slot] = true;
         selected.push_back(package.offers[*slot].id);
     }
-    return m_careClaim(*this, generation, selected);
+    return CompleteCareClaimLocked(m_live, generation, selected, afterChange);
 }
 
 bool LocalGameCoordinator::ApplyConsoleControl(std::uint64_t cumulativeStars, std::uint32_t rotationOffset,
@@ -371,31 +371,6 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                    if (!request)
                    {
                        ++gc.m_ignored;
-                       return;
-                   }
-                   if (request->expectedCost >= CareClaimCost)
-                   {
-                       // Build 30: StoreRedeemFreeRewards never sends local claims (build 28/29 logs), so the
-                       // patched care-package page sends this Armory message instead. The cost carries the
-                       // package (generation % 1000000) and a 4-bit mask of the three chosen offer slots.
-                       const auto code = request->expectedCost - CareClaimCost;
-                       const auto mask = code & 15u, stamp = code >> 4;
-                       const auto &queue = inventory->Items().CarePackages();
-                       if (gc.m_config.diagnostic) gc.m_config.diagnostic("care claim received (armory route): mask=" +
-                           std::to_string(mask) + " stamp=" + std::to_string(stamp) + " pending=" +
-                           std::to_string(queue.empty() ? 0 : queue.front().generation));
-                       if (queue.empty() || stamp != queue.front().generation % 1000000u || std::popcount(mask) != 3 ||
-                           !gc.m_careClaim)
-                       {
-                           if (gc.m_config.diagnostic) gc.m_config.diagnostic("care claim rejected: no matching pending package");
-                           ++gc.m_ignored;
-                           return;
-                       }
-                       const auto &package = queue.front();
-                       std::vector<std::uint64_t> selected;
-                       for (std::size_t slot = 0; slot < package.offers.size() && slot < 4; ++slot)
-                           if (mask & (1u << slot)) selected.push_back(package.offers[slot].id);
-                       gc.m_careClaim(gc, package.generation, selected);
                        return;
                    }
                    const auto result = armory->Redeem(*request, *inventory, random);
@@ -694,25 +669,8 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                 used[*slot]=true;
                 selected.push_back(package.offers[*slot].id);
             }
-            gc.m_careClaim(gc,*generation,selected);
+            gc.CompleteCareClaimLocked(inventory,*generation,selected,afterChange);
         });
-    // Shared by the native claim (9219) and the Armory-route claim (9209 with a CareClaimCost marker).
-    m_careClaim=[inventory,afterChange](LocalGameCoordinator &gc,std::uint32_t generation,const std::vector<std::uint64_t> &selected) {
-            const auto chosen=inventory->ClaimCarePackage(generation,selected);
-            if (!chosen) {
-                if(gc.m_config.diagnostic)gc.m_config.diagnostic("care claim rejected: stale generation or duplicate/partial choices");
-                ++gc.m_ignored;return false;
-            }
-            // Preview descriptors never enter the econ cache. Only the three chosen owned items are published.
-            if (afterChange) afterChange();
-            gc.NotifyCarePackage(); gc.NotifyRewardDrops(*chosen);
-            PbWriter notification;
-            for(const auto &item:*chosen) notification.Varint(1,CustomItemIdBase+item.id);
-            notification.Varint(2,gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemFreeReward);
-            gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,notification.bytes());
-            if(gc.m_config.diagnostic)gc.m_config.diagnostic("care package: three chosen rewards granted and saved");
-            return true;
-        };
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCDelete,
                [inventory, schema, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
                    PbReader reader(frame.body); PbField field;
@@ -1396,6 +1354,42 @@ bool LocalGameCoordinator::AcceptLocalTerminal(std::uint64_t gameId, const std::
     if (afterChange) afterChange();
     if (m_config.diagnostic) m_config.diagnostic("terminal: displayed offer accepted through local helper");
     return true;
+}
+
+
+bool LocalGameCoordinator::CompleteCareClaimLocked(std::shared_ptr<LiveInventory> inventory,
+    std::uint32_t generation, const std::vector<std::uint64_t> &selected,
+    const std::function<void()> &afterChange)
+{
+    const auto chosen=inventory->ClaimCarePackage(generation,selected);
+    if (!chosen) {
+        if(m_config.diagnostic)m_config.diagnostic("care claim rejected: stale generation or duplicate/partial choices");
+        ++m_ignored;return false;
+    }
+    // Preview descriptors never enter the econ cache. Only the three chosen owned items are published.
+    if (afterChange) afterChange();
+    NotifyCarePackage(); NotifyRewardDrops(*chosen);
+    PbWriter notification;
+    for(const auto &item:*chosen) notification.Varint(1,CustomItemIdBase+item.id);
+    notification.Varint(2,gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemFreeReward);
+    Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,notification.bytes());
+    if(m_config.diagnostic)m_config.diagnostic("care package: three chosen rewards granted and saved");
+    return true;
+}
+
+bool LocalGameCoordinator::ClaimLocalCarePackage(std::uint32_t generation, std::uint32_t mask,
+    const std::function<void()> &afterChange)
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_live || !m_live->Items().Gameplay().care_packages_enabled ||
+        (mask != 7 && mask != 11 && mask != 13 && mask != 14) ||
+        m_live->Items().CarePackages().empty()) return false;
+    const auto &package = m_live->Items().CarePackages().front();
+    if (package.generation != generation || package.offers.size() != 4) return false;
+    std::vector<std::uint64_t> selected;
+    for (unsigned slot = 0; slot < 4; ++slot)
+        if (mask & (1u << slot)) selected.push_back(package.offers[slot].id);
+    return CompleteCareClaimLocked(m_live,generation,selected,afterChange);
 }
 
 bool LocalGameCoordinator::ApplyMatchRewards(std::uint64_t completed, const std::function<void()> &afterChange)

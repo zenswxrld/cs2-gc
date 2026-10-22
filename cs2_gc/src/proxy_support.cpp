@@ -47,6 +47,28 @@ bool Number(std::string_view text, T &out)
 }
 }
 
+std::optional<LocalCareRequest> DecodeLocalCareRequest(std::string_view text)
+{
+    LocalCareRequest request;
+    std::string_view fields[4];
+    text = Trim(text);
+    for (auto &field : fields) {
+        const auto end = text.find_first_of(" \t\r");
+        field = text.substr(0,end);
+        text = end == std::string_view::npos ? std::string_view{} : Trim(text.substr(end));
+    }
+    if (!text.empty() || !Number(fields[0],request.processId) || !request.processId ||
+        !Number(fields[1],request.generation) || !request.generation ||
+        !Number(fields[2],request.mask) ||
+        (request.mask != 7 && request.mask != 11 && request.mask != 13 && request.mask != 14) ||
+        fields[3].size() != 32 ||
+        !std::all_of(fields[3].begin(),fields[3].end(),[](char c) {
+            return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        })) return std::nullopt;
+    request.nonce = fields[3];
+    return request;
+}
+
 std::wstring QuoteWindowsArgument(std::wstring_view argument)
 {
     std::wstring out(1, L'"');

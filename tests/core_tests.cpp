@@ -4327,28 +4327,20 @@ void NativeCarePackages()
               "identical offers stay independently selectable through their faux ids");
     }
     {
-        // Build 30: the patched page sends the claim as an Armory redemption (9209); the cost carries the
-        // package stamp (generation % 1000000) and the mask of the three chosen slots.
+        // Build 30's Armory-route claim was never sent by the game and is gone: an Armory redemption with an
+        // oversized cost is an ordinary rejected purchase and never touches the care package.
         const auto disk=Inventory::FromText(endpointInventory->Items().ToText());
         auto routeInventory=std::make_shared<LiveInventory>(*disk);LocalGameCoordinator routeGc({});int routeSaves=0;
         auto armory=std::make_shared<Armory>(*schema,11,30);
         routeGc.EnableArmory(armory,routeInventory,[]{return 1ull;},[&]{++routeSaves;});
         routeGc.EnableContainers(routeInventory,shared,[]{return 1ull;},[&]{++routeSaves;});
         const auto package=routeInventory->Items().CarePackages().front();
-        const auto redeem=[&](std::uint32_t cost) {
-            PbWriter message;message.Varint(1,11);message.Varint(2,12345);message.Varint(3,0);message.Varint(4,cost);
-            std::vector<std::uint8_t> wire;WriteProtobufFrame(9209,{},message.bytes(),wire);
-            routeGc.SendMessage(9209|ProtobufMask,wire.data(),wire.size());
-        };
-        const std::uint32_t base=2000000000u+(package.generation%1000000u)*16u;
-        redeem(base+3);redeem(base+15);redeem(base+16+11);
+        PbWriter message;message.Varint(1,11);message.Varint(2,12345);message.Varint(3,0);
+        message.Varint(4,2000000000u+(package.generation%1000000u)*16u+11u);
+        std::vector<std::uint8_t> wire;WriteProtobufFrame(9209,{},message.bytes(),wire);
+        routeGc.SendMessage(9209|ProtobufMask,wire.data(),wire.size());
         Check(routeInventory->Items().Items().empty() && routeInventory->Items().CarePackages().size()==1 && routeSaves==0 &&
-              armory->Balance()==30,"armory-route claims with two/four slots or another package's stamp grant nothing");
-        redeem(base+11);redeem(base+11);
-        std::set<std::uint64_t> got,want{package.offers[0].id,package.offers[1].id,package.offers[3].id};
-        for(const auto &item:routeInventory->Items().Items())got.insert(item.id);
-        Check(got==want && routeInventory->Items().CarePackages().empty() && routeSaves==1 && armory->Balance()==30,
-              "armory-route claim grants the three chosen slots once without spending Armory credits");
+              armory->Balance()==30,"an Armory redemption never claims a care package or spends credits for one");
     }
     {
         // Build 31: claims printed by the patched page to console.log (the user's build-30 line, verbatim shape).
@@ -4364,14 +4356,15 @@ void NativeCarePackages()
         auto consoleInventory=std::make_shared<LiveInventory>(*disk);LocalGameCoordinator consoleGc({});int consoleSaves=0;
         consoleGc.EnableContainers(consoleInventory,shared,[]{return 1ull;},[&]{++consoleSaves;});
         const auto package=consoleInventory->Items().CarePackages().front();
+        const std::function<void()> save=[&]{++consoleSaves;};
         const auto token=[&](std::size_t slot)->std::uint64_t{ // the store's choice token for a slot
             return 3000000000000ull+(std::uint64_t{slot}<<32)+(std::uint64_t{package.offers[slot].paintKitIndex}<<16)+package.offers[slot].defIndex;};
-        Check(!consoleGc.ClaimCareFromConsole(package.generation+1,{token(0),token(1),token(3)}) &&
-              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(0),token(3)}) &&
-              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1)}) && consoleSaves==0,
+        Check(!consoleGc.ClaimCareFromConsole(package.generation+1,{token(0),token(1),token(3)},save) &&
+              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(0),token(3)},save) &&
+              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1)},save) && consoleSaves==0,
               "console claims with another package, a repeated choice or two choices grant nothing");
-        Check(consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1),token(3)}) &&
-              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1),token(3)}) &&
+        Check(consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1),token(3)},save) &&
+              !consoleGc.ClaimCareFromConsole(package.generation,{token(0),token(1),token(3)},save) &&
               consoleInventory->Items().Items().size()==3 && consoleSaves==1,
               "a console claim grants the three chosen offers once");
     }
@@ -4383,6 +4376,45 @@ void NativeCarePackages()
     endpoint.SendMessage(9219|ProtobufMask,body.data(),body.size());
     Check(endpointInventory->Items().Items().size()==3 && endpointInventory->Items().CarePackages().empty() && saves==2,
           "native StoreRedeemFreeRewards path pays three once and saves before notification");
+
+    {
+        auto helperInventory=std::make_shared<LiveInventory>(saved);
+        LocalGameCoordinator helper({});
+        helper.EnableContainers(helperInventory,shared,[]{return 500ull;},{});
+        int helperSaves=0;
+        Check(helper.ApplyMatchRewards(1,{}),"helper fixture queues saved offers");
+        const auto front=helperInventory->Items().CarePackages().front();
+        for (const auto mask : {0u,1u,3u,15u,23u})
+            Check(!helper.ClaimLocalCarePackage(front.generation,mask,[&]{++helperSaves;}),
+                  "helper rejects masks other than exactly three of four");
+        Check(!helper.ClaimLocalCarePackage(front.generation+1,7,{}),
+              "helper rejects stale generation without changing inventory");
+        Check(helper.ClaimLocalCarePackage(front.generation,13,[&]{++helperSaves;}) &&
+              helperInventory->Items().Items().size()==3 &&
+              !helperInventory->Items().Find(front.offers[1].id) && helperSaves==1,
+              "helper grants exactly selected slots and saves once");
+        Check(!helper.ClaimLocalCarePackage(front.generation,13,[&]{++helperSaves;}) && helperSaves==1,
+              "replayed helper request cannot grant twice");
+        bool created=false,notified=false;std::uint32_t available=0;
+        while(helper.IsMessageAvailable(&available)) {
+            std::vector<std::uint8_t> message(available);std::uint32_t type=0,got=0;
+            helper.RetrieveMessage(&type,message.data(),available,&got);
+            created|=(type&~ProtobufMask)==gc_msg::ESOMsg::k_ESOMsg_Create;
+            notified|=(type&~ProtobufMask)==gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification;
+        }
+        Check(created && notified,"helper publishes real inventory and redemption acknowledgements");
+        const auto disk=Inventory::FromText(helperInventory->Items().ToText());
+        Check(disk && disk->Items().size()==3 && disk->CarePackages().empty(),
+              "helper result survives reload without a pending claim");
+        const std::string nonce(32,'a');
+        const auto decoded=DecodeLocalCareRequest("42 123 13 "+nonce);
+        Check(decoded && decoded->processId==42 && decoded->generation==123 && decoded->mask==13 &&
+              decoded->nonce==nonce,"care transport preserves exact integer choices");
+        for (const auto &bad : {"0 123 13 "+nonce, "42 0 13 "+nonce, "42 123 15 "+nonce,
+             "4294967296 123 13 "+nonce, "42 4294967296 13 "+nonce, "42 123 13 "+nonce+" extra",
+             std::string{"42 123 13 nope"}, "42 123 13 "+nonce+"\n42 124 7 "+nonce})
+            Check(!DecodeLocalCareRequest(bad),"care request decoder rejects invalid/sessionless data");
+    }
     Inventory opens;const auto crate=opens.Add({0,60});
     Check(OpenCase(opens,*schema,crate,0,[]{return 0ull;}).error==OpenError::None && opens.Items().size()==1,
           "free case opens with no key object");

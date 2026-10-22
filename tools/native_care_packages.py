@@ -1,7 +1,9 @@
-"""Reuse CS2's native care-package tiles and StoreRedeemFreeRewards for local 3-of-4 rewards.
+"""Reuse CS2's native care-package tiles for local 3-of-4 rewards.
 
 Uses the inspected rankup_redemption_store and the captured PersonalStore (SO type 4). No invented UI APIs.
-Claims submit the faux ids of the displayed tiles (GetFauxItemIDFromDefAndPaintIndex); see SUBMIT.
+Claims: the game's StoreRedeemFreeRewards (builds 27-29) and Armory redemption (build 30) never send a local
+claim, so for local packages the page prints one claim line to console.log ($.Msg, -condebug) and the DLL
+(PollCareClaims) reads freshly appended lines and runs the saved-package claim. See SUBMIT.
 """
 from native_resources import install_override
 
@@ -12,17 +14,6 @@ HELPER = '''    function _LocalCarePackage() {
     function _LocalCareFauxId(token) {
         const encoded = Number(token) - 3000000000000;
         return InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(encoded % 65536, Math.floor(encoded / 65536) % 65536);
-    }
-    // Build 30: the native StoreRedeemFreeRewards never sends local claims (no 9219 in the build 28/29 logs, even
-    // for ids the client knew). The Armory redemption reaches the local GC, so the claim travels as one:
-    // cost = 2000000000 + (generation % 1000000) * 16 + mask of the three chosen offer slots.
-    function _LocalCareClaim() {
-        const store = GetPersonalStore();
-        const mask = _GetSelectedItems().reduce((bits, item) =>
-            bits | (1 << Math.floor((Number(item.item_id) - 3000000000000) / 4294967296)), 0);
-        const cost = 2000000000 + (Number(store.generation_time) % 1000000) * 16 + mask;
-        _LocalCareLog('claim via armory route: generation=' + store.generation_time + ' mask=' + mask + ' cost=' + cost);
-        MissionsAPI.ActionRedeemOperationGoods(MissionsAPI.GetSeasonalOperationXpShopIndex(), 0, cost);
     }
     function _LocalCareLog(text) {
         try { $.Msg('cs2_gc care: ' + (typeof text === 'function' ? text() : text)); } catch (error) {}
@@ -46,19 +37,11 @@ TIME = '''        if (_LocalCarePackage()) {
             return;
         }
 '''
-# The supplied log of a failed claim (build 27) has no 9219 frame at all: StoreRedeemFreeRewards(tokens)
-# returned without sending. The tokens are not ids the client inventory knows (stock _CreateItemPanel
-# drops such ids; official stores list real/faux ids), so submit the faux ids the tiles already render
-# and let the GC map them back to the saved offers. Console diagnostics record what was submitted.
+# The claim line the DLL acts on (ParseCareConsoleClaims): generation and the three choice tokens.
 SUBMIT = '''        if (_LocalCarePackage()) {
-            const tokens = _GetSelectedItems().map(item => item.item_id);
-            szItemList = tokens.map(token => _LocalCareFauxId(token)).join(',');
-            _LocalCareLog(() => {
-                const store = GetPersonalStore();
-                const known = list => list.map(id => InventoryAPI.IsItemInfoValid(id) + '/' + InventoryAPI.IsValidItemID(id)).join(',');
-                return 'claim generation=' + (store ? store.generation_time : 0) + ' balance=' + m_redeemableBalance +
-                    ' tokens=' + tokens.join(',') + ' known=' + known(tokens) + ' submitted=' + szItemList + ' known=' + known(szItemList.split(','));
-            });
+            const store = GetPersonalStore();
+            _LocalCareLog('claim generation=' + (store ? store.generation_time : 0) + ' balance=' + m_redeemableBalance +
+                ' tokens=' + _GetSelectedItems().map(item => item.item_id).join(','));
         }
 '''
 TIMEOUT = '''        if (_LocalCarePackage()) _LocalCareLog('claim timed out: no free_reward_redeemed notification within 10s');
@@ -98,7 +81,7 @@ def patch(source):
     timeout = '    function _RedemptionTimedOut() {'
     if source.count(submit) != 1 or source.count(timeout) != 1 or source.count('        let szItemList = ') != 1:
         raise ValueError('Installed reward claim handler changed; no patch written')
-    source=source.replace(submit,SUBMIT+'        if (_LocalCarePackage()) _LocalCareClaim(); else StoreAPI.StoreRedeemFreeRewards(szItemList);',1)
+    source=source.replace(submit,SUBMIT+'        if (!_LocalCarePackage()) StoreAPI.StoreRedeemFreeRewards(szItemList);',1)
     source=source.replace(timeout,timeout+'\n'+TIMEOUT,1)
     source=source.replace('Object.values(objStore.items)', 'Object.values(objStore.items || {})')
     return source

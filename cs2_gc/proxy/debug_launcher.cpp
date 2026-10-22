@@ -54,8 +54,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     // Prepare before +exec runs. The later background helper reuses this nonce.
     std::ofstream boot(directory / L"cs2_gc_console_boot.txt", std::ios::trunc);
     boot << nonce << '\n'; boot.close();
+    std::error_code logError;
+    const auto logSize = std::filesystem::file_size(cfg.parent_path().parent_path() / L"console.log", logError);
+    std::ofstream careBoot(directory / L"cs2_gc_care_boot.txt", std::ios::trunc);
+    careBoot << nonce << ' ' << (logError ? 0 : logSize) << '\n'; careBoot.close();
     std::ofstream config(cfg, std::ios::trunc);
     config << "// Debug launcher generated controls; no persistent autoexec edits.\n"
+           << "setinfo cs2_gc_session_code " << nonce << "\n"
            << "setinfo cs2_gc_rotation_offset 0\n"
            << "bot_prefix \"\"\n" // no "[BOT]" before bot names (bots that join afterwards)
            << "exec cs2_gc_premier_bots\n" // bot difficulty from the local rating (written by the helper last session)
@@ -66,7 +71,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
            << "alias cs2_gc_force_rotation \"incrementvar cs2_gc_rotation_offset 0 1000000 1; incrementvar cs2gc_" << nonce << "_rot 0 1000000 1\"\n"
            << "echo Local GC debug commands loaded\n";
     config.close();
-    if (!boot || !config) return Fail(L"Could not prepare debug console controls. Check folder write permissions.");
+    if (!boot || !careBoot || !config) return Fail(L"Could not prepare debug console controls. Check folder write permissions.");
     // A running game locks mounted pak01 files. Prepare all native resources before Steam starts it.
     const auto prepare = directory / L"prepare_native.py";
     if (!std::filesystem::is_regular_file(prepare))

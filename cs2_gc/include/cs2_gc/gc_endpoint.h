@@ -94,13 +94,18 @@ public:
     // Consume cumulative XP from the local GSI bridge, idempotently, on the game's callback thread.
     bool ApplyEarnedXp(std::uint64_t cumulativeXp, const std::function<void()> &afterChange);
     // A care-package claim the patched page printed to console.log (build 31): generation + the three choice tokens.
-    bool ClaimCareFromConsole(std::uint32_t generation, const std::vector<std::uint64_t> &tokens);
+    bool ClaimCareFromConsole(std::uint32_t generation, const std::vector<std::uint64_t> &tokens,
+                              const std::function<void()> &afterChange);
     bool ApplyConsoleControl(std::uint64_t cumulativeStars, std::uint32_t rotationOffset,
                              const std::function<void()> &afterChange);
     bool ApplyMatchRewards(std::uint64_t completed, const std::function<void()> &afterChange);
     bool ApplyLevelRewards(const std::function<void()> &afterChange);
     // Local helper fallback when the native terminal checkout sends no purchase request.
     bool AcceptLocalTerminal(std::uint64_t gameId, const std::function<void()> &afterChange);
+
+    // Local UI fallback; the saved front package remains authoritative.
+    bool ClaimLocalCarePackage(std::uint32_t generation, std::uint32_t mask,
+                               const std::function<void()> &afterChange);
 
     // Sell items for free. A valid purchase (every line an item `canSell` accepts, a sane quantity)
     // is answered with a transaction id; the proxy then reports the authorisation through the
@@ -130,10 +135,12 @@ public:
 private:
     void OnClientHello(const FrameView &frame);
     void ReplyLocalPremier(std::int32_t change = 0); // caller holds m_mutex
+    bool CompleteCareClaimLocked(std::shared_ptr<LiveInventory> inventory, std::uint32_t generation,
+                                 const std::vector<std::uint64_t> &selected,
+                                 const std::function<void()> &afterChange);
     void NotifyCarePackage(); // caller holds m_mutex
     std::uint32_t m_sentCareGeneration{};
     std::vector<std::uint8_t> m_sentCareStore;
-    std::function<bool(LocalGameCoordinator &, std::uint32_t, const std::vector<std::uint64_t> &)> m_careClaim;
     void NotifyRewardDrops(const std::vector<InventoryItem> &drops); // caller holds m_mutex
     void SendMissingCaseKeys(); // free_case_keys: create and send a key for each newly owned case type
     std::optional<std::uint64_t> AcceptTerminalLocked(std::uint64_t gameId);

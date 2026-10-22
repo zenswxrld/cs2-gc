@@ -5,9 +5,9 @@ from pathlib import Path
 import zipfile
 
 FILES = (
-    'native_skins.py','native_finishes.py','weapon_palettes.py',
+    'kv3.py','native_skins.py','native_finishes.py','weapon_palettes.py',
     'native_patterns.py','next_collection_lineups.py','retained_collection_lineups.py',
-    'collection_detail.py','collection_donors.py','prepare_native.py',
+    'collection_detail.py','collection_donors.py','collection_material.py','prepare_native.py',
     'preparation_cache.py','rotate_armory.py',
 )
 
@@ -16,6 +16,11 @@ def main():
     out=root.parent/'dist';out.mkdir(exist_ok=True)
     manifest={}
     with zipfile.ZipFile(out/'CS2GC-Collection-Update-Test.zip','w',zipfile.ZIP_DEFLATED) as archive:
+        decoder=root.parent/'build/Release/cs2_gc_texture_decode.exe'
+        data=decoder.read_bytes()
+        archive.writestr('cs2_gc_texture_decode.exe',data)
+        manifest['cs2_gc_texture_decode.exe']=hashlib.sha256(data).hexdigest()
+        archive.writestr('BCDEC-LICENSE.txt',(root.parent/'third_party/bcdec.h').read_text(encoding='utf-8').split('/* LICENSE:')[1])
         for name in FILES:
             data=(root/name).read_bytes()
             archive.writestr(name,data)

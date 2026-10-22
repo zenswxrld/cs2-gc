@@ -296,7 +296,7 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_pale
     if data is None: return None
     # Older official donors can use KV3 v4. They cannot be recoloured by this
     # writer; skip the donor rather than aborting the entire schema generation.
-    if len(data) < 4 or struct.unpack_from('<I', data)[0] != kv3.MAGIC5: return None
+    if len(data) < 4 or struct.unpack_from('<I', data)[0] not in ((kv3.MAGIC4,kv3.MAGIC5) if detail_policy else (kv3.MAGIC5,)): return None
     guid, root = kv3.read_kv3(data)
     specific = _specific_material(root)
     if specific is None: return None
@@ -305,8 +305,13 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_pale
     m_version, m_blocks = kv3.read_resource(material)
     m_data = dict(m_blocks).get('DATA')
     if m_data is None: return None
-    if len(m_data) < 4 or struct.unpack_from('<I', m_data)[0] != kv3.MAGIC5: return None
+    if len(m_data) < 4 or struct.unpack_from('<I', m_data)[0] not in ((kv3.MAGIC4,kv3.MAGIC5) if detail_policy else (kv3.MAGIC5,)): return None
     m_guid, m_root = kv3.read_kv3(m_data)
+    if detail_policy:
+        from collection_material import make as make_composite
+        handled,made=make_composite(source,kit,new_name,theme,compmat,guid,root,specific,
+            material,m_guid,m_root,report,weapon_palette)
+        if handled:return made
     partial=weapon_palette and kit.startswith('soe_') and not detail_policy
     colors = _vector_params(m_root,allow_partial=partial)
     if colors is None: return None

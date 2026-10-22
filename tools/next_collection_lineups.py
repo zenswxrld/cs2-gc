@@ -88,7 +88,7 @@ def rename_retained(definitions, kits):
                         import native_finishes as finishes
                         palette_names=tuple(finishes.THEMES)+tuple(finishes.DUO_THEMES)+tuple(finishes.GRADIENT_THEMES)
                         theme=next((t for t in palette_names if re.search(
-                            '_'+t.lower()+r'(?:_inverted)?_(?:ancient|legendary|mythical|rare|uncommon)
+                            '_'+t.lower()+r'(?:_inverted)?_(?:ancient|legendary|mythical|rare|uncommon)$',tail)),None)
                         if theme:
                             title=rolled_name(title,theme)+(' Inverted' if '_inverted_' in name else '')
                 break
@@ -103,6 +103,9 @@ def build(source_text, kits, titles, kit_path, source, families, made_kits, repo
     rarities=weapon_rarity_tags(source_text)
     donors=catalog(source_text,kits,kit_path)
     previously_used=previous_materials(previous_entries,kits,kit_path)
+    from collection_material import pattern_from_source
+    previous_patterns={pattern_from_source(source,path) for path in previously_used}
+    previous_patterns.discard(None)
     result,files,lists,names,items,icons=[],{},[],[],[],{}
     counts={}
     publication=report.setdefault('collection_upgrade',{})
@@ -168,8 +171,8 @@ def build(source_text, kits, titles, kit_path, source, families, made_kits, repo
                     if signature in signatures:
                         continue
                     signatures.add(signature)
-                    actual_material=evidence.get('source_material',donor.material)
-                    if actual_material in seen:
+                    actual_material=evidence.get('pattern_identity',evidence.get('source_material',donor.material))
+                    if actual_material in seen or (icon in DESIGNS and not (slot==1 and binding) and actual_material in previous_patterns):
                         break
                     values={k:v for k,v in kits[donor.name][1].items()
                         if isinstance(v,str) and k not in ('name','description_string','description_tag')}
@@ -178,6 +181,7 @@ def build(source_text, kits, titles, kit_path, source, families, made_kits, repo
                         _rarity=paint_rarity_for_weapon(tier,weapon,rarities))
                     entries.append((name,rolled_name(title,theme) if variable else title,values))
                     assets[path+'_c'],assets[finishes.VMAT_DIR+name+'.vmat_c']=made
+                    assets.update(palette_report.get('_files',{}))
                     variants.append(name);colors.append(theme)
                     if not variable:
                         break
@@ -201,148 +205,6 @@ def build(source_text, kits, titles, kit_path, source, families, made_kits, repo
             seen.update((donor.material,actual_material))
             for identity in {donor.material,actual_material}:
                 local_counts[identity]=local_counts.get(identity,0)+1
-            if variable:
-                pending_families[active]=variants
-            tiers[tier].append('[%s]%s'%(active,weapon))
-            row['skins'].append(dict(slot=slot,weapon=weapon,rarity=tier,title=title,kit=active,
-                donor=donor.name,source_material=donor.material,material_template=actual_material,
-                source_collections=list(donor.collections),source_weapons=list(donor.weapons),
-                family=variable,themes=colors,variants=variants if variable else [],
-                previously_used=donor.material in previously_used,detail_policy='source-detail-v1',
-                required_family=bool(slot==1 and binding)))
-        if [len(tiers[t]) for t in RARITIES]!=[1,2,3,4,6]:
-            row['skins']=[];continue
-        result.extend(e for e in pending if e[0] not in made_kits)
-        files.update(pending_files);families.update(pending_families);counts=local_counts
-        lists.append(_collection_lists(collection,tiers,RARITIES));names.append(collection)
-        items.extend(e for t in RARITIES for e in tiers[t]);icons[collection]=icon
-        row.update(status='ready',reason='',fixed_skins=14,family_skins=2)
-    return result,files,'\n'.join(lists),names,items,icons
-
-
-def replace_pools(baseline, upgraded):
-    """Replace active loot only for complete upgrades. Keep all owned definitions/assets."""
-    definitions,files,lists,names,items,icons=baseline
-    old_items=set()
-    for name in upgraded[3]:
-        for suffix in ('',)+tuple('_'+t for t in RARITIES):
-            pattern=r'(?m)^\s*"'+re.escape(name+suffix)+r'"\s*\{[^}]*\}'
-            for block in re.findall(pattern,lists):
-                old_items.update(re.findall(r'"(\[[^\]]+\]weapon_[a-z0-9_]+)"',block))
-            lists=re.sub(pattern,'',lists)
-    return (definitions+upgraded[0],dict(files,**upgraded[1]),lists+'\n'+upgraded[2],
-        [n for n in names if n not in upgraded[3]]+upgraded[3],
-        [e for e in items if e not in old_items]+upgraded[4],dict(icons,**upgraded[5]))
-,tail)),None)
-                        if theme:
-                            title=rolled_name(title,theme)+(' Inverted' if '_inverted_' in name else '')
-                break
-        output.append((name,title,values))
-    return output
-
-
-def build(source_text, kits, titles, kit_path, source, families, made_kits, report, previous_entries=()):
-    import native_finishes as finishes
-    from native_skins import _collection_lists, weapon_rarity_tags, paint_rarity_for_weapon
-    available=set(re.findall(r'"name"\s+"(weapon_[a-z0-9_]+)"',source_text))
-    rarities=weapon_rarity_tags(source_text)
-    donors=catalog(source_text,kits,kit_path)
-    previously_used=previous_materials(previous_entries,kits,kit_path)
-    result,files,lists,names,items,icons=[],{},[],[],[],{}
-    counts={}
-    publication=report.setdefault('collection_upgrade',{})
-    report['next_12']={}
-    for icon,design in all_designs().items():
-        collection='set_cs2gc_case_'+icon
-        binding=FAMILY_BINDINGS.get(icon)
-        names_for=list(design.names)
-        first_wave=binding[2] if binding else None
-        guns=[design.chase]
-        if first_wave:
-            guns.append(first_wave)
-            names_for[1]=binding[0]
-        guns += [w for w in WEAPON_ORDER if w not in guns]
-        guns=guns[:16]
-        row={'status':'unavailable','skins':[],'reason':''}
-        publication[icon]=row
-        if icon in DESIGNS:
-            report['next_12'][icon]=row
-        if len(guns)!=16 or any(w not in available for w in guns):
-            row['reason']='required weapon missing from installed schema';continue
-        tiers={t:[] for t in RARITIES}
-        pending=[];pending_files={};pending_families={}
-        seen=set();local_counts=dict(counts)
-        for slot,(weapon,tier,title) in enumerate(zip(guns,TIERS,names_for)):
-            variable=slot in design.family_slots
-            if slot==1 and binding:
-                source_name=binding[1]
-                # Do not silently substitute a different finish under a real name.
-                choices=[donors[source_name]] if source_name in donors else []
-            else:
-                choices=candidates(donors,icon,weapon,previously_used if icon in DESIGNS else set(),
-                    local_counts,seen,limit=2 if icon in DESIGNS else 4)
-            selected=None
-            for donor in choices:
-                if donor.material in seen:
-                    continue
-                if not donor.generic and weapon not in donor.weapons:
-                    continue
-                stem='nc32_%s_%02d_%s'%(icon,slot,donor.name)
-                shift=slot%len(design.themes)
-                themes=design.themes[shift:]+design.themes[:shift]
-                entries=[];assets={};variants=[];colors=[];signatures=set()
-                actual_material=None
-                for theme in themes:
-                    name=stem+'_'+theme.lower()
-                    palette_report={}
-                    try:
-                        made=finishes.make_finish(source,donor.name,donor.material,name,theme,
-                            report=palette_report,weapon_palette=tier,weapon_tone=3,detail_policy=True)
-                    except ValueError as error:
-                        if str(error).startswith(('Unsupported KV3','KV3 dictionaries and binary blobs')):
-                            continue
-                        raise
-                    if not made:
-                        continue
-                    evidence=palette_report.get(donor.name+':'+tier,{})
-                    palette=evidence.get('themes',{}).get(theme)
-                    # A reported palette is required: prove distinct colours, not just different names.
-                    if not palette:
-                        continue
-                    signature=tuple(round(v,4) for c in palette for v in c)
-                    if signature in signatures:
-                        continue
-                    signatures.add(signature)
-                    actual_material=evidence.get('source_material',donor.material)
-                    if actual_material in seen:
-                        break
-                    values={k:v for k,v in kits[donor.name][1].items()
-                        if isinstance(v,str) and k not in ('name','description_string','description_tag')}
-                    path=finishes.COMPMAT_DIR+name+'.vcompmat'
-                    values.update(composite_material_path=path,
-                        _rarity=paint_rarity_for_weapon(tier,weapon,rarities))
-                    entries.append((name,rolled_name(title,theme) if variable else title,values))
-                    assets[path+'_c'],assets[finishes.VMAT_DIR+name+'.vmat_c']=made
-                    variants.append(name);colors.append(theme)
-                    if not variable:
-                        break
-                if actual_material in seen or len(variants)<(2 if variable else 1):
-                    continue
-                active=variants[0]
-                if variable:
-                    active=stem+'_family'
-                    entries.append((active,title,dict(entries[0][2])))
-                selected=(donor,active,entries,assets,variants,colors,actual_material)
-                break
-            if selected is None:
-                row['reason']=('required family donor unavailable or not safely recolourable: '+binding[1]
-                    if slot==1 and binding else
-                    'no unused compatible Weekly/Armory donor for slot %d (%s)'%(slot,title))
-                break
-            donor,active,entries,assets,variants,colors,actual_material=selected
-            pending.extend(entries);pending_files.update(assets)
-            seen.update((donor.material,actual_material))
-            local_counts[donor.material]=local_counts.get(donor.material,0)+1
             if variable:
                 pending_families[active]=variants
             tiers[tier].append('[%s]%s'%(active,weapon))

@@ -1,4 +1,5 @@
 #include "cs2_gc/gc_endpoint.h"
+#include <algorithm>
 #include "cs2_gc/econ_item.h"
 #include "cs2_gc/item_sales.h"
 #include "cs2_gc/gc_msg_ids.h"

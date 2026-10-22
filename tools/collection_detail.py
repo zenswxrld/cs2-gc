@@ -36,3 +36,15 @@ def rolled_name(title, theme):
     roots = {'Crimson Foil':'Foil', 'Blue Phosphor':'Phosphor',
              'Gold Brick':'Brick', 'Rainbow Spoon':'Rainbow Spoon'}
     return theme + ' ' + roots.get(title,title)
+
+
+def palettes_distinct(first, second):
+    """A family needs visibly different painted colours, not two near-identical hue labels."""
+    def anchor(palette):
+        return max((colorsys.rgb_to_hsv(*c[:3]) for c in palette),
+                   key=lambda c:c[1]*c[2])
+    if not first or not second:return False
+    h1,s1,v1=anchor(first);h2,s2,v2=anchor(second)
+    hue=min(abs(h1-h2),1-abs(h1-h2))
+    return ((min(s1,s2)>=.15 and hue>=22/360)
+            or abs(s1-s2)>=.18 or abs(v1-v2)>=.18)

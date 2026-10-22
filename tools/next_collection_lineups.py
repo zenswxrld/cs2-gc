@@ -3,7 +3,7 @@ from dataclasses import replace
 import re
 from retained_collection_lineups import DESIGNS as ORIGINAL_DESIGNS, Design, TIERS, RARITIES, WEAPON_ORDER
 from collection_donors import REQUIRED, catalog, candidates, previous_materials
-from collection_detail import rolled_name
+from collection_detail import rolled_name, palettes_distinct
 
 DESIGNS = dict(ORIGINAL_DESIGNS)
 OLDER_NAMES = {
@@ -149,7 +149,7 @@ def build(source_text, kits, titles, kit_path, source, families, made_kits, repo
                 shift=slot%len(design.themes)
                 themes=design.themes[shift:]+design.themes[:shift]
                 entries=[];assets={};variants=[];colors=[];signatures=set()
-                actual_material=None
+                actual_material=None;accepted_palettes=[]
                 for theme in themes:
                     name=stem+'_'+theme.lower()
                     palette_report={}
@@ -168,9 +168,9 @@ def build(source_text, kits, titles, kit_path, source, families, made_kits, repo
                     if not palette:
                         continue
                     signature=tuple(round(v,4) for c in palette for v in c)
-                    if signature in signatures:
+                    if signature in signatures or (variable and any(not palettes_distinct(palette,other) for other in accepted_palettes)):
                         continue
-                    signatures.add(signature)
+                    signatures.add(signature);accepted_palettes.append(palette)
                     actual_material=evidence.get('pattern_identity',evidence.get('source_material',donor.material))
                     if actual_material in seen or (icon in DESIGNS and not (slot==1 and binding) and actual_material in previous_patterns):
                         break

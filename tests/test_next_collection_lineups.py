@@ -1,4 +1,5 @@
 import copy
+import colorsys
 from pathlib import Path
 import sys
 import unittest
@@ -23,9 +24,11 @@ def fixtures():
     return schema,kits
 
 def make(source,base,path,name,theme,report=None,**kwargs):
-    value=(sum(map(ord,theme))%101)/101
+    if theme in finishes.THEMES:hue,saturation,_=finishes.THEMES[theme]
+    elif theme in finishes.DUO_THEMES:hue,_,saturation=finishes.DUO_THEMES[theme]
+    else:hues,saturation=finishes.GRADIENT_THEMES[theme];hue=hues[0]
     report[base+':'+kwargs['weapon_palette']]={'source_material':path.replace('.vcompmat','.vmat'),
-        'themes':{theme:[[value,.2,.3,1]]*4}}
+        'themes':{theme:[[*colorsys.hsv_to_rgb(hue/360,saturation,v),1] for v in (.3,.5,.7,.9)]}}
     return b'comp:'+name.encode(),b'mat:'+name.encode()
 
 class CollectionUpgrade(unittest.TestCase):
@@ -128,6 +131,14 @@ class CollectionUpgrade(unittest.TestCase):
         self.assertTrue(all(e[2] is values for e in result))
         self.assertEqual(result[0][1],lineups.OLDER_NAMES['ashfall'].split('|')[6])
         self.assertTrue(result[1][1].startswith('Ember '))
+
+    def test_family_colours_reject_near_identical_labels(self):
+        from collection_detail import palettes_distinct
+        palette=lambda hue,sat:[[ *colorsys.hsv_to_rgb(hue/360,sat,.8),1]]*4
+        self.assertFalse(palettes_distinct(palette(270,.75),palette(272,.62)))
+        self.assertFalse(palettes_distinct(palette(226,.74),palette(226,.78)))
+        self.assertTrue(palettes_distinct(palette(270,.75),palette(226,.74)))
+        self.assertTrue(palettes_distinct(palette(226,.74),palette(210,.1)))
 
     def test_determinism_and_inputs_unchanged(self):
         schema,kits=fixtures();before=copy.deepcopy(kits)

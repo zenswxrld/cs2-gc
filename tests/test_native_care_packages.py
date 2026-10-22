@@ -19,7 +19,8 @@ class NativeCarePackages(unittest.TestCase):
     def test_native_claim_requires_three_choices_and_removes_weekly_text(self):
         source='''let m_redeemableBalance=3,m_schTimer,m_timeoutScheduleHandle=99,m_timeStamp=10;
     function GetPersonalStore() {return store;}
-    function OnRedeem() {sent++;}
+    function OnRedeem() {let szItemList='';
+        StoreAPI.StoreRedeemFreeRewards(szItemList);\n}
     function _UpdateTime() { weekly++; }
     function OnInventoryUpdated() { updated++; }
     function _CreateItemPanel(itemId, index, bFirstTime, claimedItemId = '') {
@@ -34,7 +35,9 @@ class NativeCarePackages(unittest.TestCase):
 let store={generation_time:10,redeemable_balance:3,items:['3000000000001','3004294967297','3008589934593','3012884901889']};
 const title={},vars={},panel={FindChildrenWithClassTraverse:()=>[title],SetDialogVariable:(key,value)=>vars[key]=value,RemoveClass:()=>{}};
 const $={GetContextPanel:()=>panel,Schedule:()=>1,CancelScheduled:()=>cancelled++};
-const _GetSelectedItems=()=>Array(count).fill({}),_PulseItems=()=>pulses++;
+const _GetSelectedItems=()=>Array.from({length:count},(_,i)=>({item_id:store.items[i]})),_PulseItems=()=>pulses++;
+const GameInterfaceAPI={GetSettingString:()=> 'a'.repeat(32),ConsoleCommand:()=>sent++};
+const StoreAPI={StoreRedeemFreeRewards:()=>sent++};
 ''' +care.patch(source)+'''
 OnRedeem(); assert.equal(sent,0);assert.equal(pulses,1);
 count=4;OnRedeem();assert.equal(sent,0);
@@ -44,6 +47,23 @@ store={generation_time:11,redeemable_balance:3,items:store.items};OnInventoryUpd
 store={generation_time:0,redeemable_balance:0,items:[]};m_redeemableBalance=0;_UpdateTime();assert.equal(vars['frame-badge-text'],'REWARDS CLAIMED');
 store={generation_time:9,redeemable_balance:2,items:['123']};count=2;OnRedeem();assert.equal(sent,2);
 '''
+        self.run_js(script)
+
+
+    def test_local_claim_transports_selected_slots_not_preview_ids(self):
+        script = """const assert=require('assert');let commands=[],popups=0,nonce='a'.repeat(32);
+const store={generation_time:4294967295,items:['3000000000001','3004294967297','3008589934593','3012884901889']};
+const GetPersonalStore=()=>store;let picks=[0,2,3];
+const _GetSelectedItems=()=>picks.map(i=>({item_id:store.items[i]}));
+const GameInterfaceAPI={GetSettingString:()=>nonce,ConsoleCommand:c=>commands.push(c)};
+const UiToolkitAPI={ShowGenericPopup:()=>popups++};
+""" + care.HELPER + """
+assert.equal(_SendLocalCareClaim(),true);
+assert.equal(commands.length,1);
+assert.equal(commands[0], 'setinfo cs2gc_'+'a'.repeat(32)+'_care_4294967295_13 0; incrementvar cs2gc_'+'a'.repeat(32)+'_care_4294967295_13 0 1 1');
+picks=[0,0,3];assert.equal(_SendLocalCareClaim(),false);assert.equal(commands.length,1);
+picks=[0,2,3];nonce='';assert.equal(_SendLocalCareClaim(),false);assert.equal(popups,1);assert.equal(commands.length,1);
+"""
         self.run_js(script)
 
     def test_catalogue_preview_decode_preserves_unique_choice_tokens(self):
@@ -57,7 +77,8 @@ assert.deepEqual(seen,[13,10]);assert.equal(itemId,'faux');assert.equal(choiceTo
 
     def test_native_faux_claimed_flag_is_cleared_only_for_pending_local_rewards(self):
         source="""    function GetPersonalStore() {return store;}
-    function OnRedeem() {}
+    function OnRedeem() {
+        StoreAPI.StoreRedeemFreeRewards(szItemList);\n}
     function _UpdateTime() {}
     function OnInventoryUpdated() {}
     function _CreateItemPanel(itemId, index, bFirstTime, claimedItemId = '') {

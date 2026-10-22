@@ -1,4 +1,5 @@
 #include "cs2_gc/gc_endpoint.h"
+#include <algorithm>
 #include "cs2_gc/econ_item.h"
 #include "cs2_gc/item_sales.h"
 #include "cs2_gc/gc_msg_ids.h"
@@ -588,19 +589,7 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                 }
                 selected.push_back(package.offers[slot].id);
             }
-            const auto chosen=inventory->ClaimCarePackage(*generation,selected);
-            if (!chosen) {
-                if(gc.m_config.diagnostic)gc.m_config.diagnostic("care claim rejected: stale generation or duplicate/partial choices");
-                ++gc.m_ignored;return;
-            }
-            // Preview descriptors never enter the econ cache. Only the three chosen owned items are published.
-            if (afterChange) afterChange();
-            gc.NotifyCarePackage(); gc.NotifyRewardDrops(*chosen);
-            PbWriter notification;
-            for(const auto &item:*chosen) notification.Varint(1,CustomItemIdBase+item.id);
-            notification.Varint(2,gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemFreeReward);
-            gc.Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,notification.bytes());
-            if(gc.m_config.diagnostic)gc.m_config.diagnostic("care package: three chosen rewards granted and saved");
+            gc.CompleteCareClaimLocked(inventory,*generation,selected,afterChange);
         });
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCDelete,
                [inventory, schema, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
@@ -1285,6 +1274,42 @@ bool LocalGameCoordinator::AcceptLocalTerminal(std::uint64_t gameId, const std::
     if (afterChange) afterChange();
     if (m_config.diagnostic) m_config.diagnostic("terminal: displayed offer accepted through local helper");
     return true;
+}
+
+
+bool LocalGameCoordinator::CompleteCareClaimLocked(std::shared_ptr<LiveInventory> inventory,
+    std::uint32_t generation, const std::vector<std::uint64_t> &selected,
+    const std::function<void()> &afterChange)
+{
+    const auto chosen=inventory->ClaimCarePackage(generation,selected);
+    if (!chosen) {
+        if(m_config.diagnostic)m_config.diagnostic("care claim rejected: stale generation or duplicate/partial choices");
+        ++m_ignored;return false;
+    }
+    // Preview descriptors never enter the econ cache. Only the three chosen owned items are published.
+    if (afterChange) afterChange();
+    NotifyCarePackage(); NotifyRewardDrops(*chosen);
+    PbWriter notification;
+    for(const auto &item:*chosen) notification.Varint(1,CustomItemIdBase+item.id);
+    notification.Varint(2,gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_ClientRedeemFreeReward);
+    Reply(gc_msg::EGCItemMsg::k_EMsgGCItemCustomizationNotification,notification.bytes());
+    if(m_config.diagnostic)m_config.diagnostic("care package: three chosen rewards granted and saved");
+    return true;
+}
+
+bool LocalGameCoordinator::ClaimLocalCarePackage(std::uint32_t generation, std::uint32_t mask,
+    const std::function<void()> &afterChange)
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_live || !m_live->Items().Gameplay().care_packages_enabled ||
+        (mask != 7 && mask != 11 && mask != 13 && mask != 14) ||
+        m_live->Items().CarePackages().empty()) return false;
+    const auto &package = m_live->Items().CarePackages().front();
+    if (package.generation != generation || package.offers.size() != 4) return false;
+    std::vector<std::uint64_t> selected;
+    for (unsigned slot = 0; slot < 4; ++slot)
+        if (mask & (1u << slot)) selected.push_back(package.offers[slot].id);
+    return CompleteCareClaimLocked(m_live,generation,selected,afterChange);
 }
 
 bool LocalGameCoordinator::ApplyMatchRewards(std::uint64_t completed, const std::function<void()> &afterChange)

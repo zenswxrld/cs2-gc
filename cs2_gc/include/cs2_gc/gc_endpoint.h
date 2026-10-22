@@ -99,6 +99,10 @@ public:
     // Local helper fallback when the native terminal checkout sends no purchase request.
     bool AcceptLocalTerminal(std::uint64_t gameId, const std::function<void()> &afterChange);
 
+    // Local UI fallback; the saved front package remains authoritative.
+    bool ClaimLocalCarePackage(std::uint32_t generation, std::uint32_t mask,
+                               const std::function<void()> &afterChange);
+
     // Sell items for free. A valid purchase (every line an item `canSell` accepts, a sane quantity)
     // is answered with a transaction id; the proxy then reports the authorisation through the
     // MicroTxnAuthorizationResponse callback (TakePendingAuthorization), the game sends Finalize, and
@@ -127,6 +131,9 @@ public:
 private:
     void OnClientHello(const FrameView &frame);
     void ReplyLocalPremier(std::int32_t change = 0); // caller holds m_mutex
+    bool CompleteCareClaimLocked(std::shared_ptr<LiveInventory> inventory, std::uint32_t generation,
+                                 const std::vector<std::uint64_t> &selected,
+                                 const std::function<void()> &afterChange);
     void NotifyCarePackage(); // caller holds m_mutex
     std::uint32_t m_sentCareGeneration{};
     std::vector<std::uint8_t> m_sentCareStore;

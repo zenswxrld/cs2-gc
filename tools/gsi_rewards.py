@@ -17,6 +17,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gameplay_config import load as load_gameplay
 from console_controls import ConsoleControls
+from care_package_bridge import CarePackageBridge
 import premier_rating
 from rewards_runtime import InstanceLock, ParentProcess, serve_until_parent_exits
 import contextlib
@@ -277,9 +278,11 @@ def run_with_parent(args, parent):
         print('Local CS2 rewards bridge running' + (' in background; exits with CS2.' if args.parent_pid else ' in manual diagnostic mode.'), flush=True)
         console = ConsoleControls(rewards, args.cfg_dir, args.parent_pid) if args.debug_console and args.cfg_dir and args.parent_pid else None
         if console: print('Debug console controls enabled; cs2_gc_debug.exe loads the launch flags and command CFG automatically.', flush=True)
+        care = CarePackageBridge(args.proxy_dir, args.cfg_dir, args.parent_pid) if args.cfg_dir and args.parent_pid and rewards.config['care_packages_enabled'] else None
         next_status = [time.monotonic() + 30]
         def after_request():
             if console: console.poll()
+            if care: care.poll()
             if args.cfg_dir and rewards.config['premier_enabled']:
                 write_difficulty()
             if time.monotonic() < next_status[0]: return

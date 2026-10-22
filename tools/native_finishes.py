@@ -678,6 +678,11 @@ def prepare(proxy_directory, config, items_game_text):
     except ValueError:
         known = {}
     titles = titles_from(english, kits)
+    # Preserve historical pool selection for owned definitions: the old regex's
+    # omissions affected its seeded donor shuffle. Only new upgrades use the fixed lexer.
+    legacy_tokens = {k.lower(): v for k,v in re.findall(r'"([^"\n]+)"\s+"([^"\n]*)"',english)}
+    retained_titles = {name:legacy_tokens.get(v.get('description_tag','').lstrip('#').lower(),'')
+                       for name,(_,v) in kits.items()}
     knife_palettes = {}
     files, entries, case, tokens = plan(items_game_text, gold, titles, source, known, report=knife_palettes)
     atomic_write(proxy / PALETTE_REPORT, json.dumps(knife_palettes, sort_keys=True, indent=1) + '\n')
@@ -738,7 +743,7 @@ def prepare(proxy_directory, config, items_game_text):
         weapon_palettes = {}
         if config.get('custom_cases', 1):
             case_kits, case_files, case_lists, case_specs, case_items, icons = native_skins.custom_cases(
-                items_game_text, kits, titles, kit_path, source, families, {n for n, _, _ in family_kits}, report=weapon_palettes)
+                items_game_text, kits, titles, kit_path, source, families, {n for n, _, _ in family_kits}, report=weapon_palettes, retained_titles=retained_titles)
             atomic_write(proxy / 'cs2_gc_weapon_palettes.json', json.dumps(weapon_palettes,sort_keys=True,indent=1)+'\n')
             family_kits += case_kits
             files.update(case_files)

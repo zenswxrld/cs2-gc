@@ -458,8 +458,10 @@ NEXT12_DONORS = {
     'warden': ('am_chainmail', 'am_diamond_plate', 'am_zebra_dark'),
 }
 
-def custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits, report=None):
+def custom_cases(source_text, kits, titles, kit_path, finish_source, families, made_kits, report=None, retained_titles=None):
     if report is None: report={}
+    readable_titles=titles
+    titles=retained_titles if retained_titles is not None else titles
     # Keep build27a definitions even when a repeated donor is replaced in the current pool.
     previous = _curated_custom_cases(source_text,kits,titles,kit_path,finish_source,families,made_kits,False)
     current = _curated_custom_cases(source_text,kits,titles,kit_path,finish_source,families,made_kits,True)
@@ -500,7 +502,8 @@ def custom_cases(source_text, kits, titles, kit_path, finish_source, families, m
         current[2]+'\n'+expanded[2],current[3]+expanded[3],current[4]+expanded[4],
         dict(current[5],**expanded[5]))
     from next_collection_lineups import build as upgrade, replace_pools, rename_retained
-    authored=upgrade(source_text,expanded_kits,expanded_titles,kit_path,expanded_source,
+    readable_titles=dict(expanded_titles,**readable_titles)
+    authored=upgrade(source_text,expanded_kits,readable_titles,kit_path,expanded_source,
         families,set(made_kits) | {n for n,_,_ in baseline[0]},report,
         previous_entries=baseline[4])
     current=replace_pools(baseline,authored)

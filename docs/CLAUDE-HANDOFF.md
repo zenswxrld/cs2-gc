@@ -1256,3 +1256,15 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   exists, and rewrites the plugin catalogue (original kept as .original) to popular skins per gun / popular sticker
   capsules / popular knife finishes and gloves, resolved by English finish name against the installed schema (all
   35 guns resolved on the user's files). Uninstall removes it. Not verified live; after a CS2 update rerun install.
+- Build 39 (22 Oct): user confirmed custom-collection trade-ups work live (P90 Galaxy Reef Grief, Nebula Collection)
+  and approved third-party bot plugins. bot_skins.py now installs the CS2-Bot-Improver release (prefers the
+  rules_unchanged zip; uses its bundled Metamod/CSS when present, else the official downloads): every addons/ folder
+  except plugins/disabled, never its cfg/gamemode_*.cfg, overrides, gameinfo or panel. Its bot config goes to
+  cfg/cs2_gc_bot_improver(.cfg|_ffa.cfg) minus binds/difficulty lines, run from gamemode_<mode>_server.cfg files we
+  create only when absent (marker line) followed by exec cs2_gc_premier_bots. Skill presets: their botprofile.db per
+  tier saved to bin/win64/cs2_gc_bot_presets; native_bot_names.skill_preset picks Low < 10k, Medium < 30k, High 30k+
+  from cs2_gc_gsi_state.json and applies our random names on top (PROFILE accepts quoted names; install_override
+  takes source=). bot_difficulty: 0 <5k, 1 <10k, 2 <20k, 3 from 20k. Metamod mounted after the write-path
+  placeholder (ensure_first_game_path). Refuses to overwrite foreign addons folders. Not verified live.
+  Queued next (user): Armory agent tab -> rotating collections of agents grouped by their operation, using the
+  operations' own artwork for the tile.

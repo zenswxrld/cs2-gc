@@ -127,7 +127,8 @@ def patch_installed_script(resource, actual_path, patch):
     return rewrite_script(resource, patch)
 
 
-def install_override(proxy_directory, *, enabled, folder, comment, owner, asset, patch):
+def install_override(proxy_directory, *, enabled, folder, comment, owner, asset, patch, source=None):
+    """source: (bytes, path) to patch instead of the installed VPK asset (e.g. a bot difficulty preset)."""
     proxy = Path(proxy_directory).resolve()
     game = proxy.parent.parent
     info = game / 'csgo/gameinfo.gi'
@@ -148,7 +149,7 @@ def install_override(proxy_directory, *, enabled, folder, comment, owner, asset,
         return 'disabled'
     directory = game / 'csgo/pak01_dir.vpk'
     if not directory.is_file(): return 'unavailable: installed csgo/pak01_dir.vpk not found'
-    original, actual = vpk_file(directory, asset, aliases=True, with_path=True)
+    original, actual = source if source is not None else vpk_file(directory, asset, aliases=True, with_path=True)
     target = mod / actual
     result = patch_installed_script(original, actual, patch)
     output_hash = hashlib.sha256(result).hexdigest()

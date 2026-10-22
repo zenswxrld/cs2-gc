@@ -78,5 +78,84 @@ class Files(unittest.TestCase):
             with self.assertRaises(RuntimeError): bot_skins.install(proxy)
 
 
+class Improver(unittest.TestCase):
+    def bundle(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w') as archive:
+            archive.writestr('CS2BotImprover/addons/counterstrikesharp/plugins/BotAI/BotAI.dll', b'ai')
+            archive.writestr('CS2BotImprover/addons/counterstrikesharp/plugins/disabled/Old/Old.dll', b'old')
+            archive.writestr('CS2BotImprover/addons/counterstrikesharp/data/NadeSystem/grenades/de_dust2_smoke.json', b'{}')
+            archive.writestr('CS2BotImprover/addons/BotVision/bin/BotVision.dll', b'v')
+            archive.writestr('CS2BotImprover/cfg/my_bot_normal_config_rules_unchanged.cfg',
+                             'sv_cheats 1\nbot_difficulty 5\ncustom_bot_difficulty 5\nbot_allow_grenades 0\n'
+                             'bind \\ "subclass_create 500"\nalias awp "bot_loadout awp"\n')
+            archive.writestr('CS2BotImprover/cfg/my_bot_ffa_config_rules_unchanged.cfg', 'bot_allow_grenades 0\n')
+            archive.writestr('CS2BotImprover/cfg/gamemode_competitive.cfg', 'exec my_bot_normal_config.cfg\n')
+        return buffer.getvalue()
+
+    def game(self, root):
+        game = Path(root)
+        (game / 'csgo/cfg').mkdir(parents=True)
+        proxy = game / 'bin/win64'; proxy.mkdir(parents=True)
+        return game, proxy
+
+    def test_plugins_and_configs_install_without_replacing_stock_or_user_files(self):
+        with tempfile.TemporaryDirectory() as root:
+            game, proxy = self.game(root)
+            (game / 'csgo/cfg/gamemode_casual_server.cfg').write_text('sv_mine 1\n', encoding='utf-8')
+            original = bot_skins._get
+            bot_skins._get = lambda url, accept=None: b'"profile"'
+            try:
+                written = bot_skins._install_improver(proxy, game, self.bundle(), {'metamod', 'counterstrikesharp'})
+            finally:
+                bot_skins._get = original
+            self.assertIn('addons/counterstrikesharp/plugins/BotAI/BotAI.dll', written)
+            self.assertIn('addons/BotVision/bin/BotVision.dll', written)
+            self.assertFalse(any('disabled' in w for w in written))
+            cfg = game / 'csgo/cfg'
+            self.assertFalse((cfg / 'gamemode_competitive.cfg').exists())  # stock mode configs never replaced
+            text = (cfg / 'cs2_gc_bot_improver.cfg').read_text(encoding='utf-8')
+            self.assertIn('bot_allow_grenades 0', text)
+            self.assertIn('alias awp', text)
+            for gone in ('bot_difficulty', 'custom_bot_difficulty', 'bind'):
+                self.assertNotIn(gone + ' ', text)
+            server = (cfg / 'gamemode_competitive_server.cfg').read_text(encoding='utf-8')
+            self.assertEqual(server.splitlines()[1:], ['exec cs2_gc_bot_improver', 'exec cs2_gc_premier_bots'])
+            self.assertIn('cs2_gc_bot_improver_ffa', (cfg / 'gamemode_deathmatch_server.cfg').read_text(encoding='utf-8'))
+            self.assertEqual((cfg / 'gamemode_casual_server.cfg').read_text(encoding='utf-8'), 'sv_mine 1\n')
+            self.assertTrue((proxy / 'cs2_gc_bot_presets/High/botprofile.db').is_file())
+            bot_skins._remove_improver(proxy, game)
+            self.assertFalse((cfg / 'gamemode_competitive_server.cfg').exists())
+            self.assertEqual((cfg / 'gamemode_casual_server.cfg').read_text(encoding='utf-8'), 'sv_mine 1\n')
+            self.assertFalse((proxy / 'cs2_gc_bot_presets').exists())
+
+    def test_existing_addon_folders_are_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as root:
+            game, proxy = self.game(root)
+            (game / 'csgo/addons/BotVision').mkdir(parents=True)
+            with self.assertRaises(RuntimeError):
+                bot_skins._install_improver(proxy, game, self.bundle(), {'metamod', 'counterstrikesharp'})
+
+
+class Presets(unittest.TestCase):
+    def test_skill_preset_follows_the_local_rating_and_names_still_apply(self):
+        import native_bot_names, premier_rating
+        self.assertEqual([premier_rating.bot_preset({'rating': r}) for r in (0, 9999, 10000, 29999, 30000, 45000)],
+                         ['Low', 'Low', 'Medium', 'Medium', 'High', 'High'])
+        self.assertEqual([premier_rating.bot_difficulty({'rating': r}) for r in (0, 5000, 10000, 20000, 30000)],
+                         [0, 1, 2, 3, 3])
+        with tempfile.TemporaryDirectory() as root:
+            proxy = Path(root)
+            self.assertIsNone(native_bot_names.skill_preset(proxy))
+            for tier in ('Low', 'High'):
+                (proxy / 'cs2_gc_bot_presets' / tier).mkdir(parents=True)
+                (proxy / 'cs2_gc_bot_presets' / tier / 'botprofile.db').write_bytes(tier.encode())
+            (proxy / 'cs2_gc_gsi_state.json').write_text(json.dumps({'premier': {'rating': 31000}}), encoding='utf-8')
+            self.assertEqual(native_bot_names.skill_preset(proxy), ('High', b'High'))
+        renamed = native_bot_names.patch(''.join('Template T%d\nEnd\n' % i for i in range(2)) + ''.join(
+            'T%d "Pro Name %d"\n\tSkill = 1\nEnd\n' % (i % 2, i) for i in range(12)), 5)
+        self.assertNotIn('Pro Name', renamed)  # quoted pro names get our random names too
+
+
 if __name__ == '__main__':
     unittest.main()

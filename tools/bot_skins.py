@@ -186,7 +186,7 @@ def _games(proxy):
     return game
 
 
-def _mount(game, enabled):
+def _mount(game, enabled, proxy=None):
     from native_tradeups import mount_gameinfo, read_text, atomic_write
     info = game / 'csgo/gameinfo.gi'
     current = read_text(info)
@@ -195,6 +195,11 @@ def _mount(game, enabled):
         backup = info.with_name('gameinfo.gi.cs2_gc_bot_skins_backup')
         if not backup.exists(): backup.write_text(current, encoding='utf-8', newline='')
         atomic_write(info, mounted)
+    if enabled and proxy is not None:
+        # Our empty write folder must stay the first Game path (a VPK there stops CS2); Metamod goes after it,
+        # still ahead of csgo.
+        from native_resources import ensure_first_game_path
+        ensure_first_game_path(proxy)
 
 
 def _core_config(game):
@@ -221,50 +226,153 @@ def recurate(proxy):
     return report
 
 
+# --- CS2-Bot-Improver gameplay plugins (aim, grenades, movement, AI, buying) and its skill presets -------------
+IMPROVER_RELEASE = 'https://api.github.com/repos/ed0ard/CS2-Bot-Improver/releases/latest'
+IMPROVER_RAW = 'https://raw.githubusercontent.com/ed0ard/CS2-Bot-Improver/main/'
+PRESET_TIERS = ('Low', 'Medium', 'High')
+CFG_MARKER = '// cs2_gc bot improver (owned by bot_skins.py; delete this file to stop it)'
+# Their settings, run after each mode's stock config from gamemode_<mode>_server.cfg (only files we create). Their
+# own package replaces the stock gamemode configs and binds keys; we do neither.
+SERVER_CFGS = {'competitive': 'cs2_gc_bot_improver', 'competitive2v2': 'cs2_gc_bot_improver',
+               'casual': 'cs2_gc_bot_improver', 'deathmatch': 'cs2_gc_bot_improver_ffa'}
+# Lines of their config left out: key binds, and difficulty (ours follows the local Premier rating).
+SKIPPED = re.compile(r'^\s*(bind|bot_difficulty|custom_bot_difficulty|sv_auto_adjust_bot_difficulty|'
+                     r'bot_autodifficulty_threshold_\w+)\b', re.I)
+
+
+def bot_config(text):
+    """Their bot config without key binds or difficulty settings."""
+    return CFG_MARKER + '\n' + ''.join(line for line in text.splitlines(keepends=True) if not SKIPPED.match(line))
+
+
+def _bundle_prefix(names):
+    """The archive folder that holds addons/ (their zip may have a top folder), or None."""
+    for name in names:
+        name = name.replace('\\', '/')
+        if '/addons/counterstrikesharp/' in '/' + name:
+            return ('/' + name).split('/addons/counterstrikesharp/', 1)[0].lstrip('/')
+    return None
+
+
+def _install_improver(proxy, game, data, owned=()):
+    """Copy their addons (plugins, plugin data, Metamod plugins) and write configs; returns the files written."""
+    csgo = game / 'csgo'
+    written = []
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        names = [n.replace('\\', '/') for n in archive.namelist()]
+        prefix = _bundle_prefix(names)
+        if prefix is None: raise RuntimeError('Bot Improver release has no addons folder')
+        base = (prefix + '/') if prefix else ''
+        tops = {n[len(base):].split('/')[1] for n in names if n.startswith(base + 'addons/') and n.count('/') > len(base.split('/'))}
+        foreign = [t for t in tops if t not in owned and (csgo / 'addons' / t).exists()]
+        if foreign: raise RuntimeError('Not overwriting your existing addons: ' + ', '.join(sorted(foreign)))
+        for name in names:
+            if not name.startswith(base + 'addons/') or name.endswith('/'): continue
+            relative = name[len(base):]
+            if '/plugins/disabled/' in relative: continue
+            path = (csgo / relative).resolve()
+            if csgo.resolve() not in path.parents: raise RuntimeError('Unsafe path in archive: ' + name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(archive.read(name))
+            written.append(relative)
+        def member(*candidates):
+            for candidate in candidates:
+                if base + candidate in names: return archive.read(base + candidate).decode('utf-8-sig')
+            return None
+        normal = member('cfg/my_bot_normal_config_rules_unchanged.cfg', 'cfg/my_bot_normal_config.cfg')
+        ffa = member('cfg/my_bot_ffa_config_rules_unchanged.cfg', 'cfg/my_bot_ffa_config.cfg')
+    normal = normal or _get(IMPROVER_RAW + 'cfg/my_bot_normal_config_rules_unchanged.cfg').decode('utf-8-sig')
+    ffa = ffa or _get(IMPROVER_RAW + 'cfg/my_bot_ffa_config_rules_unchanged.cfg').decode('utf-8-sig')
+    cfg = csgo / 'cfg'
+    (cfg / 'cs2_gc_bot_improver.cfg').write_text(bot_config(normal), encoding='utf-8')
+    (cfg / 'cs2_gc_bot_improver_ffa.cfg').write_text(bot_config(ffa), encoding='utf-8')
+    for mode, name in SERVER_CFGS.items():
+        path = cfg / ('gamemode_%s_server.cfg' % mode)
+        if path.exists() and not path.read_text(encoding='utf-8', errors='replace').startswith(CFG_MARKER):
+            print('Kept your own %s; add "exec %s" to it for the bot plugins in that mode.' % (path.name, name))
+            continue
+        path.write_text('%s\nexec %s\nexec cs2_gc_premier_bots\n' % (CFG_MARKER, name), encoding='utf-8')
+    # Skill presets (their botprofile.db per tier); native_bot_names picks one by the local Premier rating.
+    for tier in PRESET_TIERS:
+        target = proxy / 'cs2_gc_bot_presets' / tier / 'botprofile.db'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(_get(IMPROVER_RAW + 'overrides/%s/botprofile.db' % tier))
+    return written
+
+
+def _remove_improver(proxy, game):
+    cfg = game / 'csgo/cfg'
+    for mode in SERVER_CFGS:
+        path = cfg / ('gamemode_%s_server.cfg' % mode)
+        if path.is_file() and path.read_text(encoding='utf-8', errors='replace').startswith(CFG_MARKER): path.unlink()
+    for name in ('cs2_gc_bot_improver.cfg', 'cs2_gc_bot_improver_ffa.cfg'):
+        if (cfg / name).is_file(): (cfg / name).unlink()
+    shutil.rmtree(proxy / 'cs2_gc_bot_presets', ignore_errors=True)
+
+
 def install(proxy):
     game = _games(proxy)
     csgo = game / 'csgo'
-    if not (proxy / MANIFEST).exists() and any((csgo / 'addons' / d).exists() for d in ('metamod', 'counterstrikesharp')):
+    manifest = proxy / MANIFEST
+    previous = json.loads(manifest.read_text(encoding='utf-8')) if manifest.exists() else {}
+    if not previous and any((csgo / 'addons' / d).exists() for d in ('metamod', 'counterstrikesharp')):
         raise RuntimeError('Metamod or CounterStrikeSharp is already installed by something else; not touching it')
-    installed = []
-    print('Downloading Metamod:Source 2.0 ...', flush=True)
-    name = _get(METAMOD_LATEST).decode('ascii').strip()
-    if not re.fullmatch(r'mmsource-[\w.\-]+-windows\.zip', name): raise RuntimeError('Unexpected Metamod name ' + name)
-    installed += _extract(_get(METAMOD_DROP + name), csgo)
-    print('Downloading CounterStrikeSharp (with runtime) ...', flush=True)
-    tag, asset, data = _release_zip(CSS_RELEASE, 'with-runtime', 'windows')
-    installed += _extract(data, csgo)
-    print('Downloading BotRandomizer ...', flush=True)
-    tag2, asset2, data = _release_zip(RANDOMIZER_RELEASE)
-    plugin = game / PLUGIN_DIR
-    installed += ['addons/counterstrikesharp/plugins/BotRandomizer/' + p for p in _extract(data, plugin, _plugin_root(data))]
+    installed = list(previous.get('files', []))
+    print('Downloading CS2-Bot-Improver (bot aim, grenades, movement, AI, buying, skins) ...', flush=True)
+    release = json.loads(_get(IMPROVER_RELEASE, 'application/vnd.github+json'))
+    assets = [a for a in release.get('assets', []) if a['name'].lower().endswith('.zip')
+              and 'cs2botimprover' in a['name'].lower() and 'linux' not in a['name'].lower()]
+    assets.sort(key=lambda a: 'rules_unchanged' not in a['name'].lower())
+    if not assets: raise RuntimeError('No Windows CS2-Bot-Improver release found')
+    improver = _get(assets[0]['browser_download_url'])
+    with zipfile.ZipFile(io.BytesIO(improver)) as archive:
+        names = [n.replace('\\', '/') for n in archive.namelist()]
+    bundled = any('addons/metamod/bin/' in n for n in names) and any('addons/counterstrikesharp/api/' in n for n in names)
+    name = tag = 'bundled with Bot Improver'
+    if not bundled:  # their zip carries only plugins: get the frameworks from their official pages
+        print('Downloading Metamod:Source 2.0 ...', flush=True)
+        name = _get(METAMOD_LATEST).decode('ascii').strip()
+        if not re.fullmatch(r'mmsource-[\w.\-]+-windows\.zip', name): raise RuntimeError('Unexpected Metamod name ' + name)
+        installed += _extract(_get(METAMOD_DROP + name), csgo)
+        print('Downloading CounterStrikeSharp (with runtime) ...', flush=True)
+        tag, _, data = _release_zip(CSS_RELEASE, 'with-runtime', 'windows')
+        installed += _extract(data, csgo)
+    owned = {f.split('/')[1] for f in installed if f.startswith('addons/') and f.count('/') >= 2} | {'metamod', 'counterstrikesharp'}
+    installed += _install_improver(proxy, game, improver, owned)
+    if not (game / PLUGIN_DIR / 'BotRandomizer.dll').is_file():
+        print('Downloading BotRandomizer ...', flush=True)
+        _, _, data = _release_zip(RANDOMIZER_RELEASE)
+        installed += ['addons/counterstrikesharp/plugins/BotRandomizer/' + p
+                      for p in _extract(data, game / PLUGIN_DIR, _plugin_root(data))]
     _core_config(game)
-    _mount(game, True)
-    (proxy / MANIFEST).write_text(json.dumps({'metamod': name, 'counterstrikesharp': [tag, asset],
-                                              'botrandomizer': [tag2, asset2], 'files': sorted(set(installed))},
-                                             indent=1) + '\n', encoding='utf-8')
+    _mount(game, True, proxy)
+    manifest.write_text(json.dumps({'metamod': name, 'counterstrikesharp': tag,
+                                    'botimprover': [release.get('tag_name'), assets[0]['name']],
+                                    'files': sorted(set(installed))}, indent=1) + '\n', encoding='utf-8')
     report = recurate(proxy)
-    print('Installed %s, CounterStrikeSharp %s, BotRandomizer %s.' % (name, tag, tag2))
+    print('Installed Bot Improver %s (Metamod/CounterStrikeSharp: %s).' % (release.get('tag_name'), name))
     print('Popular loadouts: %d gloves, %d sticker capsules (%d stickers).' % (report['gloves'], len(report['capsules']), report['stickers']))
     if report['missing']: print('Finish names not in this CS2 build (skipped): ' + json.dumps(report['missing']))
-    print('Start CS2 with cs2_gc_debug.exe (it uses -insecure). In a bot match, bots spawn with skins.')
+    print('Bot skill follows your local Premier rating: Low preset below 10,000, Medium to 29,999, High from 30,000.')
+    print('Start CS2 with cs2_gc_debug.exe (it uses -insecure) and play a bot match.')
 
 
 def uninstall(proxy):
     game = _games(proxy)
     _mount(game, False)
+    _remove_improver(proxy, game)
     manifest = proxy / MANIFEST
     if manifest.exists():
         files = json.loads(manifest.read_text(encoding='utf-8')).get('files', [])
+        tops = {'/'.join(f.split('/')[:2]) for f in files if f.startswith('addons/') and f.count('/') >= 2}
         for relative in files:
             path = game / 'csgo' / relative
             if path.is_file(): path.unlink()
-        for folder in ('addons/counterstrikesharp', 'addons/metamod'):
+        for folder in sorted(tops | {'addons/counterstrikesharp', 'addons/metamod'}):
             if (game / 'csgo' / folder).is_dir(): shutil.rmtree(game / 'csgo' / folder, ignore_errors=True)
-        for name in ('metamod.vdf', 'metamod_x64.vdf'):
-            if (game / 'csgo/addons' / name).is_file(): (game / 'csgo/addons' / name).unlink()
         manifest.unlink()
-    print('Bot skins removed (Metamod search path unmounted; other addons untouched).')
+    print('Bot plugins removed (Metamod unmounted, presets and configs removed; your other addons untouched).')
+    print('Start CS2 with cs2_gc_debug.exe once so the normal bot profile comes back.')
 
 
 def status(proxy):
@@ -272,6 +380,7 @@ def status(proxy):
     text = (game / 'csgo/gameinfo.gi').read_text(encoding='utf-8', errors='replace')
     print('Metamod mounted: %s' % (METAMOD_PATH in text))
     print('Plugin present: %s' % (game / PLUGIN_DIR / 'BotRandomizer.dll').is_file())
+    print('Skill presets: %s' % (proxy / 'cs2_gc_bot_presets').is_dir())
     if (proxy / MANIFEST).exists(): print((proxy / MANIFEST).read_text(encoding='utf-8')[:400])
 
 

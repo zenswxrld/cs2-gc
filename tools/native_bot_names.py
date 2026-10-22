@@ -45,7 +45,7 @@ def _names(count, seed):
     return result
 
 
-PROFILE = re.compile(r'^([A-Za-z0-9_]+(?:\+[A-Za-z0-9_]+)*)([ \t]+)([^\s/]+)([ \t]*(?://.*)?)$')
+PROFILE = re.compile(r'^([A-Za-z0-9_]+(?:\+[A-Za-z0-9_]+)*)([ \t]+)("[^"\r\n]*"|[^\s/]+)([ \t]*(?://.*)?)$')
 
 
 def patch(text, seed):
@@ -102,13 +102,36 @@ def patch_labels(text, hide_tag=True, tokens=None):
     return text
 
 
+PRESETS = 'cs2_gc_bot_presets'
+
+
+def skill_preset(proxy_directory):
+    """(tier, botprofile bytes) of the installed Bot Improver preset for the local Premier rating, or None."""
+    import json
+    import premier_rating
+    proxy = Path(proxy_directory)
+    try:
+        state = json.loads((proxy / 'cs2_gc_gsi_state.json').read_text(encoding='utf-8')).get('premier') or {}
+    except (OSError, ValueError):
+        state = {}
+    tier = premier_rating.bot_preset({'rating': int(state.get('rating', 0))})
+    path = proxy / PRESETS / tier / 'botprofile.db'
+    return (tier, path.read_bytes()) if path.is_file() else None
+
+
 def prepare(proxy_directory, config, reshuffle=False):
     """reshuffle: new names (the launcher, before CS2 starts); the helper keeps the launcher's names."""
     from native_resources import install_override
-    enabled = bool(config.get('bot_random_names', 1))
-    seed = _seed(proxy_directory, reshuffle) if enabled else 0
-    names = install_override(proxy_directory, enabled=enabled, folder=FOLDER, comment=COMMENT, owner=OWNER,
-                             asset=ASSET, patch=lambda source: patch(source, seed))
+    random_names = bool(config.get('bot_random_names', 1))
+    preset = skill_preset(proxy_directory)
+    seed = _seed(proxy_directory, reshuffle) if random_names else 0
+    # With Bot Improver presets installed (bot_skins.py) the profile comes from the preset for the local rating;
+    # the random names still go on top of it.
+    names = install_override(proxy_directory, enabled=random_names or preset is not None, folder=FOLDER,
+                             comment=COMMENT, owner=OWNER, asset=ASSET,
+                             patch=(lambda source: patch(source, seed)) if random_names else (lambda source: source),
+                             source=preset and (preset[1], ASSET))
+    if preset: names += '; skill preset ' + preset[0]
     # The same English override names the custom collections (their item sets need localized names).
     import json
     try:

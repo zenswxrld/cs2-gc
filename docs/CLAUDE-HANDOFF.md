@@ -1,3 +1,16 @@
+# Build 31 (Claude) - care-package claim from console.log; main merged
+
+Build 30 log: the page called MissionsAPI.ActionRedeemOperationGoods with the marker cost, and the game sent no 9209,
+so the game validates that call too. The page's $.Msg lines DO reach csgo/console.log (-condebug). For local packages the
+page now prints only "cs2_gc care: claim generation=<g> balance=<b> tokens=<t1>,<t2>,<t3>" and never calls a native claim;
+the DLL (steam_api_proxy PollCareClaims, inside PollProgression, 1 s) reads bytes appended since launch, parses them with
+ParseCareConsoleClaims and calls LocalGameCoordinator::ClaimCareFromConsole -> CompleteCareClaimLocked (main's shared
+claim). The GC validates generation + three distinct tokens; old/duplicate lines grant nothing.
+Merged main (PR #28, Codex): kept CompleteCareClaimLocked/ClaimLocalCarePackage and the care_package_bridge/session-code
+helper on the GC side; its page call (_SendLocalCareClaim, popup when the session code is missing) and the build-30 Armory
+route were removed so there is one page path. Uses data/steam_api64_exports.def for the proxy now.
+Preparation cache: LIGHT_HELPERS (UI-only helpers) + DLL/exe changes re-run only the UI patch steps.
+
 # Build 30 (Claude) - care-package claim through the Armory message; build 29 reverted
 
 Build 29 (offers published as type-1 econ items, inventory position 0) made the game show them as NEW owned items

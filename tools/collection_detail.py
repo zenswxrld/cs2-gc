@@ -6,6 +6,7 @@ def recolour_details(colors, theme, themes, duos, gradients):
     hsv = [colorsys.rgb_to_hsv(*c[:3]) for c in colors]
     # Dark ink, silver foil, white lettering and neutral hardware are protected.
     accents = [i for i, (_,s,v) in enumerate(hsv) if s >= .16 and v >= .16]
+    neutral_accent = not accents
     if not accents:
         # A neutral engraved finish gets one painted accent, never an all-over wash.
         eligible = [i for i, (_,s,v) in enumerate(hsv) if .25 <= v <= .88]
@@ -26,7 +27,7 @@ def recolour_details(colors, theme, themes, duos, gradients):
         h,s,v = hsv[i]
         # One shared hue rotation retains the original pattern's relationships.
         # Never flatten highlights/shadows or raise muted ink to neon saturation.
-        result[i] = [*colorsys.hsv_to_rgb((h+offset)%1, min(s,saturation), v), colors[i][3]]
+        result[i] = [*colorsys.hsv_to_rgb((h+offset)%1, (min(.45,saturation) if neutral_accent else min(s,saturation)), v), colors[i][3]]
     return result
 
 

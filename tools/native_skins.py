@@ -244,6 +244,41 @@ def collections(source_text, kits, recolours, kit_path, titles=None):
     return new_kits, '', '\n'.join(lists), families, names, entries, chases
 
 
+COLLECTION_TOKENS_FILE = 'cs2_gc_collection_tokens.json'
+
+
+def collection_item_sets(lists_text, names, families):
+    """(item_sets text, localization tokens) making the custom collections real collections for the client, so its
+    trade-up screen accepts their skins (user: "custom collections dont show in the tradeup menu").
+
+    CS2 refuses the whole schema for an item set whose name is not "#CSGO_<set key>" with a localized string (26m),
+    so every set uses exactly that token and the tokens go into the English language override that
+    native_bot_names.py already mounts. A set lists what players own: each colour of a family, never the family kit.
+    A skin is listed in one set only."""
+    from native_tradeups import parse
+    lists = {node.key: [child.key for child in node.children or []]
+             for node in parse('"lists"\n{\n' + lists_text + '\n}').one('lists').children}
+    seen, blocks, tokens = set(), [], {}
+    for name in names:
+        items = []
+        for tier in lists.get(name, ()):
+            for entry in lists.get(tier, ()):
+                match = re.fullmatch(r'\[([^\]]+)\](\w+)', entry)
+                if not match: continue
+                for kit in families.get(match.group(1)) or [match.group(1)]:
+                    item = '[%s]%s' % (kit, match.group(2))
+                    if item not in seen: seen.add(item); items.append(item)
+        if not items: continue
+        title = CASE_COLLECTIONS.get(name) or name
+        tokens['CSGO_' + name] = title
+        tokens['CSGO_' + name + '_desc'] = 'A custom collection.'
+        blocks.append('\t\t%s\n\t\t{\n\t\t\t"name"\t\t%s\n\t\t\t"set_description"\t\t%s\n'
+                      '\t\t\t"is_collection"\t\t"1"\n\t\t\t"items"\n\t\t\t{\n%s\t\t\t}\n\t\t}' % (
+                          _quote(name), _quote('#CSGO_' + name), _quote('#CSGO_' + name + '_desc'),
+                          ''.join('\t\t\t\t%s\t\t"1"\n' % _quote(item) for item in items)))
+    return '\n'.join(blocks), tokens
+
+
 def family_text(families, drop_collections=()):
     """cs2_gc_skin_families.txt for the GC: family kit -> its colour kits."""
     return '"skin_families"\n{\n' + ''.join(

@@ -13,6 +13,8 @@ using RandomSource = std::function<std::uint64_t()>; // uniform 64-bit values
 // Consecutive eligible case misses: 0.26% initially; linear soft pity on opening 10, hard pity on 100.
 std::uint32_t CaseGoldChance(std::uint32_t previousMisses);
 std::uint32_t PityChance(std::uint32_t previousMisses, std::uint32_t baseChance, const GameplayConfig &config = {});
+// Long-run probability of the pity-boosted top reward per roll (the miss counter resets on a hit).
+double PityRate(std::uint32_t baseChance, const GameplayConfig &pity);
 
 enum class OpenError
 {

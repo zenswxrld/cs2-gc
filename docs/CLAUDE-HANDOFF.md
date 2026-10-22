@@ -1,3 +1,64 @@
+# Build 34 (Claude): mission progress tracking (implemented; live test pending)
+
+
+User test (build 33): the mission tile and in-match mission panel SHOW ("Get kills with the AWP", DM on Defusal Group
+Delta, 0/120, 600 XP) but progress never moves in bot matches. The listen server never sends 9136 MatchEndRunRewardDrops
+(quest data) or 1074 IncrementKillCountAttribute, although it does ServerHello (4007) and we already ServerWelcome. So WE
+must count. Recorded welcome: SO type 16 = CSOAccountRecurringMission {1 account_id, 2 mission_id, 3 period, 4 progress}
+(recorded: 11012 / 1779843600 / 6). Protobufs (GameTracking-CS2 609b2ac, Protobufs/cstrike15_gcmessages.proto):
+CMsgRecurringMissionSchema { repeated MissionTemplateList missions = 1 { uint32 period = 1; repeated bytes
+mission_templates = 2; } } answer to 9225 (gc_endpoint.cpp maps 9225 -> replayed 9226).
+User supplied cs2_gc_replay/9226.bin (NOT committed). tools/decode_mission_schema.py decodes it: weekly periods
+(1791939600 = Wed 2026-10-14 01:00 UTC, +7 days...; only Oct 14 (15 templates 11003-11017) and Oct 21 (11016, 11017)
+have templates, so after Oct 28 there are NO missions -> must generate a rotating schedule).
+Templates (binary KV, key = mission id): name, gamemode, gamemodeflags, mapgroup, map, points "40, 80, 120",
+expression, xp_expr "200, 200, 200", xp_round_to, loc_description "#quest_<id>_var_desc:f", string_tokens, gc.random.
+Only three expressions: "act_kill_human && !![weapon_a|weapon_b...]" (DM), "act_win_round" (competitive, map given),
+"act_win_match" (rush). "![a|b]" / "!![a|b]" = random pick (client rolled AWP + mg_casualdelta for this user).
+Client (mission_tile.js / mainmenu_missions.js / hud/hudmissions.js): MissionsAPI.GetRecurringMission() ->
+progress_saved, goal_points[], xp_reward[], progress_this_match; HUD uses GameStateAPI.GetActiveQuestID().
+
+Implemented (build 34):
+- tools/native_missions.py (prepare step, every launch, UI stage): reads proxy/cs2_gc_replay/9226.bin, keeps the 13
+  playable templates (drops lobby_mapveto / rush), one per weekly period from 4 weeks back to 52 ahead, every "![..]"
+  list resolved to one option per period (seeded), writes cs2_gc_missions.bin (9226 body) + cs2_gc_missions.json.
+  Binary KV kept type-exact (round-trip tested). Map groups from pak01 gamemodes.txt.
+- tools/mission_tracker.py, used by gsi_rewards.py (GSI now also requests "player_weapons"): counts kills with the active
+  mission weapon, own-team round wins, won matches, only in the mission's mode on its maps; first packet of a match is a
+  baseline; tier XP added to the helper total; writes cs2_gc_mission_progress.txt ("mission period progress").
+- DLL: PollMissions (proxy) loads cs2_gc_missions.bin once and the progress file each poll; LocalGameCoordinator::
+  SetMissions: 9225 answered with the local schema, welcome type 16 replaced by our progress, changes pushed as SO
+  Create/Update (CSOAccountRecurringMission). The GSI config change needs ONE CS2 restart after the helper rewrites it.
+Other queued user requests: custom-collection trade-ups, multi-sell via popup_select_item_for_capability
+(casketstore multi-select, user approved the plan), build-folder cleanup + leftover-file removal tool (last),
+detail-preserving palette rotation recolour + texture recolours (Rainbow Spoon / Crimson Foil style).
+A star-economy loop audit was started by Claude in this worktree (uncommitted results may be present: check git status).
+
+# Build 33 (Claude) - care packages from level-ups only; claimed package stays on show
+
+User confirmed build 32: the favourite-route claim works and the rewards (cases) open. Extra packages appeared at once
+because every match also queued one. New option care_packages_from_matches (default 0): with care packages on, a match
+queues nothing and drops nothing; packages come from profile levels (GrantLevelRewards).
+User: keep the last claimed rewards on show, labelled claimed, until the next drop. Inventory saves "care_claimed"
+(generation + per slot "def paint ownedId", plain numbers, no next_id copies). With an empty queue EncodeCareStore shows
+it (balance 0) as the same choice tokens plus CareClaimedFlag (1 << 36) on the taken slots. The page keeps the native
+claimed look (ItemTileStore.SetClaimed marks every faux preview claimed) only for flagged tokens; the other one is a
+normal tile, disabled because the balance is 0. NotifyCarePackage now compares the encoded store, since a claim keeps the
+generation. Next request queued by the user: multi-select selling in the inventory (later).
+
+# Build 32 (Claude) - care-package claim as a tournament favourite
+
+Build 31 log: the page printed the claim line but the DLL never saw it. The rewards helper's own log shows
+"console.log does not exist after a minute" every session: CS2 writes csgo/console.log only at exit, so NO console-log
+channel (build 31's PollCareClaims, Codex's care bridge, the console star controls) works live.
+GameTracking-CS2 (609b2aca32e129e094990e163771d6b86880f65f) has no AsyncWebRequest; mainmenu_watch_eventsched.js calls
+TournamentsAPI.SetTournamentFavorite(Number(event_id), bool), and Protobufs/cstrike15_gcmessages.proto defines
+CMsgGCCStrike15_v2_SetEventFavorite { uint64 eventid = 1; bool is_favorite = 2; } (9200; 9201/9203 already flow at startup).
+The page now calls SetTournamentFavorite(4200000000000000 + generation*16 + mask, true); the GC's new 9200 handler claims
+(CompleteCareClaimLocked) only for ids in that range with a matching front generation and exactly three slots.
+Live test: GC log must show ">> GAME->GC type=9200" and "care claim received (favorite route)". If the game validates
+event ids and sends nothing, the log shows no 9200.
+
 # Build 31 (Claude) - care-package claim from console.log; main merged
 
 Build 30 log: the page called MissionsAPI.ActionRedeemOperationGoods with the marker cost, and the game sent no 9209,
@@ -1142,3 +1203,76 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   step while ubuntu passes; main last passed at 6b19d25. The job log could not be downloaded from this session
   (log storage host blocked), so the MSVC error is unknown - likely a /W4 /WX warning in cs2_gc_core (src/ only)
   that GCC -Wall -Wextra does not report. Next queued for Claude: souvenir packages.
+- Star economy (22 Oct): new `AuditEconomy` (cs2_gc/src/economy_audit.cpp) values every Armory row (incl. case+free key,
+  terminal best-of-offers, souvenir, capsule, sticker/charm pack, agent, limited, Black Market) and every trade-up with the
+  real odds, long-run pity rate and ItemSaleValue. On the user's schema+config it found loops in all capsules (x10-22),
+  sticker packs (x11-13), all cases opened (x3.6-10.7), terminals (x2.3-5), 6/11 collections (x1.9-2.5), 57/148 souvenirs,
+  4 charm packs (x1.15) and 12 covert->knife trade-ups (x1.04-1.13). Fix: `BalanceSales` (C++ item_sales.cpp, exact Python
+  mirror gameplay_config.balance) lowers configured sale values at load until no route returns more than
+  `sell_max_return_percent` (default 90, model at best wear) and trade-ups cannot gain; new sticker sale table
+  (`sell_sticker_*`, `sell_sticker_percent` now a cap). All Armory weapon cases cost `armory_case_price` (native Fever
+  case was 2); collection/charm/sticker tiles never below 4/3/1. Audit after: no loops; returns ~45-55% cases/terminals,
+  35-48% collections, 25-33% souvenirs, ~1-3% capsules, 20-30% sticker packs, 68-85% charms, trade-ups <=80%.
+- Build 35 (22 Oct): missions rotate with the Armory (user: "make the missions rotate with the armory"). native_missions
+  now writes a pool (cs2_gc_missions.bin: repeated {1 index, 2 template blob}; .json {'variants': [...]}) with every
+  combination of each playable recorded template's random lists (49 on the user's 9226.bin), interleaved by template.
+  The DLL (LocalGameCoordinator::MissionTick) serves variant (now / armory_rotation_seconds + offset) % pool size as the
+  9226 period, pushes the new 9226 when the cycle changes once the game has asked (9225), and the proxy writes
+  cs2_gc_mission_current.txt ("variant period") for mission_tracker.py (progress key "period:variant"). REFRESH ARMORY:
+  the page sends SetTournamentFavorite(4300000000000000 + offset) on page load and after each Refresh; the 9200 handler
+  sets the GC Armory rotation offset and the mission offset from it. Targets stay full; each step reached pays its XP and
+  ceil(xp/100) stars (cumulative "stars N" line in cs2_gc_mission_progress.txt -> Inventory::ApplyMissionStars,
+  persisted as mission_star_total). Armory passes auto-renew (armory_pass_auto_renew, default 1): a full 40-star track
+  restarts and carries over XP. "Add more missions" waits for the user to confirm tracking works live. Not verified live.
+- Build 36 (22 Oct): user parked missions ("forget missions for now"); build 35 Refresh did not change the mission
+  and SCAR-20 kills did not count while holding a SCAR. Fixes shipped but unverified: MissionTick reports a
+  Refresh-made change to the helper (it used to be swallowed), each Refresh gets its own period (window start +
+  offset), diagnostics "missions: ..." in cs2_gc_log.txt and "Mission: ..." (why a kill was not counted) in
+  cs2_gc_rewards.log. Next time: read both logs before changing anything.
+  Custom-collection trade-ups: Schema::TradeUpCollectionsOf/TradeUpCollectionSkins add the set_cs2gc_case_*
+  loot-list collections (official item_sets first); a colour variant belongs where its family kit is listed and
+  the contract grants a random colour of the outcome family. Client acceptance of these inputs is unverified.
+  Multi-sell: inventory context menu "Sell multiple for stars..." opens CS2's own popup_select_item_for_capability
+  with capability cs2gc_sell; native_multi_sell.py (override folder cs2_gc_multisell) makes it multi-select like
+  casketstore, lists the whole inventory, relabels the confirm button "Sell for N stars" and sells each sellable
+  pick via InventoryAPI.DeleteItem after a Yes/No confirmation. Not verified live.
+- Build 37 (22 Oct): user confirmed multi-sell works ("flawlessly"); the picker now hides tiles worth 0 stars
+  (_LocalSellableOnly re-checks tile itemid attributes every 0.25 s while open). Custom collections did not show in
+  the trade-up screen: the client only accepts skins of real item_sets. native_skins.collection_item_sets writes
+  item_sets set_cs2gc_case_<icon> named "#CSGO_<key>" / "#CSGO_<key>_desc" (the 26m assertion format) listing the
+  owned colours (family variants, never the family kit, each skin in one set); the tokens go to
+  cs2_gc_collection_tokens.json and native_bot_names mounts them in its full English override (cs2_gc_bot_labels;
+  mounted when bot_hide_tag or tokens; a changed bot-label format no longer drops the tokens). The GC skips
+  set_cs2gc_ item_sets (custom path unchanged). custom_collection_tradeups = 0 removes it. If CS2 ever fails its
+  schema load after this build, that switch is the first suspect. Gloves: the user's Kimono Magenta showed default
+  gloves in a match; it was equipped mid-match and showed after the next map load - no bug found (finish 1437 in
+  the log is the official Wave Chaser on another Specialist pair). Not verified live: item sets, language tokens.
+- Bot skins (22 Oct, user: "there is a way, give it a go"): CS2's server never asks a GC for bot items (bots have
+  no account; the server only sends ServerHello and gets the human's cache), so the GC cannot do it. New optional
+  tools/bot_skins.py + bot_skins.cmd install, on the user's PC, Metamod:Source 2.0 (mmsdrop latest), CounterStrikeSharp
+  with-runtime (GitHub latest) and ed0ard/CS2-Bot-Randomizer (AGPL-3.0; GiveNamedItem pre-hook + their maintained
+  signatures; nothing of ours touches game memory). Mounts Game csgo/addons/metamod via mount_gameinfo (backup
+  gameinfo.gi.cs2_gc_bot_skins_backup), sets FollowCS2ServerGuidelines=false, refuses if a foreign Metamod/CSS
+  exists, and rewrites the plugin catalogue (original kept as .original) to popular skins per gun / popular sticker
+  capsules / popular knife finishes and gloves, resolved by English finish name against the installed schema (all
+  35 guns resolved on the user's files). Uninstall removes it. Not verified live; after a CS2 update rerun install.
+- Build 39 (22 Oct): user confirmed custom-collection trade-ups work live (P90 Galaxy Reef Grief, Nebula Collection)
+  and approved third-party bot plugins. bot_skins.py now installs the CS2-Bot-Improver release (prefers the
+  rules_unchanged zip; uses its bundled Metamod/CSS when present, else the official downloads): every addons/ folder
+  except plugins/disabled, never its cfg/gamemode_*.cfg, overrides, gameinfo or panel. Its bot config goes to
+  cfg/cs2_gc_bot_improver(.cfg|_ffa.cfg) minus binds/difficulty lines, run from gamemode_<mode>_server.cfg files we
+  create only when absent (marker line) followed by exec cs2_gc_premier_bots. Skill presets: their botprofile.db per
+  tier saved to bin/win64/cs2_gc_bot_presets; native_bot_names.skill_preset picks Low < 10k, Medium < 30k, High 30k+
+  from cs2_gc_gsi_state.json and applies our random names on top (PROFILE accepts quoted names; install_override
+  takes source=). bot_difficulty: 0 <5k, 1 <10k, 2 <20k, 3 from 20k. Metamod mounted after the write-path
+  placeholder (ensure_first_game_path). Refuses to overwrite foreign addons folders. Not verified live.
+  Queued next (user): Armory agent tab -> rotating collections of agents grouped by their operation, using the
+  operations' own artwork for the tile.
+- Build 40 (22 Oct): Armory agent tab = rotating operation agent collections (user; 25 stars, armory_agent_price
+  default 25). armory_rotation_catalog.agent_collections groups the official dossier tier lists per operation
+  (op09 Shattered Web, op10 Broken Fang, op11 Riptide) into new top lists lootlist_cs2gc_agents_<op> (appended to
+  client_loot_lists after the tiers; the only new loot lists in the catalogue), callout #CSGO_set_opN_characters,
+  ui_set_image set_opN_characters (the dossier char_pack_* pictures were removed in CS2; the set emblems exist).
+  The page shows the operation's own agents. GC: agent rows with a loot list roll 55/28/12/5% by rarity rank (equal
+  rarities share), then a uniform agent; LootTiers strips trailing digits from tier suffixes (ancient1/2 were
+  rarity 0 = never dropped). The old Random Agent row only ever gave op09 ancient agents. Not verified live.

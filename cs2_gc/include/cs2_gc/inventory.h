@@ -75,6 +75,10 @@ struct CarePackage
     std::vector<InventoryItem> offers;
 };
 
+// The last claimed package, kept on show (claimed / not chosen) until the next one arrives, like Valve's store.
+struct ClaimedCareSlot { std::uint32_t defIndex{}, paintKitIndex{}; std::uint64_t ownedId{}; }; // ownedId 0: not chosen
+struct ClaimedCarePackage { std::uint32_t generation{}; std::vector<ClaimedCareSlot> slots; };
+
 struct LoadoutSlot
 {
     std::uint32_t classId{}, slotId{};
@@ -103,6 +107,8 @@ public:
     std::optional<std::uint32_t> ArmoryCredits() const { return m_armoryCredits; }
     void SetArmoryCredits(std::uint32_t credits) { m_armoryCredits = credits; }
     bool ApplyConsoleStars(std::uint64_t cumulative);
+    // Stars paid by mission steps: the rewards helper's cumulative total, so a step never pays twice.
+    bool ApplyMissionStars(std::uint64_t cumulative);
     const LocalProgress &Progress() const { return m_progress; }
     bool ApplyEarnedXp(std::uint64_t cumulativeXp);
     std::uint64_t MatchRewardTotal() const { return m_matchRewardTotal; }
@@ -125,6 +131,7 @@ public:
     void SetArmoryPity(const std::string &collection, std::uint32_t failures) { m_armoryPity[collection] = failures; }
 
     const std::vector<CarePackage> &CarePackages() const { return m_carePackages; }
+    const std::optional<ClaimedCarePackage> &LastClaimedCarePackage() const { return m_lastClaimedCare; }
     bool QueueCarePackage(std::vector<InventoryItem> offers);
     std::optional<std::vector<InventoryItem>> ClaimCarePackage(std::uint32_t generation,
                                                              const std::vector<std::uint64_t> &ids);
@@ -141,7 +148,7 @@ public:
     static std::optional<Inventory> Load(const std::filesystem::path &path);
 
 private:
-    GameplayConfig m_gameplay;
+    GameplayConfig m_gameplay{BalancedDefaults()};
     std::uint32_t m_trackXpPerStar{400};
     std::vector<InventoryItem> m_items;
     std::vector<LoadoutSlot> m_loadout;
@@ -150,12 +157,14 @@ private:
     LocalProgress m_progress;
     std::uint64_t m_matchRewardTotal{};
     std::uint64_t m_consoleStarTotal{};
+    std::uint64_t m_missionStarTotal{};
     std::uint32_t m_levelRewardTotal{}; // profile levels already rewarded, excluding starting level 1
     std::uint32_t m_casePity{};
     std::map<std::uint32_t, std::uint32_t> m_terminalPity;
     std::map<std::string, std::uint32_t> m_armoryPity;
     std::vector<CarePackage> m_carePackages;
     std::uint32_t m_lastCareGeneration{};
+    std::optional<ClaimedCarePackage> m_lastClaimedCare;
     std::uint64_t m_nextId{1};
 };
 }

@@ -81,6 +81,18 @@ std::uint32_t PityChance(std::uint32_t previousMisses, std::uint32_t baseChance,
         (config.pity_hard_at - config.pity_soft_at + 1);
 }
 
+double PityRate(std::uint32_t baseChance, const GameplayConfig &pity)
+{
+    // Expected rolls until a hit, given the per-roll chance after k consecutive misses.
+    double expected = 0, survive = 1;
+    for (std::uint32_t misses = 0; misses < 1000 && survive > 1e-12; ++misses)
+    {
+        expected += survive;
+        survive *= 1.0 - PityChance(std::min(misses, 99u), baseChance, pity) / 10000.0;
+    }
+    return expected > 0 ? 1.0 / expected : 0.0;
+}
+
 std::optional<InventoryItem> RollLootList(const Schema &schema, std::string_view lootListName,
                                           const RandomSource &random, const CaseOdds &odds, std::uint32_t excludedRarity,
                                           std::uint32_t minimumRarity)

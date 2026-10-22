@@ -88,17 +88,20 @@ assert.equal(next, before + 1); assert.equal(nodes['rb--eom-local-results'].visi
         if (!validEntries.length) {}
 }'''
         data = {'enabled':True,'flat':{'60':1},'rarity':[0,1,2,5,10,25,50],'gold':150,'stickerPercent':50}
-        script = '''const assert = require('assert'); let confirm, deleted = 0, button, marketEntries;
+        script = '''const assert = require('assert'); let confirm, deleted = 0, button, marketEntries; const buttons = {}, events = [];
 const elParent = {}, ItemContextEntries = {FilterEntries:()=>[{name:'sell'},{name:'inspect'}]};
 const InventoryAPI = {GetItemDefinitionName:()=> 'case', GetItemDefinitionIndexFromDefinitionName:()=>60,
  GetItemName:()=> 'Case', DeleteItem:()=>deleted++};
 const UiToolkitAPI = {ShowGenericPopupYesNo:(title,text,icon,yes,no)=>{confirm={yes,no,text};}};
-const $ = {CreatePanel:(type,parent,id,props)=>{const p={AddClass:()=>{},SetPanelEvent:(event,fn)=>p.activate=fn}; if(type==='Button')button=p; return p;},DispatchEvent:()=>{}};
+const $ = {CreatePanel:(type,parent,id,props)=>{const p={AddClass:()=>{},SetPanelEvent:(event,fn)=>p.activate=fn}; if(type==='Button')buttons[id]=p; return p;},
+ DispatchEvent:(...args)=>events.push(args)};
 ''' + native_item_sales.patch(source, data) + '''
 assert.equal(_LocalSalePrice('42'),0);
-_PopulateContextMenu('1000000000001',''); assert.deepEqual(marketEntries,['inspect']); button.activate();
+_PopulateContextMenu('1000000000001',''); assert.deepEqual(marketEntries,['inspect']); button = buttons['cs2gc-sell-item']; button.activate();
 assert.equal(deleted,0); confirm.no(); assert.equal(deleted,0);
 assert.ok(confirm.text.includes('1 stars')); confirm.yes(); assert.equal(deleted,1);
+buttons['cs2gc-sell-many'].activate();  // opens the storage unit's multi-select picker in sell mode
+assert.deepEqual(events.pop(), ['ShowSelectItemForCapabilityPopup','1000000000001','','cs2gc_sell']);
 '''
         self.run_js(script)
 

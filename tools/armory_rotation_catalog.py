@@ -1,11 +1,14 @@
 """Native Armory catalogue, referring only to the installed schema's official goods.
 
-No item, paint-kit, collection or loot-list definitions are created. Capsule pools
+No item, paint-kit or collection definitions are created. The only new loot lists are the agent collections
+(user: "a rotating collection of the agents from the operations they are from"): one per operation, listing that
+operation's official dossier tier lists unchanged. Capsule pools
 are a deliberate curated selection, not a claim of live market popularity rankings.
 """
 from inventory_item import collect, parse, as_dict
 from native_tradeups import parse as parse_spans
 from price_sheet import find_case_items
+from gameplay_config import COLLECTION_PRICE, CHARM_PRICE, STICKER_PRICE
 
 ARMORY_COLLECTIONS = ('set_graphic_design', 'set_overpass_2024', 'set_realism_camo',
                       'set_spy_tech', 'set_arabesque', 'set_train_2025')
@@ -22,6 +25,22 @@ COMMUNITY_CAPSULES = ('crate_sticker_pack_cs20_capsule', 'crate_sticker_pack_csg
 LIMITED_PRICES = {'set_xpshop_wpn_01': 25, 'set_xpshop_wpn_02': 15,
                   'set_xpshop_wpn_03': 25, 'set_xpshop_wpn_04': 125}
 LIMITED_LISTS = tuple(LIMITED_PRICES)
+AGENT_LIST_PREFIX = 'lootlist_cs2gc_agents_'
+
+
+def agent_collections(lists, item_sets):
+    """{new list name: (official dossier tier lists, operation agent set or None)} per operation, e.g. op09
+    (Shattered Web) -> set_op9_characters."""
+    import re
+    found = {}
+    for name in sorted(lists):
+        match = re.fullmatch(r'lootlist_character_operator_dossier_(op\d+)_[a-z]+\d*', name)
+        if match: found.setdefault(match.group(1), []).append(name)
+    result = {}
+    for operation, tiers in sorted(found.items()):
+        item_set = 'set_op%d_characters' % int(operation[2:])
+        result[AGENT_LIST_PREFIX + operation] = (tiers, item_set if item_set in item_sets else None)
+    return result
 
 
 def catalogue(source, config):
@@ -62,6 +81,11 @@ def catalogue(source, config):
         else: raise ValueError('Unclassified native Armory good: ' + name)
         if slot == 'terminal' and not config['terminals_enabled']: continue
         cost = LIMITED_PRICES.get(name.removeprefix('lootlist:'), int(data['points'])) if slot == 'limited' else int(data['points'])
+        # Sale values are balanced against these prices (gameplay_config.balance): every weapon case costs
+        # armory_case_price, and native tiles are never cheaper than the catalogue's own tile prices.
+        if slot == 'case': cost = config.get('armory_case_price', 5)
+        floor = {'collection': COLLECTION_PRICE, 'charm': CHARM_PRICE, 'sticker': STICKER_PRICE, 'capsule': STICKER_PRICE}.get(slot)
+        if floor: cost = max(cost, floor)
         if name == 'lootlist:removed_items': cost = max(250, config['armory_howl_star_price'])
         add(name, slot, cost, data)
     templates = {v['local_rotation_slot']: v for v in goods.values()}
@@ -89,26 +113,26 @@ def catalogue(source, config):
                 template['callout'] = name.removesuffix('_lootlist').removeprefix('keychain_pack_kc_').removeprefix('sticker_pack_').replace('_', ' ').title()
             add('lootlist:' + name, slot, price, template)
 
-    for name in ARMORY_COLLECTIONS: loot(name, 'collection', 4)
+    for name in ARMORY_COLLECTIONS: loot(name, 'collection', COLLECTION_PRICE)
     # Custom colour-family collections (native_skins.py), once the user has checked them with the test case.
     if config.get('custom_cases', 1):  # the 12 custom gun collections (native_skins.custom_cases)
         from native_skins import CASE_COLLECTIONS, DROP_ONLY_COLLECTIONS
         for name, title in CASE_COLLECTIONS.items():
             if name in lists and name not in DROP_ONLY_COLLECTIONS:
-                loot(name, 'collection', 4)
+                loot(name, 'collection', COLLECTION_PRICE)
                 # Emblem drawn by make_collection_icons.py, packed as econ/set_icons/<name> by native_finishes.
                 goods['lootlist:' + name].update(callout=title, ui_set_image=name)
     if config.get('custom_collections', 0):
         from native_skins import COLLECTIONS
         for name, (title, _) in COLLECTIONS.items():
             if name in lists:
-                loot(name, 'collection', 4)
+                loot(name, 'collection', COLLECTION_PRICE)
                 goods['lootlist:' + name]['callout'] = title  # no item_set (needs a #CSGO_ token), so name it here
     # The current weekly drop pool collections rotate through the collection tiles too.
-    for name in sorted(n for n in sections.get('item_sets', {}) if n.startswith('set_timed_drops_')): loot(name, 'collection', 4)
+    for name in sorted(n for n in sections.get('item_sets', {}) if n.startswith('set_timed_drops_')): loot(name, 'collection', COLLECTION_PRICE)
     for name in lists:
-        if name.startswith('keychain_pack_') and name.endswith('_lootlist'): loot(name, 'charm', 3)
-        if name.startswith('sticker_pack_') and name.endswith('_lootlist'): loot(name, 'sticker', 1)
+        if name.startswith('keychain_pack_') and name.endswith('_lootlist'): loot(name, 'charm', CHARM_PRICE)
+        if name.startswith('sticker_pack_') and name.endswith('_lootlist'): loot(name, 'sticker', STICKER_PRICE)
     for name in sorted(cases):
         # Our grant-only test cases are never sold; the custom weapon cases are, like any case.
         if name.startswith('crate_cs2gc_'): continue
@@ -118,11 +142,14 @@ def catalogue(source, config):
         for name in sorted(terminals): add(name, 'terminal', config['armory_terminal_price'])
     wanted = set(COMMUNITY_CAPSULES)
     wanted.update('crate_sticker_pack_' + event + '_' + group for event in TOURNAMENTS for group in TOURNAMENT_GROUPS)
-    for name in sorted(wanted & items.keys()): add(name, 'capsule', 1)
+    for name in sorted(wanted & items.keys()): add(name, 'capsule', STICKER_PRICE)
     for name in LIMITED_LISTS: loot(name, 'limited', LIMITED_PRICES[name])
-    agent_lists = sorted(name for name in lists if name.startswith('lootlist_character_operator_dossier_'))
-    if config.get('armory_agent_slots', 1) and agent_lists:
-        add('lootlist:' + agent_lists[0], 'agent', config.get('armory_agent_price', 50), {'callout': 'Random Agent'})
+    if config.get('armory_agent_slots', 1):
+        # One tile per operation's agents, rotating in the agent slot, with the operation's agent emblem.
+        for name, (_, item_set) in agent_collections(lists, sections.get('item_sets', {})).items():
+            template = {'callout': '#CSGO_' + item_set if item_set else 'Agents'}
+            if item_set: template['ui_set_image'] = item_set
+            add('lootlist:' + name, 'agent', config.get('armory_agent_price', 25), template)
     if config['armory_howl_enabled']:
         howl = lists.get('removed_items')
         if isinstance(howl, list) and [(k, v) for k, v in howl if k != 'public_list_contents'] == [('[cu_m4a1_howling]weapon_m4a1', '1')]:
@@ -150,6 +177,15 @@ def patch_catalogue(source, config):
                      ''.join('\t\t\t\t' + quote(k) + '\t' + quote(v) + '\n' for k, v in data.items()) +
                      '\t\t\t}\n' for data in goods.values())
     edits.append((campaign.end - 1, campaign.end - 1, rows))
+    sections = collect(parse(source))
+    agent_lists = agent_collections(sections.get('client_loot_lists', {}), sections.get('item_sets', {}))
+    wanted = {name for name in goods if name.startswith('lootlist:' + AGENT_LIST_PREFIX)}
+    lists_text = ''.join('\t\t' + quote(name) + '\n\t\t{\n' + ''.join('\t\t\t' + quote(t) + '\t"1"\n' for t in tiers) +
+                         '\t\t}\n' for name, (tiers, _) in agent_lists.items() if 'lootlist:' + name in wanted)
+    if lists_text:
+        nodes = [n for n in top.children if n.key == 'client_loot_lists' and n.children is not None]
+        if not nodes: raise ValueError('items_game has no client_loot_lists section')
+        edits.append((nodes[-1].end - 1, nodes[-1].end - 1, lists_text))
     for start, end, value in sorted(edits, reverse=True): source = source[:start] + value + source[end:]
     return source, {name: value['local_rotation_slot'] for name, value in goods.items()}
 

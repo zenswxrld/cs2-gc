@@ -256,6 +256,7 @@ public:
         m_rewardPath = std::move(rewardPath);
         m_afterReward = std::move(afterReward);
         m_log.Write("progression: gameplay rewards use the local bridge (automatic startup controlled by rewards_auto_start)");
+        PollMissions(); // before the welcome, so it carries the local missions
     }
     void PollProgression()
     {
@@ -285,6 +286,7 @@ public:
         PollTerminalRequest();
         PollCareClaims();
         PollCarePackageRequest();
+        PollMissions();
 #ifdef CS2_GC_DEBUG_TOOLS
         {
             std::ifstream control(m_rewardPath.parent_path() / "cs2_gc_console.txt");
@@ -327,6 +329,52 @@ public:
         *m_consoleOffset += text.size();
         for (const auto &claim : ParseCareConsoleClaims(text))
             if (m_gc.ClaimCareFromConsole(claim.generation, claim.tokens, m_afterReward)) m_log.Write("care package: console claim granted");
+    }
+    // Weekly missions: cs2_gc_missions.bin (the 9226 body, written by native_missions.py before launch) and
+    // cs2_gc_mission_progress.txt ("mission period progress" lines from the rewards helper).
+    void PollMissions()
+    {
+        const auto directory = m_rewardPath.parent_path();
+        std::ifstream progressFile(directory / "cs2_gc_mission_progress.txt");
+        std::string text((std::istreambuf_iterator<char>(progressFile)), {});
+        TickMissions(directory);
+        if (m_missionsLoaded && text == m_missionProgressText) return;
+        std::vector<LocalGameCoordinator::MissionProgress> progress;
+        std::istringstream lines(text);
+        LocalGameCoordinator::MissionProgress entry;
+        std::string word; std::uint64_t stars = 0;
+        while (lines >> word)
+        {
+            if (word == "stars") { lines >> stars; continue; } // cumulative stars paid by mission steps
+            const auto [end, error] = std::from_chars(word.data(), word.data() + word.size(), entry.mission);
+            if (error != std::errc{} || end != word.data() + word.size() || !(lines >> entry.period >> entry.progress)) break;
+            progress.push_back(entry);
+        }
+        if (stars && m_gc.ApplyMissionStars(stars, m_afterReward)) m_log.Write("missions: step stars paid");
+        std::vector<std::uint8_t> schema;
+        if (!m_missionsLoaded)
+        {
+            std::ifstream schemaFile(directory / "cs2_gc_missions.bin", std::ios::binary);
+            schema.assign(std::istreambuf_iterator<char>(schemaFile), {});
+            if (schema.empty()) return; // missions off or not prepared: keep the recorded replay
+            m_log.Write("missions: Armory-rotation mission pool loaded");
+        }
+        m_missionsLoaded = true; m_missionProgressText = text;
+        m_gc.SetMissions(std::move(schema), std::move(progress));
+        TickMissions(directory);
+    }
+
+    // Missions rotate with the Armory: tell the rewards helper which variant and period are current.
+    void TickMissions(const std::filesystem::path &directory)
+    {
+        const auto current = m_gc.MissionTick(static_cast<std::uint64_t>(std::time(nullptr)));
+        if (!current) return;
+        const auto path = directory / "cs2_gc_mission_current.txt";
+        const auto staging = directory / "cs2_gc_mission_current.txt.tmp";
+        { std::ofstream file(staging, std::ios::trunc); file << current->first << ' ' << current->second << '\n'; }
+        std::error_code ignored;
+        std::filesystem::rename(staging, path, ignored);
+        m_log.Write("missions: Armory rotation mission variant " + std::to_string(current->first));
     }
     void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange)
     {
@@ -462,6 +510,8 @@ private:
     LocalGameCoordinator m_gc;
     std::filesystem::path m_rewardPath;
     std::optional<std::uintmax_t> m_consoleOffset; // console.log bytes already read (care claims)
+    bool m_missionsLoaded{};
+    std::string m_missionProgressText;
     std::function<void()> m_afterReward;
     std::chrono::steady_clock::time_point m_nextRewardPoll{};
     std::mutex m_rewardMutex;
@@ -1053,7 +1103,7 @@ State &Init()
             s.log->Write("cs2_gc diagnostic proxy active (-insecure), mode=capture. Valve's real GC is used "
                          "unchanged; traffic is only recorded. Targets Steam build " +
                          std::string(TargetSteamBuildId) + ".");
-        s.log->Write("test build: claude-20261022-31");
+        s.log->Write("test build: claude-20261023-40");
         s.log->Write(s.genericSlotOffset ? "ISteamClient hook slot decoded from the real library"
                                          : "could not decode GetISteamGenericInterface from the real library; "
                                            "only interface requests will be logged");

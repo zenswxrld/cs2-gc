@@ -112,6 +112,7 @@ public:
     // The skins of one collection, in schema order; empty for an unknown collection.
     const std::vector<SkinRef> &CollectionSkins(const std::string &collection) const;
     std::size_t CollectionCount() const { return m_collectionSkins.size(); }
+    std::vector<std::string> CollectionNames() const; // sorted
 
     // A finish offered by a keyed weapon case can have StatTrak; collection-only drops cannot.
     bool CanBeStatTrak(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
@@ -126,6 +127,11 @@ public:
     bool LoadSkinFamilies(std::string_view text);
     const std::vector<std::uint32_t> *SkinFamily(std::uint32_t paintKitIndex) const;
     const std::vector<std::string> &DropCollections() const { return m_dropCollections; }
+    // Trade-up membership: the official item_sets, else the custom collections (set_cs2gc_case_* loot lists, which
+    // can not be item_sets - see LoadSkinFamilies). A colour variant belongs where its family kit is listed.
+    std::vector<std::string> TradeUpCollectionsOf(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const;
+    const std::vector<SkinRef> &TradeUpCollectionSkins(const std::string &collection) const;
+    std::vector<std::string> TradeUpCollectionNames() const; // official then custom, each sorted
     std::vector<SouvenirSticker> SouvenirStickers(std::uint32_t event) const;
     std::uint32_t SouvenirMapSticker(std::uint32_t crateDefinition) const;
     std::vector<SkinRef> MatchRewardSkins(bool weeklyOnly = true) const;
@@ -176,6 +182,8 @@ private:
     std::unordered_map<std::string, const KvNode *> m_paintKits; // by name; key is the index
     std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> m_skinFamilies; // family kit -> variant kits
     std::vector<std::string> m_dropCollections; // validated custom collection loot lists, never crate definitions
+    std::unordered_map<std::string, std::vector<SkinRef>> m_customCollectionSkins;
+    std::unordered_map<std::uint64_t, std::vector<std::string>> m_customSkinCollections; // weapon << 32 | kit
     std::unordered_map<std::string, std::uint32_t> m_rarities;
     std::unordered_map<std::string, std::string> m_paintKitRarity;       // kit name -> rarity name
     std::unordered_map<std::uint32_t, std::string> m_paintKitNames;      // kit index -> name

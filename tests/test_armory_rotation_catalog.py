@@ -200,6 +200,7 @@ const balance = {GetParent: () => parent};
 const root = {IsValid: () => true, FindChildInLayoutFile: id =>
  id === 'id-xpshop-balance' ? balance : id === 'id-xpshop-top-nav' ? parent : tiles[id] || navs[id] || null};
 const GameInterfaceAPI = {GetSettingString: () => '0'};
+const favourites = []; const TournamentsAPI = {SetTournamentFavorite: (id, on) => favourites.push([id, on])};
 const $ = {Msg: () => {}, GetContextPanel: () => root, Schedule: () => 1, CancelScheduled: () => {}, DispatchEvent: () => {}};
 const aShopItemsData = ['case_a', 'case_b', 'charm_a', 'charm_b', 'capsule'].map(item_name => ({item_name, ui_order:'3'}));
 function _MakeShopTile(e) { tiles[e.item_name] = {SetPanelEvent:()=>{}}; }
@@ -218,6 +219,7 @@ assert.deepEqual(visible(), ['capsule', 'case_b', 'charm_b']); assert.equal(clos
 // The countdown label lives in the category bar (checked in the paging fixture); none is mounted here.
 now = 1800; _LocalRotationRefresh();
 assert.deepEqual(visible(), ['capsule', 'case_a', 'charm_a']);
+assert.deepEqual(favourites, [[4300000000000000, true]]);  // the GC learns the page's offset once, not every tick
 '''
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
         self.assertEqual(result.returncode,0,result.stderr)
@@ -281,6 +283,7 @@ const m_elContentPanel=root;
 const $={GetContextPanel:()=>root,CreatePanel:(kind,parent,id,props)=>panel(id,parent),
  Msg:()=>{},Schedule:()=>1,CancelScheduled:()=>{},DispatchEvent:()=>{}};
 const GameInterfaceAPI={GetSettingString:()=> '0'};
+const TournamentsAPI={SetTournamentFavorite:()=>{}};
 function _DeleteInspectGrid() {} function _CancelTimeoutForRewardItem() {}
 Date.now=()=>0;
 ''' + rotate_armory.INSERT.replace('__SETTINGS__',json.dumps({
@@ -503,4 +506,20 @@ class ConsoleControls(unittest.TestCase):
             self.assertIn('cs2_gc_give_stars', (cfg / 'cs2_gc_console.cfg').read_text())
 
 
-if __name__ == '__main__': unittest.main()
+
+class AgentCollections(unittest.TestCase):
+    def test_one_collection_per_operation_with_its_emblem(self):
+        lists = {n: [] for n in ('lootlist_character_operator_dossier_op09_rare', 'lootlist_character_operator_dossier_op09_ancient',
+                                 'lootlist_character_operator_dossier_op10_ancient1', 'lootlist_character_operator_dossier_op10_ancient2',
+                                 'lootlist_character_operator_dossier_op10_rare', 'other_list')}
+        found = catalog.agent_collections(lists, {'set_op9_characters': []})
+        self.assertEqual(found, {
+            'lootlist_cs2gc_agents_op09': (['lootlist_character_operator_dossier_op09_ancient',
+                                            'lootlist_character_operator_dossier_op09_rare'], 'set_op9_characters'),
+            'lootlist_cs2gc_agents_op10': (['lootlist_character_operator_dossier_op10_ancient1',
+                                            'lootlist_character_operator_dossier_op10_ancient2',
+                                            'lootlist_character_operator_dossier_op10_rare'], None)})
+
+
+if __name__ == '__main__':
+    unittest.main()

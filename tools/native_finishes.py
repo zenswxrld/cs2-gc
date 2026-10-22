@@ -781,6 +781,12 @@ def prepare(proxy_directory, config, items_game_text):
             # Loot lists only: CS2 refuses the whole schema for an item_set whose name is not a #CSGO_ token
             # (26m: CEconItemSystem::ParseItemSchemaFile assertion), and overriding the language file breaks text.
             sections_extra = {'client_loot_lists': '\n'.join(t for t in (lists_text, case_lists) if t)}
+            # Real item sets for the custom collections (client trade-up screen), named through the language
+            # override native_bot_names.py mounts; it reads the tokens file on every launch.
+            set_tokens = {}
+            if config.get('custom_collection_tradeups', 1) and icons:
+                sections_extra['item_sets'], set_tokens = native_skins.collection_item_sets(case_lists, list(icons), families)
+            atomic_write(proxy / native_skins.COLLECTION_TOKENS_FILE, json.dumps(set_tokens, sort_keys=True, indent=1) + '\n')
         if set_names:
             skins += collection_items
             if config.get('custom_skins_test', 1):

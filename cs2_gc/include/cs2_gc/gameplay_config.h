@@ -11,17 +11,18 @@ struct GameplayConfig
     std::uint32_t armory_collection_slots{3};
     std::uint32_t armory_charm_slots{2};
     std::uint32_t free_case_keys{1}, skip_key_selection{1};
-    std::uint32_t knife_finishes{1}, glove_finishes{1}, custom_skins_test{1}, custom_collections{0}, custom_cases{1}, glove_panel_variants{1}, black_market_price{100};
+    std::uint32_t knife_finishes{1}, glove_finishes{1}, custom_skins_test{1}, custom_collections{0}, custom_cases{1}, custom_collection_tradeups{1}, glove_panel_variants{1}, black_market_price{100};
     std::uint32_t viewmodel_range_percent{250}, viewmodel_fov_min{40}, viewmodel_fov_max{90}; // wider viewmodel limits // knife recolours + Black Market Case (helper-generated) // keep one never-consumed key for every case type owned
     std::uint32_t armory_sticker_slots{2};
     std::uint32_t armory_case_slots{2};
     std::uint32_t armory_capsule_slots{2};
     std::uint32_t armory_limited_slots{1};
     std::uint32_t armory_agent_slots{1};
-    std::uint32_t armory_agent_price{50};
+    std::uint32_t armory_agent_price{25};
     std::uint32_t reward_rare_case_per_10000{100}; // combined Black Market/Gauntlet chance within case offers
     std::uint32_t custom_collection_drop_percent{15}; // within weapon reward slots; never changes case chance
     std::uint32_t care_packages_enabled{1}; // four reserved offers, claim exactly three
+    std::uint32_t care_packages_from_matches{0}; // user: packages come from level-ups; 1 also queues one per match
     std::uint32_t bot_hide_tag{1}, hide_mainmenu_promo{1}, offline_mission_launch{1};
     std::uint32_t armory_souvenir_slots{1}, armory_souvenir_price{5};
     std::uint32_t armory_terminal_slots{1};
@@ -35,7 +36,9 @@ struct GameplayConfig
     std::uint32_t sell_classified{25};
     std::uint32_t sell_covert{50};
     std::uint32_t sell_knife_glove{72};
-    std::uint32_t sell_sticker_percent{50};
+    std::uint32_t sell_sticker_percent{50}; // cap: a sticker never sells above this percent of its rarity's weapon value
+    std::uint32_t sell_sticker_mil_spec{2}, sell_sticker_restricted{5}, sell_sticker_classified{12}, sell_sticker_covert{25};
+    std::uint32_t sell_max_return_percent{90}; // no Armory purchase (or trade-up) can sell back for more than this share
     std::uint32_t sell_charm_mil_spec{1}, sell_charm_restricted{3}, sell_charm_classified{9}, sell_charm_covert{25};
     std::uint32_t sell_wear_enabled{1}, sell_wear_fn{125}, sell_wear_mw{110}, sell_wear_ft{100}, sell_wear_ww{80}, sell_wear_bs{60};
     std::uint32_t sell_music_kit{10};
@@ -49,6 +52,7 @@ struct GameplayConfig
     std::uint32_t rewards_auto_start{1};
     std::uint32_t xp_enabled{1}, stars_enabled{1};
     std::uint32_t armory_xp_per_star{400};
+    std::uint32_t armory_pass_auto_renew{1}; // user: a full pass starts over instead of needing a new purchase
     std::uint32_t kill_xp{5}, headshot_xp{3}, mvp_xp{25}, match_complete_xp{600};
     std::uint32_t match_drops_enabled{1}, match_drop_count{3}, match_case_percent{50}, match_skin_min_rarity{3};
     std::uint32_t mixed_stattrak_tradeups{1};
@@ -72,5 +76,13 @@ struct GameplayConfig
     std::uint32_t armory_howl_enabled{1}, armory_howl_star_price{250};
     std::uint32_t armory_rotation_enforce{0}; // enable after matching Panorama override is mounted
 };
+// Built-in Armory prices of the catalogue's collection/souvenir-free tiles (tools/gameplay_config.py mirrors them).
+constexpr std::uint32_t ArmoryCollectionPrice = 4, ArmoryCharmPrice = 3, ArmoryStickerPrice = 1;
+// Lowers sale values until no Armory purchase route (case, terminal, collection, souvenir, capsule, sticker or
+// charm pack, agent) returns more than sell_max_return_percent of its price on average, with pity at its
+// long-run rate and the best wear; caps each weapon rarity so a trade-up never returns more than that share of
+// its inputs. Idempotent; ParseGameplayConfig applies it and the defaults are already balanced.
+void BalanceSales(GameplayConfig &config);
+GameplayConfig BalancedDefaults();
 std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text);
 }

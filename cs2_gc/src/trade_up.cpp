@@ -110,7 +110,7 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
             return fail(TradeUpError::MixedRarity);
         statTrakCount += item->statTrak;
         souvenirCount += item->souvenir;
-        const auto collections = schema.CollectionsOf(item->defIndex, item->paintKitIndex);
+        const auto collections = schema.TradeUpCollectionsOf(item->defIndex, item->paintKitIndex);
         if (collections.empty())
             return fail(TradeUpError::NoCollection);
         ++supplied[collections.front()];
@@ -147,7 +147,7 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
         if (rarity == Covert)
             pool.skins = schema.GoldOutcomes(collection, false);
         else
-            for (const SkinRef &skin : schema.CollectionSkins(collection))
+            for (const SkinRef &skin : schema.TradeUpCollectionSkins(collection))
                 if (schema.SkinRarity(skin.weaponDefIndex, skin.paintKitIndex) == rarity + 1)
                     pool.skins.push_back(skin);
         if (pool.skins.empty())
@@ -210,7 +210,7 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
     {
         std::vector<const InventoryItem *> donors;
         for (const auto *input : inputs)
-            if (schema.CollectionsOf(input->defIndex,input->paintKitIndex).front() == chosen->collection)
+            if (schema.TradeUpCollectionsOf(input->defIndex,input->paintKitIndex).front() == chosen->collection)
                 donors.push_back(input);
         const auto *donor = donors[Below(random,donors.size())];
         item.souvenir = true;
@@ -220,6 +220,9 @@ TradeUpResult TradeUp(Inventory &inventory, const Schema &schema, const std::vec
         item.tournamentPlayer = donor->tournamentPlayer;
     }
     item.seed = static_cast<std::uint32_t>(Below(random, 1000)) + 1;
+    // A custom collection lists a colour family: the contract grants one of its colours, like opening one.
+    if (const auto *variants = schema.SkinFamily(item.paintKitIndex))
+        item.paintKitIndex = (*variants)[Below(random, variants->size())];
     const float average = totalWear / static_cast<float>(itemIds.size());
     item.wear = outcome.paintKitIndex ? std::clamp(minted->wearMin + average * (minted->wearMax - minted->wearMin), 0.0f, 1.0f) : 0.0f;
 

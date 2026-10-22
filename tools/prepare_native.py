@@ -11,6 +11,7 @@ from native_scoreboard import prepare as scoreboard
 from native_store import prepare as store
 from skip_container_confirm import prepare as confirmation
 from native_item_sales import prepare as sales
+from native_multi_sell import prepare as multi_sell
 from native_endmatch import prepare as results
 from native_offer_numbers import prepare as offers
 from native_bot_names import prepare as bot_names
@@ -20,6 +21,7 @@ from native_care_packages import prepare as care_packages
 from native_mainmenu import prepare as mainmenu
 from native_mission_launch import prepare as missions
 from native_knife_reel import prepare as knife_reel
+from native_missions import prepare as missions_schedule
 from native_resources import ensure_first_game_path
 from vpk_signatures import update as signatures
 from preparation_cache import PreparationCache
@@ -40,13 +42,15 @@ def prepare(directory, force_rebuild=False):
         print('Recipes/catalogue: ' + recipes(directory, bool(config['mixed_stattrak_tradeups']), config) +
               ' [%.2fs]' % (time.perf_counter() - step), flush=True)
     actions = [('Armory', armory), ('Scoreboard', scoreboard), ('Store', store),
-                         ('Opening confirmation', confirmation), ('Item sales', sales),
+                         ('Opening confirmation', confirmation), ('Item sales', sales), ('Multi-sell', multi_sell),
                          ('Match results', results), ('Terminal offers', offers), ('Key picker', key_select),
                          ('Stock XP/rating panels', stock_results), ('Main-menu promotion', mainmenu), ('Care packages', care_packages), ('Bot mission launch', missions), ('Black Market reel', knife_reel)]
     if not cached:
         for name, action in actions:
             step = time.perf_counter()
             print(name + ': ' + action(directory, config) + ' [%.2fs]' % (time.perf_counter()-step), flush=True)
+    try: print('Missions: ' + missions_schedule(directory, config), flush=True)  # cheap; follows the calendar
+    except (OSError, ValueError, KeyError) as error: print('Missions skipped (recorded missions stay): ' + str(error), flush=True)
     try: print('Bot names: ' + bot_names(directory, config, reshuffle=True), flush=True)
     except (OSError, ValueError, KeyError) as error: print('Bot names skipped (bots keep their normal names): ' + str(error), flush=True)
     print(ensure_first_game_path(directory), flush=True)

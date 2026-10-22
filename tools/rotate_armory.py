@@ -174,6 +174,9 @@ INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_g
         if (m_localRotationLogged !== offset) {
             m_localRotationLogged = offset;
             $.Msg('cs2_gc armory rotation hook: offset=' + offset + ' raw=[' + GameInterfaceAPI.GetSettingString('cs2_gc_rotation_offset') + ']');
+            // Tell the GC (SetEventFavorite reaches it; console aliases never do live) so the GC Armory and the missions
+            // rotate with this page: pseudo event 4300000000000000 + offset, on page load and after every Refresh.
+            if (offset >= 0 && offset <= 1000000) TournamentsAPI.SetTournamentFavorite(4300000000000000 + offset, true);
         }
         const cycle = Math.floor(now / m_localRotation.seconds) + Math.max(0, Math.min(1000000, offset));
         const pools = {};
@@ -320,7 +323,10 @@ PREPARE = '''        // Resolve each tile from its own native row, without inher
             entry.local_souvenir = slot === 'souvenir';
             entry.local_direct_case = entry.item_name === 'crate_cs2gc_black_market' || entry.item_name === 'crate_cs2gc_gauntlet';
             if (slot === 'agent') {
-                entry.lootlist = m_localRotation.agents.map(name => InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
+                // An operation's agent collection shows its own agents; older rows show every agent.
+                const own = String(entry.item_name).startsWith('lootlist:lootlist_cs2gc_agents_') ?
+                    _GetLootListForReward(entry.item_name).filter(id => id && id !== '0' && id !== entry.item_name) : [];
+                entry.lootlist = own.length ? own : m_localRotation.agents.map(name => InventoryAPI.GetFauxItemIDFromDefAndPaintIndex(
                     InventoryAPI.GetItemDefinitionIndexFromDefinitionName(name), 0));
                 entry.local_agent = true;
                 entry.entry_type = 'lootlist'; entry.lootlist_item_type = 'agent';

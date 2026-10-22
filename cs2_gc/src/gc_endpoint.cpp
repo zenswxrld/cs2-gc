@@ -20,12 +20,18 @@ namespace
 // Local choice descriptors, not econ item IDs. Slot keeps duplicate rewards independently selectable.
 // Panorama resolves def/paint through the native GetFauxItemIDFromDefAndPaintIndex API.
 constexpr std::uint64_t CareChoiceBase = 3000000000000ull;
+constexpr std::uint64_t CareClaimedFlag = 1ull << 36; // claimed view only; never a claimable token
 std::uint64_t CareChoiceToken(const InventoryItem &item, std::size_t slot)
 {
     return CareChoiceBase + (static_cast<std::uint64_t>(slot) << 32) +
         (static_cast<std::uint64_t>(item.paintKitIndex) << 16) + item.defIndex;
 }
 constexpr std::uint64_t FauxItemIdBase = 0xF000000000000000ull;
+constexpr std::uint64_t MissionTypeId = 16; // CSOAccountRecurringMission in the recorded welcome
+// Pseudo event ids of care claims (below 2^53, so Panorama numbers are exact): base + generation * 16 + slot mask.
+constexpr std::uint64_t CareEventBase = 4200000000000000ull;
+// Pseudo event ids of Armory refreshes: base + the page's rotation offset.
+constexpr std::uint64_t RotationEventBase = 4300000000000000ull;
 }
 // Maps one submitted id to an unused offer slot. Accepts the local choice token, or the client-side
 // faux id that Panorama derives for the displayed tile with GetFauxItemIDFromDefAndPaintIndex:
@@ -80,7 +86,18 @@ std::vector<std::uint8_t> EncodeCareStore(const Inventory &inventory)
 {
     PbWriter out;
     const auto &queue = inventory.CarePackages();
-    if (queue.empty()) { out.Varint(1,0); out.Varint(2,0); }
+    const auto &claimed = inventory.LastClaimedCarePackage();
+    if (queue.empty() && claimed) {
+        // Shown until the next package arrives, balance 0. Same choice tokens, plus CareClaimedFlag on the chosen
+        // three: the patched page draws those with the native claimed look and the other one as unavailable.
+        out.Varint(1,claimed->generation); out.Varint(2,0);
+        for (std::size_t slot=0;slot<claimed->slots.size();++slot) {
+            const auto &entry=claimed->slots[slot];
+            out.Varint(3,CareChoiceBase+(static_cast<std::uint64_t>(slot)<<32)+(std::uint64_t{entry.paintKitIndex&0xFFFFu}<<16)+
+                (entry.defIndex&0xFFFFu)+(entry.ownedId?CareClaimedFlag:0));
+        }
+    }
+    else if (queue.empty()) { out.Varint(1,0); out.Varint(2,0); }
     else {
         out.Varint(1,queue.front().generation); out.Varint(2,3);
         for (std::size_t slot=0;slot<queue.front().offers.size();++slot)
@@ -151,8 +168,91 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
         if (!store->Find(rule.reply))
             continue;
         SetHandler(rule.request, [store, reply = rule.reply](const FrameView &, LocalGameCoordinator &gc) {
-            gc.Reply(reply, *store->Find(reply));
+            if (reply == gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema && !gc.m_missionPool.empty()) {
+                gc.MissionTickLocked(static_cast<std::uint64_t>(std::time(nullptr)));
+                gc.m_missionsRequested = true;
+                if (gc.m_config.diagnostic) gc.m_config.diagnostic("missions: the game asked for missions (9225)");
+                gc.Reply(reply, gc.m_missionSchema); // the Armory-rotation mission instead of the recorded fortnight
+            }
+            else
+                gc.Reply(reply, *store->Find(reply));
         });
+    }
+}
+
+std::vector<std::vector<std::uint8_t>> LocalGameCoordinator::EncodedMissionProgress() const
+{
+    std::vector<std::vector<std::uint8_t>> objects;
+    for (const auto &entry : m_missionProgress.value_or(std::vector<MissionProgress>{}))
+    {
+        PbWriter object; // CSOAccountRecurringMission
+        object.Varint(1, static_cast<std::uint32_t>(m_config.owner.id & 0xFFFFFFFFull));
+        object.Varint(2, entry.mission); object.Varint(3, entry.period); object.Varint(4, entry.progress);
+        objects.push_back(object.bytes());
+    }
+    return objects;
+}
+
+std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::MissionTick(std::uint64_t unixSeconds)
+{
+    std::lock_guard lock(m_mutex);
+    MissionTickLocked(unixSeconds);
+    // A change made by a Refresh (inside the 9200 handler) is reported here too, so the helper follows it.
+    return std::exchange(m_missionUnreported, std::nullopt);
+}
+
+std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::MissionTickLocked(std::uint64_t unixSeconds)
+{
+    if (m_missionPool.empty()) return std::nullopt;
+    const std::uint64_t interval = m_live ? std::max(10u, m_live->Items().Gameplay().armory_rotation_seconds) : 900u;
+    const auto cycle = unixSeconds / interval + m_missionOffset;
+    if (m_missionCycle == cycle) return std::nullopt;
+    m_missionCycle = cycle;
+    const auto variant = static_cast<std::uint32_t>(cycle % m_missionPool.size());
+    // Each Refresh gets its own period (the window start + offset seconds): the game keys missions by period and
+    // would keep showing the old mission for a schema with the same period.
+    const auto period = static_cast<std::uint32_t>(unixSeconds / interval * interval + m_missionOffset % interval);
+    PbWriter list; list.Varint(1, period); list.Bytes(2, m_missionPool[variant]);
+    PbWriter schema; schema.Message(1, list);
+    m_missionSchema = schema.bytes();
+    if (m_missionsRequested) // the game already asked: push the new rotation's mission
+        Reply(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema, m_missionSchema);
+    if (m_config.diagnostic)
+        m_config.diagnostic("missions: variant " + std::to_string(variant) + " period " + std::to_string(period) +
+                            (m_missionsRequested ? " pushed to the game" : " ready for the game's request"));
+    m_missionUnreported = std::pair{variant, period};
+    return m_missionUnreported;
+}
+
+void LocalGameCoordinator::SetMissions(std::vector<std::uint8_t> pool, std::vector<MissionProgress> progress)
+{
+    std::lock_guard lock(m_mutex);
+    if (!pool.empty()) {
+        m_missionPool.clear();
+        PbReader reader(pool); PbField field;
+        while (reader.Next(field)) {
+            if (field.number != 1 || field.wire != 2) continue;
+            PbReader entry(field.bytes); PbField part; std::vector<std::uint8_t> blob;
+            while (entry.Next(part)) if (part.number == 2 && part.wire == 2) blob.assign(part.bytes.begin(), part.bytes.end());
+            if (!blob.empty()) m_missionPool.push_back(std::move(blob));
+        }
+        m_missionCycle.reset();
+    }
+    const auto before = m_missionProgress;
+    m_missionProgress = std::move(progress);
+    if (!before) return; // first load: the welcome carries it
+    for (const auto &entry : *m_missionProgress)
+    {
+        const auto old = std::find_if(before->begin(), before->end(), [&](const auto &item) {
+            return item.mission == entry.mission && item.period == entry.period; });
+        if (old != before->end() && old->progress == entry.progress) continue;
+        PbWriter object;
+        object.Varint(1, static_cast<std::uint32_t>(m_config.owner.id & 0xFFFFFFFFull));
+        object.Varint(2, entry.mission); object.Varint(3, entry.period); object.Varint(4, entry.progress);
+        SoSingleObject update; update.typeId = static_cast<std::int32_t>(MissionTypeId);
+        update.data = object.bytes(); update.version = ++m_soVersion; update.owner = m_config.owner;
+        Reply(old == before->end() ? gc_msg::ESOMsg::k_ESOMsg_Create : gc_msg::ESOMsg::k_ESOMsg_Update,
+              EncodeSoSingleObject(update));
     }
 }
 
@@ -263,6 +363,33 @@ bool LocalGameCoordinator::ClaimCareFromConsole(std::uint32_t generation, const 
         selected.push_back(package.offers[*slot].id);
     }
     return CompleteCareClaimLocked(m_live, generation, selected, afterChange);
+}
+
+bool LocalGameCoordinator::ApplyMissionStars(std::uint64_t cumulativeStars, const std::function<void()> &afterChange)
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_live || !m_live->ApplyMissionStars(cumulativeStars)) return false;
+    PublishArmoryCreditsLocked();
+    if (afterChange) afterChange();
+    return true;
+}
+
+void LocalGameCoordinator::PublishArmoryCreditsLocked()
+{
+    const auto credits = m_live->Items().ArmoryCredits().value_or(0);
+    m_armoryCredits = credits;
+    if (m_armory) m_armory->SetBalance(credits);
+    std::lock_guard passLock(m_txnMutex);
+    if (auto pass = WithXpShopBalance(m_xpShop, credits))
+    {
+        m_xpShop = *pass;
+        SoSingleObject updated;
+        updated.typeId = static_cast<std::int32_t>(XpShopTypeId);
+        updated.data = *pass;
+        updated.version = ++m_soVersion;
+        updated.owner = m_config.owner;
+        Reply(gc_msg::ESOMsg::k_ESOMsg_Update, EncodeSoSingleObject(updated));
+    }
 }
 
 bool LocalGameCoordinator::ApplyConsoleControl(std::uint64_t cumulativeStars, std::uint32_t rotationOffset,
@@ -670,6 +797,37 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                 selected.push_back(package.offers[*slot].id);
             }
             gc.CompleteCareClaimLocked(inventory,*generation,selected,afterChange);
+        });
+    // Build 32: the game's claim/Armory calls never send local claims and console.log is only written when CS2
+    // exits (the helper never sees it live), so the patched page marks a pseudo event "favourite"
+    // (CMsgGCCStrike15_v2_SetEventFavorite: eventid 1, is_favorite 2). Event ids in the CareEventBase range carry
+    // generation * 16 + the mask of the three chosen slots; any other event id is ignored as before.
+    SetHandler(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_SetEventFavorite,
+        [inventory,afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
+            PbReader reader(frame.body); PbField field; std::uint64_t eventId=0;
+            while (reader.Next(field)) if (field.number==1 && field.wire==0) eventId=field.value;
+            if (!reader.Failed() && eventId>=RotationEventBase && eventId<=RotationEventBase+1000000) {
+                // The Armory page's Refresh button: the GC and the missions follow its rotation offset.
+                gc.m_missionOffset=static_cast<std::uint32_t>(eventId-RotationEventBase);
+                if (gc.m_armory) gc.m_armory->SetRotationOffset(gc.m_missionOffset);
+                gc.MissionTickLocked(static_cast<std::uint64_t>(std::time(nullptr)));
+                if (gc.m_config.diagnostic) gc.m_config.diagnostic("armory refresh: rotation offset "+std::to_string(gc.m_missionOffset));
+                return;
+            }
+            if (reader.Failed() || eventId<CareEventBase || eventId>=CareEventBase+(1ull<<36)) { ++gc.m_ignored; return; }
+            const auto generation=static_cast<std::uint32_t>((eventId-CareEventBase)>>4);
+            const auto mask=static_cast<std::uint32_t>((eventId-CareEventBase)&15u);
+            const auto &queue=inventory->Items().CarePackages();
+            if (gc.m_config.diagnostic) gc.m_config.diagnostic("care claim received (favorite route): generation="+std::to_string(generation)+
+                " mask="+std::to_string(mask)+" pending="+std::to_string(queue.empty()?0:queue.front().generation));
+            if (!inventory->Items().Gameplay().care_packages_enabled || queue.empty() || queue.front().generation!=generation ||
+                queue.front().offers.size()!=4 || (mask!=7 && mask!=11 && mask!=13 && mask!=14)) {
+                if (gc.m_config.diagnostic) gc.m_config.diagnostic("care claim rejected: no matching pending package or not three slots");
+                ++gc.m_ignored; return;
+            }
+            std::vector<std::uint64_t> selected;
+            for (unsigned slot=0;slot<4;++slot) if (mask&(1u<<slot)) selected.push_back(queue.front().offers[slot].id);
+            gc.CompleteCareClaimLocked(inventory,generation,selected,afterChange);
         });
     SetHandler(gc_msg::EGCItemMsg::k_EMsgGCDelete,
                [inventory, schema, afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
@@ -1272,6 +1430,9 @@ void LocalGameCoordinator::OnClientHello(const FrameView &frame)
                 else
                     ++m_patchFailures;
             }
+            if (m_missionProgress)
+                if (auto result = AppendObjectsToWelcome(patched, MissionTypeId, EncodedMissionProgress(), true))
+                    patched = std::move(*result); // replaces the recorded mission (11012, May)
             if (m_live && m_live->Items().Gameplay().care_packages_enabled) {
                 const auto &queue=m_live->Items().CarePackages();
                 const std::vector<std::vector<std::uint8_t>> store{EncodeCareStore(m_live->Items())};
@@ -1444,7 +1605,8 @@ void LocalGameCoordinator::NotifyCarePackage()
     if (!m_live) return;
     const auto &queue=m_live->Items().CarePackages();
     const auto generation=queue.empty()?0:queue.front().generation;
-    if (generation==m_sentCareGeneration && !m_sentCareStore.empty()) return;
+    // A claim keeps the generation but changes the store (claimed view), so compare what would be sent.
+    if (!m_sentCareStore.empty() && EncodeCareStore(m_live->Items())==m_sentCareStore) return;
     if (!m_sentCareStore.empty()) {
         SoSingleObject removed;removed.typeId=static_cast<std::int32_t>(PersonalStoreTypeId);
         removed.owner=m_config.owner;removed.version=++m_soVersion;removed.data=m_sentCareStore;

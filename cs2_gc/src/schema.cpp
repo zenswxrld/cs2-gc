@@ -329,6 +329,10 @@ std::optional<Schema> Schema::Load(std::string_view itemsGameText)
         schema.m_weaponNames.emplace(definition, name);
     for (const KvNode *set : schema.m_itemSets)
     {
+        // The custom collections' item sets exist for the client's trade-up screen only; the GC keeps them as loot
+        // lists (LoadSkinFamilies), so match drops and the official collection lists do not change.
+        if (set->key.starts_with("set_cs2gc_"))
+            continue;
         const KvNode *items = set->Find("items");
         if (!items || !items->block)
             continue;
@@ -440,7 +444,59 @@ bool Schema::LoadSkinFamilies(std::string_view text)
     }
     m_skinFamilies = std::move(families);
     m_dropCollections = std::move(dropCollections);
+    // Custom collections for trade-ups: each top list set_cs2gc_case_<name> holds its tier lists.
+    m_customCollectionSkins.clear();
+    m_customSkinCollections.clear();
+    for (const auto &[name, list] : m_lootLists)
+    {
+        if (!name.starts_with("set_cs2gc_case_") || list->children.empty() ||
+            std::any_of(list->children.begin(), list->children.end(),
+                        [&](const KvNode &child) { return !m_lootLists.contains(child.key); }))
+            continue;
+        auto &skins = m_customCollectionSkins[name];
+        for (const auto &tier : LootTiers(name))
+            for (const auto &entry : tier.items)
+            {
+                const auto loot = ResolveLootItem(entry);
+                if (!loot || loot->kind != LootKind::Skin || IsKnife(loot->weaponDefIndex) || IsGlove(loot->weaponDefIndex))
+                    continue;
+                skins.push_back({loot->weaponDefIndex, loot->paintKitIndex});
+                std::vector<std::uint32_t> kits{loot->paintKitIndex};
+                if (const auto *variants = SkinFamily(loot->paintKitIndex)) kits.insert(kits.end(), variants->begin(), variants->end());
+                for (const auto kit : kits)
+                {
+                    auto &names = m_customSkinCollections[(std::uint64_t{loot->weaponDefIndex} << 32) | kit];
+                    if (std::find(names.begin(), names.end(), name) == names.end()) names.push_back(name);
+                }
+            }
+        if (skins.empty()) m_customCollectionSkins.erase(name);
+    }
+    for (auto &[key, names] : m_customSkinCollections) std::sort(names.begin(), names.end());
     return true;
+}
+
+std::vector<std::string> Schema::TradeUpCollectionsOf(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
+{
+    auto names = CollectionsOf(weaponDefIndex, paintKitIndex);
+    if (!names.empty()) return names;
+    const auto found = m_customSkinCollections.find((std::uint64_t{weaponDefIndex} << 32) | paintKitIndex);
+    return found == m_customSkinCollections.end() ? std::vector<std::string>{} : found->second;
+}
+
+std::vector<std::string> Schema::TradeUpCollectionNames() const
+{
+    auto names = CollectionNames();
+    std::vector<std::string> custom;
+    for (const auto &entry : m_customCollectionSkins) custom.push_back(entry.first);
+    std::sort(custom.begin(), custom.end());
+    names.insert(names.end(), custom.begin(), custom.end());
+    return names;
+}
+
+const std::vector<SkinRef> &Schema::TradeUpCollectionSkins(const std::string &collection) const
+{
+    const auto found = m_customCollectionSkins.find(collection);
+    return found == m_customCollectionSkins.end() ? CollectionSkins(collection) : found->second;
 }
 
 const std::vector<std::uint32_t> *Schema::SkinFamily(std::uint32_t paintKitIndex) const
@@ -524,6 +580,14 @@ const std::vector<SkinRef> &Schema::CollectionSkins(const std::string &collectio
     return found == m_collectionSkins.end() ? none : found->second;
 }
 
+std::vector<std::string> Schema::CollectionNames() const
+{
+    std::vector<std::string> names;
+    for (const auto &entry : m_collectionSkins) names.push_back(entry.first);
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
 std::optional<LootItem> Schema::SkinAsLootItem(std::uint32_t weaponDefIndex, std::uint32_t paintKitIndex) const
 {
     const auto weapon = m_weaponNames.find(weaponDefIndex);
@@ -570,7 +634,10 @@ std::vector<LootTier> Schema::LootTiers(std::string_view lootListName) const
                 const std::size_t underscore = name.rfind('_');
                 if (underscore != std::string::npos)
                 {
-                    const auto rarity = schema.m_rarities.find(name.substr(underscore + 1));
+                    // "..._ancient1" / "..._ancient2": the operation dossiers number their split top tiers.
+                    auto suffix = name.substr(underscore + 1);
+                    while (!suffix.empty() && suffix.back() >= '0' && suffix.back() <= '9') suffix.pop_back();
+                    const auto rarity = schema.m_rarities.find(suffix);
                     if (rarity != schema.m_rarities.end())
                         tier.rarity = rarity->second;
                 }

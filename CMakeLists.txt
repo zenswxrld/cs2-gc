@@ -24,6 +24,7 @@ add_library(cs2_gc_core STATIC
     cs2_gc/src/replay.cpp
     cs2_gc/src/proxy_support.cpp
     cs2_gc/src/item_sales.cpp
+    cs2_gc/src/economy_audit.cpp
     cs2_gc/src/inventory.cpp
     cs2_gc/src/keyvalues.cpp
     cs2_gc/src/live_inventory.cpp
@@ -49,6 +50,10 @@ if(BUILD_TESTING)
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_FOUND)
         add_test(NAME cs2_local_results_and_sales COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_local_results_and_sales.py -v)
+        add_test(NAME cs2_native_multi_sell COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_native_multi_sell.py -v)
+        add_test(NAME cs2_bot_skins COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_bot_skins.py -v)
+        set_tests_properties(cs2_bot_skins PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        set_tests_properties(cs2_native_multi_sell PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         set_tests_properties(cs2_local_results_and_sales PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_native_mission_launch COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_native_mission_launch.py -v)
         set_tests_properties(cs2_native_mission_launch PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -81,6 +86,8 @@ if(BUILD_TESTING)
         set_tests_properties(cs2_native_gloves PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_gun_collections COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_gun_collections.py -v)
         set_tests_properties(cs2_gun_collections PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_missions COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_missions.py -v)
+        set_tests_properties(cs2_missions PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_study_skins COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_study_skins.py -v)
         set_tests_properties(cs2_study_skins PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_native_knife_reel COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_native_knife_reel.py -v)

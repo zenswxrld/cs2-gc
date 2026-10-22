@@ -45,7 +45,7 @@ def _names(count, seed):
     return result
 
 
-PROFILE = re.compile(r'^([A-Za-z0-9_]+(?:\+[A-Za-z0-9_]+)*)([ \t]+)([^\s/]+)([ \t]*(?://.*)?)$')
+PROFILE = re.compile(r'^([A-Za-z0-9_]+(?:\+[A-Za-z0-9_]+)*)([ \t]+)("[^"\r\n]*"|[^\s/]+)([ \t]*(?://.*)?)$')
 
 
 def patch(text, seed):
@@ -84,26 +84,62 @@ def _seed(proxy_directory, reshuffle):
     return seed
 
 
-def patch_labels(text):
-    """Keep the full installed localization and its positional name placeholders."""
-    for key, replacement in (('SFUI_bot_decorated_name', '%s1'),
-                             ('SFUI_bot_decorated_name_controlled', '%s1 (%s2)')):
+def patch_labels(text, hide_tag=True, tokens=None):
+    """Keep the full installed localization and its positional name placeholders. tokens: names of the custom
+    collections' item sets (native_skins.collection_item_sets), added inside the Tokens block."""
+    if tokens:
+        from native_finishes import localization
+        text = localization(text, {k: v for k, v in tokens.items()
+                                   if not re.search(r'"%s"' % re.escape(k), text, re.I)})
+    replacements = (('SFUI_bot_decorated_name', '%s1'), ('SFUI_bot_decorated_name_controlled', '%s1 (%s2)'))
+    for key, replacement in replacements if hide_tag else ():
         pattern = re.compile(r'("' + key + r'"\s*)"([^"\r\n]*)"', re.I)
         matches = list(pattern.finditer(text))
         if len(matches) != 1 or '%s1' not in matches[0][2]:
+            if tokens: continue  # keep the collection names; only the bot label stays as installed
             raise ValueError('Changed bot localization format: ' + key)
         text = pattern.sub(lambda match: match[1] + '"' + replacement + '"', text)
     return text
 
 
+PRESETS = 'cs2_gc_bot_presets'
+
+
+def skill_preset(proxy_directory):
+    """(tier, botprofile bytes) of the installed Bot Improver preset for the local Premier rating, or None."""
+    import json
+    import premier_rating
+    proxy = Path(proxy_directory)
+    try:
+        state = json.loads((proxy / 'cs2_gc_gsi_state.json').read_text(encoding='utf-8')).get('premier') or {}
+    except (OSError, ValueError):
+        state = {}
+    tier = premier_rating.bot_preset({'rating': int(state.get('rating', 0))})
+    path = proxy / PRESETS / tier / 'botprofile.db'
+    return (tier, path.read_bytes()) if path.is_file() else None
+
+
 def prepare(proxy_directory, config, reshuffle=False):
     """reshuffle: new names (the launcher, before CS2 starts); the helper keeps the launcher's names."""
     from native_resources import install_override
-    enabled = bool(config.get('bot_random_names', 1))
-    seed = _seed(proxy_directory, reshuffle) if enabled else 0
-    names = install_override(proxy_directory, enabled=enabled, folder=FOLDER, comment=COMMENT, owner=OWNER,
-                             asset=ASSET, patch=lambda source: patch(source, seed))
-    labels = install_override(proxy_directory, enabled=bool(config.get('bot_hide_tag', 1)),
+    random_names = bool(config.get('bot_random_names', 1))
+    preset = skill_preset(proxy_directory)
+    seed = _seed(proxy_directory, reshuffle) if random_names else 0
+    # With Bot Improver presets installed (bot_skins.py) the profile comes from the preset for the local rating;
+    # the random names still go on top of it.
+    names = install_override(proxy_directory, enabled=random_names or preset is not None, folder=FOLDER,
+                             comment=COMMENT, owner=OWNER, asset=ASSET,
+                             patch=(lambda source: patch(source, seed)) if random_names else (lambda source: source),
+                             source=preset and (preset[1], ASSET))
+    if preset: names += '; skill preset ' + preset[0]
+    # The same English override names the custom collections (their item sets need localized names).
+    import json
+    try:
+        tokens = json.loads((Path(proxy_directory) / 'cs2_gc_collection_tokens.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        tokens = {}
+    hide_tag = bool(config.get('bot_hide_tag', 1))
+    labels = install_override(proxy_directory, enabled=hide_tag or bool(tokens),
         folder='cs2_gc_bot_labels', comment='cs2_gc native bot labels', owner='cs2-gc-bot-labels-v1',
-        asset='resource/csgo_english.txt', patch=patch_labels)
+        asset='resource/csgo_english.txt', patch=lambda text: patch_labels(text, hide_tag, tokens))
     return names + '; bot labels: ' + labels

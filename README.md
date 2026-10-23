@@ -1,65 +1,74 @@
-# cs2-gc
+# CS2 GC
 
-A separate CS2 port of [zenswxrld/CSOffline](https://github.com/zenswxrld/CSOffline), intended
-to bring its local inventory, standard case opening, progression, rewards,
-career tracking and bot features to CS2.
+A local inventory and progression mod for **Counter-Strike 2**, descended from [CSOffline](https://github.com/zenswxrld/CSOffline). It uses CS2's native inventory, loadout, Store and Armory pages for offline/bot play.
 
-**Development foundation only. There is no working CS2 launcher, game DLL,
-inventory connection or Armory UI integration yet. Do not install the legacy
-CS:GO binaries into CS2.**
+Items, stars, ratings and rewards belong to this local mod. They do not create real Steam items or change your Steam wallet. Launches use `-insecure`; use an unmodified Steam installation for official matchmaking.
 
-## Implemented so far
+## Download and install
 
-- A 64-bit C++20 build independent of the legacy launcher and game hooks.
-- Bounded protobuf envelope reading/writing. Header and body bytes are preserved;
-  message schemas and IDs still need validation against the target client.
-- A synchronized, bounded message queue with Steam-style size-query and
-  buffer-too-small behavior. This is not yet attached to Steam's interface.
-- Local XP and star reward rules adapted from the CS:GO fork, including headshot
-  bonuses, level rollover and the level-40 cap. Events are not yet connected to CS2.
-- An Armory catalogue model with categories, ASCII-insensitive search and paging.
-  It accepts schema-derived goods; it does not include an invented item list or
-  execute purchases. Full localization-aware search remains future work.
-- A KeyValues parser and `items_game.txt` schema loader: standard cases, their keys and
-  loot tiers, resolved from the real schema (tested offline against a synthetic fixture).
-- An in-memory inventory with strict, atomic file persistence, and offline case opening that
-  consumes the case and key and grants an item as one step. The special (knife/glove) tier
-  is not resolved yet.
-- GC message IDs derived from the protobuf descriptors embedded in the target `client.dll`
-  (`tools/extract_gc_protocol.py` generates `gc_msg_ids.h`), plus a record of the target
-  build's file hashes. In this build cases open through `k_EMsgGCOpenCrate`
-  (`CMsgOpenCrate`), not the deprecated `UnlockCrate`; which field is the key and which the
-  case is inferred from the field names and is unverified.
-- A bounded protobuf reader/writer, codecs for the Hello/Welcome/SOCacheSubscribed handshake
-  messages, and `LocalGameCoordinator`: an in-process stand-in with the same three calls as
-  `ISteamGameCoordinator` that answers a client Hello with a Welcome. The encoders were
-  cross-checked with Google's protobuf library against the target client's own descriptors.
-  It is not attached to Steam's interface, and the welcome version, owner ID and cache
-  contents are caller-supplied because they cannot be derived offline.
-- A diagnostic `steam_api64.dll` stand-in that gives the game the local GC and logs what it
-  sends, active only with `-insecure`. It cross-compiles but has **never been run**; see
-  [docs/PROXY.md](docs/PROXY.md) for the risks before using it.
-- A read-only Windows CS2 build inspector and automated core checks.
+**Supported game: Windows x64, Steam build `25966348` (game version 1.41.9.1, client 2000933).** The newest Steam build is not automatically supported. The launcher checks the actual client/engine/VPK fingerprints, not just the version label.
 
-## Store direction
+1. Obtain the supported CS2 files. [Exact downgrade instructions](docs/DOWNGRADE.md).
+2. Extract the **entire** `CS2GC-Portable-25966348.zip` into the CS2 root folder, the folder containing `game`.
+3. Open **Launch CS2 GC.exe**. No installer, separate Python installation, PowerShell commands or Steam launch-option edits are needed.
 
-Use **CS2's native Armory page** as the store. Add category tabs and previous/next
-pages so the full catalogue fits without cramming everything into one screen.
+Keep Steam installed and sign in to an account that owns CS2. The ZIP contains the mod and its private Python runtime; it does not contain Valve's game files or anyone's account recordings.
 
-Initial categories: Cases, Capsules, Souvenir Packages, Agents and Music Kits.
-All pages use one local star balance and inventory. Cases should include their
-correct key where required, resolved from the target CS2 schema. Preserve the
-native cards, item previews and redemption presentation where the client allows.
-This is the integration plan; only the catalogue/paging model exists today.
+Use a separate game folder outside Steam's managed library so Steam does not replace the mod or update that copy. [Installation, upgrades and removal](docs/INSTALL.md).
 
-Custom cases and custom finishes are **out of scope for now**. Standard game
-containers remain in scope. Nothing in this project creates real Steam items,
-changes a real Steam wallet or redeems official Armory purchases.
+Complete ZIP candidates are built by the [portable ZIP workflow](https://github.com/zenswxrld/cs2-gc/actions/workflows/portable-release.yml). Download the artifact named **CS2GC-Portable-25966348**, then extract the ZIP inside it. Actions artifact downloads require GitHub sign-in. Partial helper-update ZIPs are not fresh installations.
 
-## Build the current core
+## What the launcher handles
 
-Requirements: CMake 3.20+, a 64-bit C++20 compiler, and Python 3.9+ for inspection
-tests. No Steam client or third-party libraries are required for the core tests.
+- Starts the CS2 executable in **this copy of the game**, with its working directory set correctly.
+- Checks the supported game files and the complete mod payload.
+- Saves the original Steam DLL as `steam_api64_real.dll` before activating the mod.
+- Extracts the matching `items_game.txt` from the installed VPK, including schemas larger than 8 MiB.
+- Initializes missing own-account welcome/Store recordings through Steam; never distributes personal recordings.
+- Prepares the native resources before CS2 opens them, then reuses the preparation cache.
+- Preserves existing inventory, settings, finish IDs and replay files during ZIP upgrades.
+- Shows preparation failures and early game exit codes instead of silently closing.
+
+The first preparation can take several minutes. Later unchanged launches use the cache.
+
+## Current status
+
+| Area | Status |
+| --- | --- |
+| Local inventory, saved items/loadouts and case opening | User-tested in earlier builds |
+| Native Armory rotation, stars, selling, souvenirs and custom knife/glove cases | User-tested; individual economy and finish issues remain |
+| Profile XP, local Premier-style rating and bot-match rewards | Working baseline; mode-specific behaviour still needs coverage |
+| Care packages | Claims and case rewards user-confirmed after the favourite-message fix; packages default to profile level-ups |
+| Bot names, scoreboard labels and mission-to-bot-match launching | Working baseline; not every language/HUD location is verified |
+| Custom gun collections and colour families | Implemented; visual quality, distribution, duplicate and trade-up review ongoing |
+| Mission progress and tier rewards | Implemented; live validation still needed |
+| Complete ZIP and direct launcher | Implemented in the packaging branch; fresh-install/profile bootstrap and upgrade smoke tests required in the target client |
+| Career UI, achievements and advanced bot behaviour | Future work |
+
+See [feature details and known issues](docs/FEATURES.md) and [future plans](docs/FEATURE-ROADMAP.md). “Implemented” and passing automated tests do not establish live-client correctness.
+
+## Your saved files
+
+All mod state is currently in `game/bin/win64`. Back up these before moving installations:
+
+- `cs2_gc_inventory.txt` — inventory, loadouts and saved progression.
+- `cs2_gc_finish_ids.json` and `cs2_gc_gun_collections.json` — stable custom finish IDs and generated collection history.
+- `cs2_gc.cfg`, `cs2_gc_gameplay.cfg` and `cs2_gc_gsi_state.json` — settings and helper progression.
+- `cs2_gc_replay` — personal protocol recordings; keep private.
+
+The release ZIP includes no inventory, settings or finish-ID map to overwrite yours.
+
+## Troubleshooting
+
+Start with [the installation guide](docs/INSTALL.md#troubleshooting). Useful logs in `game/bin/win64` are `cs2_gc_prepare.log`, `cs2_gc_launcher.log`, `cs2_gc_profile.log`, `cs2_gc_log.txt` and `cs2_gc_rewards.log`.
+
+Never fix startup by deleting your inventory or finish-ID map. Do not share the replay folder or raw account data.
+
+## Development
+
+The active C++20 source is in `cs2_gc/`; Python helpers and owned artwork are in `tools/`. `legacy/` is a separate CS:GO reference project, not an installable CS2 binary.
+
+Core checks:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
@@ -67,55 +76,8 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-On Visual Studio use `-A x64` if the default generator selects another platform.
-The output is a static core library and test executable, not an installable mod.
+The portable workflow also builds the Windows proxy, launcher, profile bootstrap and texture decoder, checks export forwarding, and smoke-tests the assembled ZIP with its private runtime. Builds and tests run in GitHub Actions.
 
-## Identify the target CS2 build
+## Credits
 
-Run from this checkout, with the path of your Steam CS2 installation (the directory
-containing `game`). Keep the output report outside that installation:
-
-```powershell
-py -3 tools/inspect_cs2.py "D:\SteamLibrary\steamapps\common\Counter-Strike Global Offensive" --out cs2-build.json
-```
-
-The inspector only reads game files. It records module SHA-256 fingerprints,
-PE architecture, build metadata and missing files. It never loads code from game
-DLLs, installs hooks, downloads files or uploads the report. Existing output
-reports are not overwritten. A complete x64 file layout does **not** mean the mod
-is compatible. Exit codes: `0` complete layout, `2` missing/invalid modules, `1`
-inspection/output error.
-
-The exact build and relevant client assets are still needed to implement and
-verify the Steam/GC bridge and mount the shop controls on the native Armory page.
-
-## Port milestones
-
-| Area | Current state / acceptance check |
-| --- | --- |
-| Core envelope and queue | Offline tests; no live message exchange yet |
-| Client adapter | Message IDs, codecs and an offline Hello/Welcome endpoint done; Steam interface hook and live Hello/Welcome/SOCache exchange pending in the identified CS2 client |
-| Inventory and loadouts | Offline model and persistence tested; show, equip and reload in CS2 pending |
-| Standard case opening | Offline logic tested against the real schema; client message handling, previews and the knife/glove tier pending |
-| Armory shop | Catalogue paging tested; native UI and redemption bridge pending |
-| XP/stars | Pure reward rules tested; match-event bridge and persistence pending |
-| Ranks, drops, achievements and career | Reference logic preserved; CS2 integration pending |
-| Bot names, skins, chat and difficulty | Reference logic preserved; Source 2 interfaces pending |
-| Trade-ups, tools, stickers, storage and StatTrak | Reference logic preserved; current protocol mapping pending |
-| Lobbies / private server inventory sync | Reference logic preserved; CS2 integration pending |
-| Custom cases / finishes | Deferred |
-
-## Source layout and attribution
-
-- `cs2_gc/`: active CS2 core.
-- `tests/`: offline tests; synthetic fixtures are not real game data.
-- `tools/inspect_cs2.py`: read-only build fingerprinting.
-- `legacy/`: pinned reference submodule containing the CS:GO source from commit
-  `5d31c61786ac9b2b78299b9f28e3fd9bed3b006d` of `zenswxrld/Test`.
-
-The original BSD license, source credits and third-party notices are retained.
-The upstream history remains in the original repository and the downloadable
-source bundle. To download the optional reference, run `git submodule update
---init legacy` after cloning. The reference includes features and dependencies not yet ported;
-its custom cases are not loaded or built by the active project. See
-[legacy/README.md](legacy/README.md) for original authors and dependency licenses.
+Original BSD license and upstream credits are retained. The package includes the project's license, the gold-pool data attribution, BCDEC's license and the embedded Python runtime's own license. Game assets are read from the user's own CS2 installation.

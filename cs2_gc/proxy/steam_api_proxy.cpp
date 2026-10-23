@@ -645,12 +645,19 @@ void StartRewardsIfNeeded(State &state)
         return;
     }
     struct Candidate { const wchar_t *name; bool launcher; };
-    const Candidate candidates[] = {{L"pyw.exe", true}, {L"pythonw.exe", false},
+    const auto bundledPython = std::filesystem::path(state.directory) / L"cs2_gc_python/python.exe";
+    const Candidate candidates[] = {{bundledPython.c_str(), false}, {L"pyw.exe", true}, {L"pythonw.exe", false},
                                     {L"py.exe", true}, {L"python.exe", false}};
     for (const auto &candidate : candidates)
     {
         wchar_t found[32768];
-        const auto length = SearchPathW(nullptr, candidate.name, nullptr, 32768, found, nullptr);
+        DWORD length = 0;
+        if (std::filesystem::is_regular_file(candidate.name) && wcslen(candidate.name) < 32768) {
+            wcscpy(found,candidate.name);
+            length = static_cast<DWORD>(wcslen(found));
+        } else {
+            length = SearchPathW(nullptr,candidate.name,nullptr,32768,found,nullptr);
+        }
         if (!length || length >= 32768)
             continue;
         std::wstring command = QuoteWindowsArgument(found);
@@ -677,7 +684,7 @@ void StartRewardsIfNeeded(State &state)
         return;
     }
     state.autoRewards = false;
-    state.log->Write("rewards: Python 3 not found; install Python 3 with its launcher or PATH option, then restart CS2");
+    state.log->Write("rewards: bundled runtime not found; re-extract the complete CS2 GC ZIP");
 }
 
 State &Init();

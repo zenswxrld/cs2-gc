@@ -170,6 +170,16 @@ if(CS2_GC_BUILD_PROXY)
     if(NOT MSVC)
         target_link_options(cs2_gc_proxy PRIVATE -static)
     endif()
+    if(MINGW)
+        # Newer mingw-w64 keeps the default floating-point environment in this
+        # vendor CRT object. DLL startup does not pull it in automatically.
+        execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=CRT_fp10.o
+            OUTPUT_VARIABLE CS2_GC_CRT_FP OUTPUT_STRIP_TRAILING_WHITESPACE
+            COMMAND_ERROR_IS_FATAL ANY)
+        if(IS_ABSOLUTE "${CS2_GC_CRT_FP}" AND EXISTS "${CS2_GC_CRT_FP}")
+            target_sources(cs2_gc_proxy PRIVATE "${CS2_GC_CRT_FP}")
+        endif()
+    endif()
 endif()
 
 

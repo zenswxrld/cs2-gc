@@ -57,7 +57,16 @@ int wmain(int argc,wchar_t **argv)
         if(!initialized)Sleep(1000);
     }
     if(!initialized){std::cerr<<"Steam initialization failed. Open Steam and sign in to the CS2 account.\n";return 1;}
-    auto *gc=static_cast<SteamGameCoordinatorInterface*>(find(getUser(),"SteamGameCoordinator001"));
+    // Valve documents GC access through ISteamClient::GetISteamGenericInterface.
+    // Use its exported flat wrapper rather than assuming a vtable slot.
+    const auto create=reinterpret_cast<void*(__cdecl*)(const char*)>(
+        GetProcAddress(module,"SteamInternal_CreateInterface"));
+    const auto getPipe=reinterpret_cast<int(__cdecl*)()>(GetProcAddress(module,"SteamAPI_GetHSteamPipe"));
+    const auto generic=reinterpret_cast<void*(__cdecl*)(void*,int,int,const char*)>(
+        GetProcAddress(module,"SteamAPI_ISteamClient_GetISteamGenericInterface"));
+    void *client=create?create("SteamClient023"):nullptr;
+    auto *gc=client&&getPipe&&generic?static_cast<SteamGameCoordinatorInterface*>(
+        generic(client,getUser(),getPipe(),"SteamGameCoordinator001")):nullptr;
     void *user=find(getUser(),"SteamUser023");
     const std::uint64_t steamId=user?getSteamId(user):0;
     if(!gc||!steamId){std::cerr<<"Steam GC/user interface unavailable.\n";shutdown();return 1;}

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "cs2_gc/armory.h"
 #include "cs2_gc/armory_catalog.h"
 #include "cs2_gc/case_opening.h"

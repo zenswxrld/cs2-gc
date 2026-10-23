@@ -94,6 +94,7 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int)
     // Bind this process and its children to CS2 without redirecting to another install.
     SetEnvironmentVariableW(L"SteamAppId",L"730");
     SetEnvironmentVariableW(L"SteamGameId",L"730");
+    SetEnvironmentVariableW(L"PYTHONUTF8",L"1");
     std::random_device random;std::ostringstream token;
     for(unsigned i=0;i<4;++i)token<<std::hex<<std::setfill('0')<<std::setw(8)<<random();
     const auto nonce=token.str();

@@ -22,7 +22,7 @@ LIGHT_HELPERS = frozenset(name + '.py' for name in (
     'grant_custom_cases', 'mixed_tradeup', 'terminal_purchase', 'study_skins', 'extract_vpk_asset',
     'extract_finish_materials', 'extract_gc_protocol', 'inspect_cs2', 'make_collection_icons',
     'audit_next_collections', 'audit_collection_sources', 'package_collection_update', 'reset_profile',
-    'care_package_bridge', 'package_care_update', 'native_missions', 'mission_tracker', 'decode_mission_schema'))
+    'care_package_bridge', 'package_care_update', 'launch_setup', 'package_release', 'native_missions', 'mission_tracker', 'decode_mission_schema'))
 
 
 def digest(path):

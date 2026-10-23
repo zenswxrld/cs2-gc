@@ -1,0 +1,14 @@
+{
+  "steam_build": "25966348",
+  "patch_version": "1.41.9.1",
+  "client_version": 2000933,
+  "files": {
+    "game/bin/win64/engine2.dll": "6456df18d8f954394024c2c07da8c848df15a5ace74ce7390d78970ceb39ee21",
+    "game/csgo/bin/win64/client.dll": "659940c1db362ed981d1df10637cec8c2a3d99409b77fc3b73e435e4649e36b0",
+    "game/csgo/pak01_dir.vpk": "f0943b4d5a86fe8f4891ab98983b9d132b4450b9b7401a03a530bcd63f293f99"
+  },
+  "depots": {
+    "2347770": "2520908610273941189",
+    "2347771": "8766757721818354077"
+  }
+}

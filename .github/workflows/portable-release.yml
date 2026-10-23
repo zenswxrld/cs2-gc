@@ -1,0 +1,41 @@
+name: Complete portable mod ZIP
+on:
+  push:
+    branches: [codex/drag-drop-release]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-zip:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          path-type: inherit
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+      - name: Configure
+        shell: msys2 {0}
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$PWD/build/Release" -DBUILD_TESTING=ON -DCS2_GC_BUILD_PROXY=ON -DCS2_GC_DEBUG_TOOLS=ON -DCS2_GC_PROXY_DEF="$PWD/data/steam_api64_exports.def"
+      - name: Build Windows binaries
+        shell: msys2 {0}
+        run: cmake --build build -j 2
+      - name: Run core and helper checks
+        shell: msys2 {0}
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Package complete ZIP and smoke-test bundled runtime
+        run: python tools/package_release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CS2GC-Portable-25966348
+          path: |
+            dist/CS2GC-Portable-25966348.zip
+            dist/CS2GC-Portable-25966348.zip.sha256

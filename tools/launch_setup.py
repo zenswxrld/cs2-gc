@@ -170,6 +170,7 @@ def main():
     args = parser.parse_args()
     failure = args.proxy_dir/'cs2_gc_launch_error.txt'
     try:
+        failure.unlink(missing_ok=True)
         run(args.proxy_dir)
         failure.unlink(missing_ok=True)
         return 0

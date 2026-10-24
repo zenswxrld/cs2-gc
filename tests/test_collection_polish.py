@@ -100,6 +100,18 @@ class ClientReview(unittest.TestCase):
         self.assertEqual(next(e for e in new if e['weapon']=='weapon_ak47')['themes'],['Cobalt','Teal','Ash'])
         self.assertEqual(polish(result,pool,lambda *args:True,{}),result)
 
+    def test_fresh_insignia_without_an_awp_still_gets_the_reviewed_chase(self):
+        from collection_review import refine
+        weapons=['weapon_famas','weapon_hkp2000','weapon_glock','weapon_usp_silencer','weapon_fiveseven','weapon_ak47',
+                 'weapon_mac10','weapon_scar20','weapon_galilar','weapon_nova','weapon_m4a1_silencer','weapon_deagle',
+                 'weapon_ump45','weapon_ssg08','weapon_negev','weapon_xm1014']
+        entries=self.entries(weapons)
+        result=refine({'insignia':entries},{'awp_queens_gambit':{}},lambda *args:True,{})['insignia']
+        self.assertEqual(result[0]['weapon'],'weapon_awp')
+        self.assertEqual(result[0]['donor'],'awp_queens_gambit')
+        self.assertEqual(len({e['weapon'] for e in result}),16)
+        self.assertEqual([sum(e['tier']==t for e in result) for t,_ in gc.TIER_COUNTS],[1,2,3,4,6])
+
     def test_negev_plate_moves_down_and_m249_remains_milspec(self):
         from collection_review import refine
         weapons=['weapon_negev','weapon_glock','weapon_scar20','weapon_m4a1','weapon_tec9','weapon_fiveseven',

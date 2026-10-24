@@ -25,11 +25,14 @@ def refine(lineup,rows,works,report):
     for icon,(donor,label,mode,themes) in awps.items():
         entries=result.get(icon,[])
         at=next((i for i,e in enumerate(entries) if e['weapon']=='weapon_awp' and
-                 (e.get('donor')=='am_awp_glory' or e.get('donor')==donor)),None)
+                 (icon=='insignia' or e.get('donor')=='am_awp_glory' or e.get('donor')==donor)),None)
+        if at is None and icon=='insignia':
+            at=next((i for i,e in enumerate(entries) if e['tier']=='ancient'),None)
         if at is None:continue
         if donor not in rows or not works(donor,mode,themes):
             unavailable.append(icon+': AWP artwork unavailable');continue
         entries[at]=material_entry(entries[at],donor,label,mode,themes)
+        entries[at]['weapon']='weapon_awp'
         applied.append(icon+': '+label)
     entries=result.get('insignia',[])
     by_weapon={e['weapon']:e for e in entries}

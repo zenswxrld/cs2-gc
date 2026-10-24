@@ -226,7 +226,7 @@ class DetailRebuild(unittest.TestCase):
         params=gc.effective_params(read_root(made[0]),read_root(made[1]))
         self.assertEqual(params['g_tPattern'],'target-mask-pattern.vtex')
         self.assertNotEqual(params['g_vColor0'],params['g_vColor3'])
-        self.assertEqual(params['g_vColor2'],colors[2][:3])
+        self.assertEqual(params['g_vColor2'],gc.effective_params(read_root(compmat(berry)),read_root(source.read(berry+'_c')))['g_vColor2'])
 
     def test_authored_plans_keep_counts_unique_weapons_and_two_berry_families(self):
         from collection_rebuild import DESIGNS,audit

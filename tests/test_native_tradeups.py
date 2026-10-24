@@ -2,6 +2,8 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+import json
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -115,6 +117,65 @@ class NativeTradeUps(unittest.TestCase):
             target.write_text('externally edited')
             with self.assertRaises(ValueError): native.prepare(proxy)
             self.assertEqual(target.read_text(), 'externally edited')
+
+
+    def test_final_preparation_mount_restores_generated_finishes_after_first_schema_write(self):
+        import native_finishes
+        from prepare_native import mount_finish_resources
+        with tempfile.TemporaryDirectory() as folder:
+            game = Path(folder)/'game'
+            proxy = game/'bin/win64'
+            proxy.mkdir(parents=True)
+            info = game/'csgo/gameinfo.gi'
+            info.parent.mkdir()
+            native.atomic_write(info,GAMEINFO)
+            (proxy/'items_game.txt').write_text(schema_text())
+            mod = game/native_finishes.FOLDER
+            mod.mkdir()
+            manifest = mod/'cs2_gc_finishes_manifest.json'
+            manifest.write_text(json.dumps({'owner':native_finishes.OWNER}))
+            pack = mod/'pak01_dir.vpk'
+            pack.write_bytes(b'owned pack fixture')
+            def finishes(directory,config,source):
+                native.atomic_write(info,native.mount_gameinfo(native.read_text(info),True,
+                                    native_finishes.FOLDER,native_finishes.COMMENT))
+                return source,'fixture'
+            config = {'knife_finishes':1,'armory_rotation_enabled':0}
+            with patch.object(native_finishes,'prepare',side_effect=finishes):
+                native.prepare(proxy,config=config)
+            # Final pre-launch repair works even with existing generated packs.
+            mount_finish_resources(proxy,config)
+            result = native.read_text(info)
+            self.assertIn('Game\tcs2_gc_finishes',result)
+            self.assertIn('Game\tcs2_gc_native',result)
+            self.assertIn('Mod\tcs2_gc_native',result)
+            self.assertIn('Game csgo/addons/other_mod',result)
+            before = info.stat().st_mtime_ns
+            mount_finish_resources(proxy,config)
+            self.assertEqual(info.stat().st_mtime_ns,before)
+            self.assertEqual(pack.read_bytes(),b'owned pack fixture')
+            self.assertEqual((proxy/'items_game.txt').read_text(),schema_text())
+
+    def test_finish_mount_rejects_unowned_pack_and_respects_disabled_setting(self):
+        import native_finishes
+        from prepare_native import mount_finish_resources
+        with tempfile.TemporaryDirectory() as folder:
+            game=Path(folder)/'game'
+            proxy=game/'bin/win64'
+            proxy.mkdir(parents=True)
+            info=game/'csgo/gameinfo.gi'
+            info.parent.mkdir()
+            native.atomic_write(info,GAMEINFO)
+            self.assertEqual(mount_finish_resources(proxy,{'knife_finishes':0}),'disabled')
+            with self.assertRaisesRegex(ValueError,'manifest is missing'):
+                mount_finish_resources(proxy,{})
+            mod=game/native_finishes.FOLDER
+            mod.mkdir()
+            (mod/'cs2_gc_finishes_manifest.json').write_text('{"owner":"someone else"}')
+            (mod/'pak01_dir.vpk').write_bytes(b'foreign')
+            with self.assertRaisesRegex(ValueError,'not owned'):
+                mount_finish_resources(proxy,{})
+            self.assertEqual(native.read_text(info),GAMEINFO)
 
 
 if __name__ == '__main__': unittest.main()

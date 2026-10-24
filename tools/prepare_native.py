@@ -27,6 +27,42 @@ from vpk_signatures import update as signatures
 from preparation_cache import PreparationCache
 
 
+
+def mount_finish_resources(directory, config):
+    """Restore the owned material mount after schema writers, also on warm starts.
+
+    First-run recipe preparation can rewrite gameinfo from a snapshot taken
+    before finish generation mounted its pack. Keep this inexpensive final
+    check outside the material/cache rebuild so an existing pack can be repaired.
+    """
+    import json
+    import native_finishes
+    from native_tradeups import read_text, atomic_write, mount_gameinfo
+    directory = Path(directory).resolve()
+    if not config.get('knife_finishes', 1):
+        return 'disabled'
+    game = directory.parent.parent
+    folder = game / native_finishes.FOLDER
+    manifest = folder / 'cs2_gc_finishes_manifest.json'
+    if not manifest.is_file():
+        raise ValueError('Generated finish manifest is missing; preparation is incomplete.')
+    if json.loads(read_text(manifest)).get('owner') != native_finishes.OWNER:
+        raise ValueError('Finish folder is not owned by CS2 GC; refusing to mount it.')
+    if not (folder / 'pak01_dir.vpk').is_file():
+        raise ValueError('Generated finish VPK is missing; preparation is incomplete.')
+    info = game / 'csgo/gameinfo.gi'
+    current = read_text(info)
+    mounted = mount_gameinfo(current, True, native_finishes.FOLDER, native_finishes.COMMENT)
+    if mounted == current:
+        return 'installed: owned finish materials and collection icons'
+    backup = info.with_name(info.name+'.'+native_finishes.FOLDER+'_backup')
+    if not backup.exists():
+        with backup.open('x',encoding='utf-8',newline='') as output:
+            output.write(current)
+    atomic_write(info,mounted)
+    return 'restored: owned finish materials and collection icons'
+
+
 def prepare(directory, force_rebuild=False):
     started = time.perf_counter()
     config = load(directory)
@@ -41,6 +77,7 @@ def prepare(directory, force_rebuild=False):
         step = time.perf_counter()
         print('Recipes/catalogue: ' + recipes(directory, bool(config['mixed_stattrak_tradeups']), config) +
               ' [%.2fs]' % (time.perf_counter() - step), flush=True)
+    print('Finish resources: ' + mount_finish_resources(directory, config), flush=True)
     actions = [('Armory', armory), ('Scoreboard', scoreboard), ('Store', store),
                          ('Opening confirmation', confirmation), ('Item sales', sales), ('Multi-sell', multi_sell),
                          ('Match results', results), ('Terminal offers', offers), ('Key picker', key_select),

@@ -125,7 +125,7 @@ class PreparationCaching(unittest.TestCase):
                 stack.enter_context(patch.object(prepare_native,'load',return_value={'mixed_stattrak_tradeups':1}))
                 stack.enter_context(patch.object(prepare_native,'PreparationCache',return_value=cache))
                 actions={name:stack.enter_context(patch.object(prepare_native,name,return_value='ready')) for name in
-                    ('recipes','armory','scoreboard','store','confirmation','sales','results','offers','key_select',
+                    ('mount_finish_resources','recipes','armory','scoreboard','store','confirmation','sales','results','offers','key_select',
                      'stock_results','mainmenu','care_packages','multi_sell','missions','knife_reel','bot_names',
                      'ensure_first_game_path','signatures')}
                 output=io.StringIO()
@@ -136,6 +136,7 @@ class PreparationCaching(unittest.TestCase):
                 self.assertEqual(actions['armory'].call_count,1)
                 self.assertEqual(actions['bot_names'].call_count,2)
                 self.assertEqual(actions['signatures'].call_count,2)
+                self.assertEqual(actions['mount_finish_resources'].call_count,2)
                 self.assertIn('Preparation cache: hit',output.getvalue())
                 with contextlib.redirect_stdout(io.StringIO()):
                     prepare_native.prepare(proxy,force_rebuild=True)

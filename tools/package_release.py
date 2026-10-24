@@ -161,23 +161,39 @@ def bot_payload(root, fetch=fetch_bytes):
     data = fetch(metadata['url'])
     if hashlib.sha256(data).hexdigest() != metadata['sha256']:
         raise ValueError('Upstream bot archive checksum mismatch')
-    names = bundle_names(data)
-    forbidden = ('engine2.dll','client.dll','steam_api64.dll','steam_api64_real.dll')
-    if any(Path(n).name in forbidden or n.endswith('.vpk') for n in names):
-        raise ValueError('Bot archive must not distribute Valve binaries or VPKs')
+    bundle_names(data)
+    # Upstream also carries optional botprofile VPK overrides and stock mode
+    # configs. Our generated name/profile pack supplies those; ship only addons.
+    from bot_skins import _bundle_prefix
+    selected = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(data)) as source, zipfile.ZipFile(selected,'w',zipfile.ZIP_DEFLATED) as target:
+        names = [n.replace('\\','/') for n in source.namelist()]
+        prefix = _bundle_prefix(names)
+        base = prefix+'/' if prefix else ''
+        for info in source.infolist():
+            name = info.filename.replace('\\','/')
+            relative = name[len(base):] if name.startswith(base) else ''
+            if not relative.startswith('addons/') or info.is_dir():
+                continue
+            if Path(relative).name.lower() in ('engine2.dll','client.dll','steam_api64.dll','steam_api64_real.dll') or relative.lower().endswith('.vpk'):
+                raise ValueError('Unexpected game file inside bot addons: '+relative)
+            target.writestr(relative,source.read(info))
+    data = selected.getvalue()
+    bundle_names(data)
+    packaged = dict(metadata,upstream_sha256=metadata['sha256'],sha256=hashlib.sha256(data).hexdigest())
     base = BIN+'cs2_gc_payload/bots/'
     files = {base+'bot_improver.zip':data,
-             base+'bundle.json':json.dumps(metadata,indent=2).encode()}
+             base+'bundle.json':json.dumps(packaged,indent=2).encode()}
     raw = 'https://raw.githubusercontent.com/'+metadata['source_repo']+'/'+metadata['source_commit']+'/'
     resources = ['overrides/%s/botprofile.db'%tier for tier in ('Low','Medium','High')]
     resources += ['cfg/my_bot_%s_config_rules_unchanged.cfg'%mode for mode in ('normal','ffa')]
     for name in resources:
         files[base+'resources/'+name] = fetch(raw+name)
     files['licenses/CS2-Bot-Improver-LICENSE.txt'] = fetch(raw+'LICENSE')
-    # Keep the unmodified upstream archive and exact plugin source snapshots
+    # Keep unchanged addon bytes and exact plugin source snapshots
     # alongside notices; third-party plugins retain their own licences.
     sources = [{'repo':metadata['source_repo'],'commit':metadata['source_commit']}]+metadata['plugin_sources']
-    notices = ['Bundled bot components: unmodified CS2-Bot-Improver '+metadata['version'],
+    notices = ['Bundled bot components: CS2-Bot-Improver '+metadata['version']+' (addons only; bytes unchanged)',
                'Windows release: '+metadata['url'],
                'Framework/plugin licences inside cs2_gc_payload/bots/bot_improver.zip are retained.',
                'Exact source snapshots for the bot project and its pinned plugin submodules:','']

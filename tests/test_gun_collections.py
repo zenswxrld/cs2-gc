@@ -448,6 +448,19 @@ class RemainingCollections(unittest.TestCase):
         self.assertEqual(result,saved)
         self.assertEqual(report['rebuild_unavailable'][0]['collection'],'rampart')
 
+    def test_all_28_can_plan_with_similarity_filter_and_audit_has_no_near_matches(self):
+        from remaining_collection_designs import designs
+        from collection_rebuild import recolour
+        from collection_similarity import Guard,audit
+        pool=self.pool();planned_designs=designs()
+        def palette(donor,theme,entry):
+            return recolour(pool[donor]['colors'],theme) if theme else pool[donor]['colors']
+        guard=Guard(pool,palette)
+        result=gc.plan(pool,GUNS,list(planned_designs),{},works=lambda *args:True,
+                       designs=planned_designs,accept=guard.allowed)
+        for icon,entries in result.items():self.assertEqual(len(entries),16,icon)
+        self.assertFalse(audit(result,pool,palette)['near_matches'])
+
 class VisualSimilarity(unittest.TestCase):
     def fixture(self):
         from collection_rebuild import recolour

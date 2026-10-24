@@ -31,6 +31,7 @@ class Guard:
     def __init__(self,rows,palette_for):
         self.rows,self.palette_for=rows,palette_for
         self.registry={}
+        self.palettes={}
         self.rejected=0
         self.unrated=set()
         for name,row in sorted(rows.items()):
@@ -38,6 +39,14 @@ class Guard:
             if not palette:continue
             for weapon in row.get('guns',()):
                 self.record(name,weapon,palette,'official:'+name)
+
+    def palette(self,donor,theme,entry):
+        key=(donor,theme,entry.get('palette_source'),entry.get('pattern_source'))
+        if key not in self.palettes:
+            value=self.palette_for(donor,theme,entry)
+            if value:self.palettes[key]=value
+            return value
+        return self.palettes[key]
 
     def key(self,donor,weapon,entry=None):
         row=self.rows[donor]
@@ -60,7 +69,7 @@ class Guard:
         accepted=[];palettes=[]
         from collection_detail import palettes_distinct
         for theme in choices:
-            palette=self.palette_for(donor,theme,entry or {})
+            palette=self.palette(donor,theme,entry or {})
             if not palette:
                 # Texture-only designs have their own decoder change/stock-hue
                 # gate. Do not invent a four-colour signature for their artwork.
@@ -86,7 +95,7 @@ class Guard:
                 donor=entry.get('donor')
                 if donor not in self.rows:continue
                 for theme in entry.get('themes',()) if entry['mode']!='transfer' else [None]:
-                    palette=self.palette_for(donor,theme,entry)
+                    palette=self.palette(donor,theme,entry)
                     if palette:self.record(donor,entry['weapon'],palette,icon+':'+str(theme),entry)
 
 def audit(lineup,rows,palette_for):

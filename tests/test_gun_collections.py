@@ -261,7 +261,12 @@ class DetailRebuild(unittest.TestCase):
             name='hy_detail_%02d'%i
             vmat='materials/x/'+name+'.vmat'
             files['weapons/paints/legacy/'+name+'.vcompmat_c']=compmat(vmat)
-            files[vmat+'_c']=patterned(vmat,[[.8,.2,.1,1],[.2,.6,.9,1],[.9,.9,.3,1],[.4,.1,.5,1]],'textures/'+name+'.vtex')
+            import colorsys
+            palette=[]
+            for color in ([.8,.2,.1],[.2,.6,.9],[.9,.9,.3],[.4,.1,.5]):
+                h,s,v=colorsys.rgb_to_hsv(*color)
+                palette.append([*colorsys.hsv_to_rgb((h+i*.17)%1,s,v),1])
+            files[vmat+'_c']=patterned(vmat,palette,'textures/'+name+'.vtex')
             kits[name]=(str(i+100),{'name':name})
             loot.append('"[%s]%s" "1"'%(name,GUNS[i%len(GUNS)]))
         text='"items_game" { "items" { %s } "client_loot_lists" { "set_x_rare" { %s } } }'%(

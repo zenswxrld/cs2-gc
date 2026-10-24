@@ -49,7 +49,7 @@ DESIGNS.update({
   'family':{'donor':'ht_white_edges','weapon':'weapon_glock','label':'Reactive Armour','required':True},
   'names':('Siegebreaker','Reactive Armour','Iron Dominion','Ablative','Rivet Guard','Bastion Plate','Steel Tread',
            'Carbon Lock','Hardpoint','Armourline','Reinforced','Mill Finish','Boltwork','Chassis','Heavy Gauge','Workshop')},
- 'lodestar': {'weapon':'weapon_awp','palette':('Violet','Cobalt','Rose','Glacier','Galaxy','Midnight'),
+ 'lodestar': {'weapon':'weapon_awp','palette':('Violet','Rose','Glacier','Amber','Galaxy','Midnight'),
   'motifs':('star','space','moon','galaxy','meteor','crystal','quartz','irides','pearl'),
   'allow':('am_aqua_flecks','am_copper_flecks','aa_spacerace_orange','sp_spacerace_blue','sp_star_bravo',
            'hy_zodiac1','aa_glock_18_urban_moon_fever','aa_ump45_moonrise_sunset','am_crystallized',

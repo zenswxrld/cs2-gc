@@ -14,6 +14,7 @@ def make(source,kit,path,new_name,theme):
     found=inspect(source,path)
     if not found:return None
     pattern=found['params'].get('g_tPattern')
+    if not isinstance(pattern,str):return None
     original=source.read(pattern+'_c') if pattern else None
     if original is None:return None
     try:_,_,_,width,height,payload=texture_payload(original)

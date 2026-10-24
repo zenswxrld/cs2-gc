@@ -173,7 +173,8 @@ class CompositeDetails(unittest.TestCase):
         import collection_artwork as ca
         root=composite()
         variables=root.get('m_Points').value[0].get('m_vecCompositeInputContainers').value[-1].get('m_vecLooseVariables')
-        variables.value.append(obj(('m_strName',string('g_tPattern')),('m_strTextureRuntimeResourcePath',string('art.vtex'))))
+        variables.value.append(obj(('m_strName',string('g_tPattern')),
+            ('m_nVariableType',string('LOOSE_VARIABLE_TYPE_RESOURCE_TEXTURE')),('m_strTextureRuntimeResourcePath',string('art.vtex'))))
         comp=kv3.write_resource(0,[['DATA',fixture_v4(root,True)]])
         files={'paint.vcompmat_c':comp,'materials/template.vmat_c':material('materials/template.vmat',[[1,1,1,1]]*4),'art.vtex_c':texture()}
         class Source:

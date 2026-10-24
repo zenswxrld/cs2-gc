@@ -68,10 +68,15 @@ def upgrade(lineup,rows,guns,icons,families,works,report):
 def audit(lineup,rows):
     """Review every visible slot, even collections outside the initial rebuild batch."""
     uses={}
+    patterns={}
     for icon,entries in lineup.items():
         for e in entries:
             donor=e.get('donor')
-            if donor:uses.setdefault(donor,[]).append(icon)
+            if donor:
+                uses.setdefault(donor,[]).append(icon)
+                row=rows.get(donor,{})
+                key=(row.get('pattern'),e['weapon'],tuple(e.get('themes',())))
+                patterns.setdefault(key,[]).append((icon,donor))
     result={}
     for icon,entries in lineup.items():
         issues=[]
@@ -84,6 +89,10 @@ def audit(lineup,rows):
                 issues.append({'slot':index+1,'issue':'legacy whole-palette recolour; inspect trim and contrast'})
             if e['mode']=='transfer' and e['weapon'] in row.get('pattern_guns',()):
                 issues.append({'slot':index+1,'issue':'official finish repeated on original weapon'})
+            key=(row.get('pattern'),e['weapon'],tuple(e.get('themes',())))
+            if row.get('pattern') and len(patterns.get(key,()))>1:
+                issues.append({'slot':index+1,'issue':'shared pattern/weapon/colourway; inspect for duplicate look',
+                               'collections':sorted({item[0] for item in patterns[key]})})
             if len(uses[donor])>1:
                 issues.append({'slot':index+1,'issue':'reused donor; compare actual weapon/colourway','collections':sorted(set(uses[donor]))})
             if e['tier'] in ('ancient','legendary') and row.get('style') in (0,3):

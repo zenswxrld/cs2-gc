@@ -261,6 +261,7 @@ def make_recolour(source, kit, kit_path, new_name, theme, preserve_details=False
 
 
 def clean_title(title):
+    if title in ('The Fuschia Is Now','The Fuchsia Is Now'): return 'Chromatic Current'
     words = title.split()
     while len(words) > 1 and words[0].lower().strip(',') in COLOUR_WORDS: words = words[1:]
     return ' '.join(words)
@@ -518,7 +519,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
                 palettes.append(palette)
             variant = kit_name(icon, entry, theme)
             if variant not in made:
-                new_kits.append((variant, colour_title(title,theme) if detail else clean_title(title), values_for(donor, tier, weapon, path)))
+                new_kits.append((variant, colour_title(title,theme), values_for(donor, tier, weapon, path)))
                 made.add(variant)
             variants.append(variant); first = first or path
         if len(variants) < 3: return None

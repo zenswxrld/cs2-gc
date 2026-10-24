@@ -255,5 +255,37 @@ class DetailRebuild(unittest.TestCase):
         self.assertTrue(all(any('whole-palette' in i['issue'] for i in row['issues']) for row in report.values()))
 
 
+    def test_full_rebuild_preserves_legacy_definitions_and_names_rolled_variants(self):
+        files,kits,loot={},{},[]
+        for i in range(50):
+            name='hy_detail_%02d'%i
+            vmat='materials/x/'+name+'.vmat'
+            files['weapons/paints/legacy/'+name+'.vcompmat_c']=compmat(vmat)
+            files[vmat+'_c']=patterned(vmat,[[.8,.2,.1,1],[.2,.6,.9,1],[.9,.9,.3,1],[.4,.1,.5,1]],'textures/'+name+'.vtex')
+            kits[name]=(str(i+100),{'name':name})
+            loot.append('"[%s]%s" "1"'%(name,GUNS[i%len(GUNS)]))
+        text='"items_game" { "items" { %s } "client_loot_lists" { "set_x_rare" { %s } } }'%(
+            ' '.join('"%d" { "name" "%s" }'%(i+1,g) for i,g in enumerate(GUNS)),' '.join(loot))
+        source=Recolour().source(files)
+        titles={name:'Copper Pattern '+name for name in kits}
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/gc.LINEUP_FILE
+            families,report={},{}
+            made=gc.build(text,kits,titles,finishes.kit_path,source,families,lineup_path=path,icons=['forged'],report=report)
+            saved=json.loads(path.read_text())
+            self.assertEqual(report.get('rebuilt_collections'),['forged'])
+            self.assertEqual(len(made[4]),16)
+            self.assertTrue(all(e.get('detail') for e in saved['lineup']['forged']))
+            self.assertTrue(any(name.startswith('gc3') for name,_,_ in made[0]),'owned legacy definitions retained')
+            self.assertTrue(any(name.startswith('gc4') for name,_,_ in made[0]))
+            self.assertEqual(len([k for k in families if k.startswith('gc4')]),2)
+            variants={v for k,values in families.items() if k.startswith('gc4') for v in values}
+            names={name:title for name,title,_ in made[0]}
+            self.assertTrue(all(any(names[v].startswith(theme+' ') for theme in ('Crimson','Amber','Cobalt','Teal','Violet','Ember')) for v in variants))
+            self.assertEqual(gc.clean_title('The Fuschia Is Now'),'Chromatic Current')
+            again=gc.build(text,kits,titles,finishes.kit_path,source,{},lineup_path=path,icons=['forged'])
+            self.assertEqual(again[4],made[4])
+            self.assertEqual(json.loads(path.read_text())['history'],saved['history'])
+
 if __name__ == '__main__':
     unittest.main()

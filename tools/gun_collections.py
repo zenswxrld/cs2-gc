@@ -413,7 +413,7 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
                         -_score(rows[n]) if tier in ('ancient', 'legendary', 'mythical') else 0))
                     return names
                 roll_palette = design.get('family_palette') or palette
-                themes = (list(roll_palette) if tier == 'ancient' else list(roll_palette[:4]) if mode == 'family'
+                themes = (list(roll_palette) if tier == 'ancient' else list(roll_palette if design.get('full_family_palette') else roll_palette[:4]) if mode == 'family'
                           else [palette[(slot + RANK[tier]) % 4]] if mode == 'fixed' else [])
                 if forced and forced.get('themes'):themes=list(forced['themes'])
                 # The first donor whose new colours really show (works() makes and checks the materials).
@@ -447,12 +447,18 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
     return lineup
 
 
+def material_name(donor,theme,detail=True,palette_source=None,pattern_source=None,effect_source=None):
+    return ('gc4m_' if detail else 'gc3m_') + '%s%s%s_%s' % (
+        donor,'_berries' if palette_source else '_gold_doppler' if pattern_source else '',
+        '_pearl' if effect_source else '',theme.lower())
+
 def kit_name(icon, entry, theme=None):
     if entry['mode'] == 'knife_family': return 'cgf_%s_ancient' % entry['family']
     base = ('gc4' if entry.get('detail') else 'gc3') + '%s_%s_%s_%s_%s' % ({'family': 'f', 'fixed': 'r', 'transfer': 't'}[entry['mode']], icon, entry['donor'],
                                    entry['weapon'].removeprefix('weapon_'), entry['tier'])
     if entry.get('palette_source'): base += '_berries'
     if entry.get('pattern_source'): base += '_gold_doppler'
+    if entry.get('effect_source'): base += '_pearl'
     return base + ('_' + theme.lower() if theme else '')
 
 
@@ -472,12 +478,15 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
     rows = study(source, kits, kit_path, source_text, titles)
     new_kits, files, made, materials = [], {}, set(), {}
 
-    def material(donor, theme, detail=False, palette_source=None, pattern_source=None):
-        name = ('gc4m_' if detail else 'gc3m_') + '%s%s_%s' % (donor,'_berries' if palette_source else '_gold_doppler' if pattern_source else '',theme.lower())
+    def material(donor, theme, detail=False, palette_source=None, pattern_source=None, effect_source=None):
+        name = material_name(donor,theme,detail,palette_source,pattern_source,effect_source)
         if name not in materials:
             made_files = make_recolour(source, donor, kit_path(donor, kits[donor][1]), name, theme, preserve_details=detail,
                 palette_source=(palette_source,kits[palette_source][1]) if palette_source and palette_source in kits else None,
                 pattern_source=(pattern_source,kits[pattern_source][1]) if pattern_source and pattern_source in kits else None)
+            if made_files and effect_source:
+                from collection_effects import apply as apply_effect
+                made_files=apply_effect(source,kit_path(donor,kits[donor][1]),made_files,effect_source)
             materials[name] = None
             if made_files:
                 files[finishes.COMPMAT_DIR + name + '.vcompmat_c'], files[finishes.VMAT_DIR + name + '.vmat_c'] = made_files[:2]
@@ -500,18 +509,20 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
     # Keep the previous kits and their legacy material policy for owned items.
     for icon, entries in lineup.items():
         for entry in entries:
-            if 'donor' in entry: history[kit_name(icon, entry)] = dict(entry, icon=icon)
-    def detail_works(donor, mode, themes, palette_source=None, pattern_source=None):
+            if 'donor' in entry:
+                from collection_policies import history_entry
+                history_entry(history,kit_name(icon,entry),dict(entry,icon=icon))
+    def detail_works(donor, mode, themes, palette_source=None, pattern_source=None, effect_source=None):
         if pattern_source and pattern_source not in kits:return False
         if palette_source and palette_source not in kits: return False
         if mode == 'transfer': return True
-        made = [(theme,material(donor,theme,True,palette_source,pattern_source)) for theme in themes]
+        made = [(theme,material(donor,theme,True,palette_source,pattern_source,effect_source)) for theme in themes]
         if mode == 'fixed': return all(path for _,path in made)
         from collection_detail import palettes_distinct
         accepted = []
         for theme,path in made:
             if not path: continue
-            palette = report['colours']['gc4m_%s%s_%s'%(donor,'_berries' if palette_source else '',theme.lower())]['to']
+            palette = report['colours'][material_name(donor,theme,True,palette_source,pattern_source,effect_source)]['to']
             if all(palettes_distinct(palette,previous) for previous in accepted):
                 accepted.append(palette)
         return len(accepted)>=3
@@ -519,7 +530,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
         row=rows[donor]
         if theme is None:return row.get('colors') or []
         suffix='_berries' if entry.get('palette_source') else '_gold_doppler' if entry.get('pattern_source') else ''
-        evidence=report.get('colours',{}).get('gc4m_%s%s_%s'%(donor,suffix,theme.lower()))
+        evidence=report.get('colours',{}).get(material_name(donor,theme,True,entry.get('palette_source'),entry.get('pattern_source'),entry.get('effect_source')))
         if evidence:return evidence['to']
         palette=rows.get(entry.get('palette_source'),row).get('colors') or []
         if not palette:return []
@@ -532,11 +543,15 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
               not all(e.get('detail')==DESIGNS[icon].get('revision',1) for e in lineup.get(icon,()))}
     guard.reserve({icon:entries for icon,entries in lineup.items() if icon not in selected})
     lineup = upgrade(lineup, rows, guns, icons, families, detail_works, report, accept=guard.allowed)
+    from collection_polish import polish
+    lineup=polish(lineup,rows,detail_works,report)
     report['audit'] = audit(lineup,rows)
     report['similarity'] = similarity_audit(lineup,rows,appearance_palette)
     for icon, entries in lineup.items():
         for entry in entries:
-            if 'donor' in entry: history[kit_name(icon, entry)] = dict(entry, icon=icon)
+            if 'donor' in entry:
+                from collection_policies import history_entry
+                history_entry(history,kit_name(icon,entry),dict(entry,icon=icon))
     if lineup_path is not None:
         lineup_path.write_text(json.dumps({'version': VERSION, 'lineup': lineup, 'history': history},
                                           indent=1, sort_keys=True) + '\n', encoding='utf-8')
@@ -562,6 +577,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
         detail = mode != 'transfer'
         palette_source = entry.get('palette_source')
         pattern_source = entry.get('pattern_source')
+        effect_source = entry.get('effect_source')
         name = kit_name(icon, entry)
         if mode == 'transfer':
             if name not in made:
@@ -569,7 +585,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
                 made.add(name)
             return name
         if mode == 'fixed':
-            path = material(donor, entry['themes'][0], detail, palette_source, pattern_source)
+            path = material(donor, entry['themes'][0], detail, palette_source, pattern_source,effect_source)
             if path is None and not authored:
                 path = material(donor, entry['themes'][0])
                 repair_fallbacks.add(name)
@@ -583,7 +599,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
         variants, first = [], None
         palettes = []
         for theme in entry['themes']:
-            path = material(donor, theme, detail, palette_source)
+            path = material(donor, theme, detail, palette_source,pattern_source,effect_source)
             if path is None and not authored:
                 path = material(donor, theme)
                 repair_fallbacks.add(name)
@@ -592,7 +608,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
             if path is None: continue
             if authored:
                 from collection_detail import palettes_distinct
-                palette = report['colours']['gc4m_%s%s_%s'%(donor,'_berries' if palette_source else '',theme.lower())]['to']
+                palette = report['colours'][material_name(donor,theme,True,palette_source,pattern_source,effect_source)]['to']
                 if any(not palettes_distinct(palette,previous) for previous in palettes): continue
                 palettes.append(palette)
             variant = kit_name(icon, entry, theme)

@@ -71,11 +71,17 @@ def designs():
       'warden':'Lockdown|Restricted Access|Iron Authority|Security Glass|Guard Shift|Barred Crest|Keyway|Warning Line|Steel Gate|Perimeter|Cold Cell|Latch|Checkpoint|Watch Detail|Gridlock|Duty Mark'}
     result={}
     for icon,group,weapon,palette,family_palette in SPECS:
-        result[icon]={'revision':1,'weapon':'weapon_'+weapon,'palette':palette,
-          'family_palette':family_palette,'motifs':(), 'allow':tuple(POOLS[group].split()),
+        result[icon]={'revision':2 if icon in ('outrider','rampart','quarry') else 1,'weapon':'weapon_'+weapon,'palette':palette,
+          'family_palette':family_palette,'full_family_palette':True,'motifs':(), 'allow':tuple(dict.fromkeys(POOLS[group].split()+['am_carbon_fiber','am_oval_hex','an_silver','aq_blued','so_whiteout_riptide','so_night'])),
           'premium':tuple(PREMIUM[group].split()),'native_chase':False,
           'modes':{'ancient':('family',),'legendary':('family','fixed'),
-                   'mythical':('fixed',)*3,'rare':('fixed',)*4,'uncommon':('fixed',)*6},
+                   'mythical':('fixed',)*3,'rare':('fixed',)*4,'uncommon':('fixed',)*3+('transfer',)*3},
           'names':tuple((OLDER_NAMES.get(icon) or extra[icon]).split('|')),
           'theme_group':group}
+    result['outrider'].update(weapon='weapon_aug',
+      chase={'donor':'am_jade','weapon':'weapon_aug','label':'Trailbreaker','required':True})
+    result['quarry'].update(weapon='weapon_deagle',
+      chase={'donor':'am_crystallized_blue','weapon':'weapon_deagle','label':'Bedrock','required':True})
+    result['rampart'].update(weapon='weapon_m4a1_silencer',
+      chase={'donor':'am_metals','weapon':'weapon_m4a1_silencer','label':'Iron Bastion','required':True})
     return result

@@ -304,7 +304,7 @@ class DetailRebuild(unittest.TestCase):
             self.assertEqual(len([k for k in families if k.startswith('gc4')]),2)
             variants={v for k,values in families.items() if k.startswith('gc4') for v in values}
             names={name:title for name,title,_ in made[0]}
-            self.assertTrue(all(any(names[v].startswith(theme+' ') for theme in ('Crimson','Amber','Cobalt','Teal','Violet','Ember')) for v in variants))
+            self.assertTrue(all(any(names[v].startswith(theme+' ') for theme in ('Crimson','Amber','Cobalt','Teal','Violet','Ember','Ash')) for v in variants))
             self.assertEqual(gc.clean_title('The Fuschia Is Now'),'Chromatic Current')
             again=gc.build(text,kits,titles,finishes.kit_path,source,{},lineup_path=path,icons=['forged'])
             self.assertEqual(again[4],made[4])
@@ -408,6 +408,11 @@ class RemainingCollections(unittest.TestCase):
                 pool[name]=dict(next(iter(rows(1).values())),title=name,style=4,
                                colors=[[.8,.15,.1,1],[.1,.5,.8,1],[.9,.65,.2,1],[.5,.1,.7,1]],
                                effects=[],pattern='textures/'+name+'.vtex')
+        for design in __import__('remaining_collection_designs').designs().values():
+            for role in ('chase','family'):
+                forced=design.get(role,{})
+                if forced and forced['donor'] not in pool:
+                    pool[forced['donor']]=dict(next(iter(rows(1).values())),title=forced['donor'],style=4,effects=['pearlescent'],pattern=forced['donor'])
         return pool
 
     def test_all_28_are_complete_themed_and_use_two_premium_families(self):
@@ -422,7 +427,8 @@ class RemainingCollections(unittest.TestCase):
             self.assertTrue(all(e['mode']!='knife_family' for e in entries))
             self.assertTrue(all(e['donor'] in designs[icon]['allow'] for e in entries))
             self.assertTrue(all(e['donor'] in designs[icon]['premium'] for e in entries if e['tier'] in ('ancient','legendary')))
-            self.assertTrue(all(e['mode']=='fixed' for e in entries if e['tier'] in ('mythical','rare','uncommon')))
+            self.assertTrue(all(e['mode']=='fixed' for e in entries if e['tier'] in ('mythical','rare')))
+            self.assertTrue(all(e['mode'] in ('fixed','transfer') for e in entries if e['tier']=='uncommon'))
 
     def test_rebuild_keeps_the_eight_reviewed_pools_and_gold_brick(self):
         from collection_rebuild import DESIGNS,upgrade

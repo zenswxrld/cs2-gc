@@ -187,4 +187,50 @@ class CompositeDetails(unittest.TestCase):
         self.assertEqual(newroot,root)
         self.assertEqual(len(made[4]),1)
 
+
+class AdaptedSignatureMaterials(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('CS2_GC_TEXTURE_DECODER'),'decoder executable required')
+    def test_signature_adaptations_keep_target_pattern_and_masks(self):
+        import copy
+        from unittest.mock import patch
+        import collection_artwork as ca
+        from test_gun_collections import patterned
+        for kit,family in (('aq_deagle_case_hardened_2','aq_titanium_rainbow_galilar'),
+                           ('gsch_ak_djiin','gsch_sport_ump45')):
+            root=composite()
+            variables=root.get('m_Points').value[0].get('m_vecCompositeInputContainers').value[-1].get('m_vecLooseVariables')
+            variables.value.append(obj(('m_strName',string('g_tCaseHardeningColorRamp')),
+                ('m_strTextureRuntimeResourcePath',string('target-ramp.vtex'))))
+            for key,value in (('g_flPearlescentScale',0.),('g_flIridescentStrength',0.)):
+                variables.value.append(obj(('m_strName',string(key)),('m_flValueFloatX',Node(kv3.FLOAT,value))))
+            mdata=patterned('target.vmat',[[1,1,1,1]]*4,'target-own-uv-artwork.vtex')
+            _,material_root=kv3.read_kv3(dict(kv3.read_resource(mdata)[1])['DATA'])
+            compdata=kv3.write_resource(0,[['DATA',kv3.write_kv3(GUID,root)]])
+            def inspect(source,path):
+                own=path=='target.vcompmat'
+                return {'params':{'F_CASE_HARDENING':1,'g_tCaseHardeningColorRamp':'target-ramp.vtex' if own else 'family-ramp.vtex',
+                        'g_flPearlescentScale':0 if own else .5,'g_flIridescentStrength':0 if own else .1},
+                        'compmat':(compdata,GUID,copy.deepcopy(root)),
+                        'material':(mdata,GUID,copy.deepcopy(material_root))}
+            class Source:
+                def read(self,path):return texture() if path=='family-ramp.vtex_c' else None
+            with patch('gun_collections.inspect',side_effect=inspect):
+                made=ca.make(Source(),kit,'target.vcompmat','owned_signature','Teal')
+            self.assertIsNotNone(made)
+            _,changed=kv3.read_kv3(dict(kv3.read_resource(made[0])[1])['DATA'])
+            _,changed_material=kv3.read_kv3(dict(kv3.read_resource(made[1])[1])['DATA'])
+            values=cm.exposed(changed)
+            values['g_tCaseHardeningColorRamp'][0].get('m_strTextureRuntimeResourcePath').value='target-ramp.vtex'
+            if kit=='gsch_ak_djiin':
+                self.assertAlmostEqual(values['g_flPearlescentScale'][0].get('m_flValueFloatX').value,.5)
+                self.assertAlmostEqual(values['g_flIridescentStrength'][0].get('m_flValueFloatX').value,.1)
+                for key in ('g_flPearlescentScale','g_flIridescentStrength'):
+                    values[key][0].get('m_flValueFloatX').value=0.
+            finishes._specific_material(changed).value=finishes._specific_material(root).value
+            self.assertEqual(changed,root)
+            changed_material.get('m_materialName').value='target.vmat'
+            self.assertEqual(changed_material,material_root,'target UV artwork and masks must remain untouched')
+            self.assertEqual(len(made[4]),1)
+
 if __name__=='__main__':unittest.main()
+

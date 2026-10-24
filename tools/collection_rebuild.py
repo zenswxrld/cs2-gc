@@ -78,12 +78,19 @@ DESIGNS.update({
 
 from remaining_collection_designs import designs as remaining_designs
 DESIGNS.update(remaining_designs())
+from collection_policies import apply_designs
+apply_designs(DESIGNS)
 
 def eligible(name,row,design,tier):
     allowed=design.get('allow')
     if allowed is None:return True
+    if tier=='uncommon' and name in ('am_carbon_fiber','am_oval_hex','an_silver','aq_blued','so_whiteout_riptide','so_night'):
+        return True
     if name not in allowed:return False
     if tier in ('ancient','legendary'):
+        if name in ('am_diamond_plate','am_ddpatdense_silver','am_ddpatdense_peacock','am_carbon_fiber',
+                    'am_oval_hex','am_tigers_brown','am_tigers_blue','hy_tiger','hy_p250_tiger'):
+            return False
         if design.get('premium') and name not in design['premium']:return False
         return bool(row.get('effects')) or row.get('style') in (1,4,5)
     return True
@@ -150,6 +157,27 @@ def upgrade(lineup,rows,guns,icons,families,works,report,accept=None):
             continue # keep the complete previous pool, never sell a partial set
         result[icon]=entries
         upgraded.append(icon)
+    # Failed partial plans must not reserve donor appearances for later pools.
+    # Retry against only complete saved/accepted collections with a fresh guard.
+    retry=[]
+    for icon in selected:
+        if icon in upgraded:continue
+        retry_accept=accept
+        owner=getattr(accept,'__self__',None)
+        if owner is not None and hasattr(owner,'palette_for'):
+            from collection_similarity import Guard
+            fresh=Guard(rows,owner.palette_for)
+            fresh.reserve({name:entries for name,entries in result.items() if name!=icon})
+            retry_accept=fresh.allowed
+        reserved={e['donor'] for name,entries in result.items() if name!=icon for e in entries if 'donor' in e}
+        attempt=gc.plan(rows,guns,[icon],families,works,seed='cs2gc-authored-detail-retry-v1',
+                        designs=DESIGNS,reserved=reserved,accept=retry_accept)[icon]
+        counts=[sum(e['tier']==tier for e in attempt) for tier,_ in gc.TIER_COUNTS]
+        if counts==[count for _,count in gc.TIER_COUNTS]:
+            result[icon]=attempt;upgraded.append(icon);retry.append(icon)
+    if retry:
+        report['rebuild_retries']=retry
+        report['rebuild_unavailable']=[item for item in report.get('rebuild_unavailable',[]) if item['collection'] not in retry]
     report['rebuilt_collections']=upgraded
     return feedback(result,rows,works,report)
 

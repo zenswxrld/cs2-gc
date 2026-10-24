@@ -41,7 +41,7 @@ class Guard:
                 self.record(name,weapon,palette,'official:'+name)
 
     def palette(self,donor,theme,entry):
-        key=(donor,theme,entry.get('palette_source'),entry.get('pattern_source'))
+        key=(donor,theme,entry.get('palette_source'),entry.get('pattern_source'),entry.get('effect_source'))
         if key not in self.palettes:
             value=self.palette_for(donor,theme,entry)
             if value:self.palettes[key]=value

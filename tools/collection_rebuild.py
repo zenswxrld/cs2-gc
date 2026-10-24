@@ -86,7 +86,7 @@ def audit(lineup,rows):
             if not donor:continue
             if not row:issues.append({'slot':index+1,'issue':'donor unavailable'});continue
             if e['mode'] in ('fixed','family') and not e.get('detail'):
-                issues.append({'slot':index+1,'issue':'legacy whole-palette recolour; inspect trim and contrast'})
+                issues.append({'slot':index+1,'issue':'existing generation; inspect repaired trim/contrast and material fallback report'})
             if e['mode']=='transfer' and e['weapon'] in row.get('pattern_guns',()):
                 issues.append({'slot':index+1,'issue':'official finish repeated on original weapon'})
             key=(row.get('pattern'),e['weapon'],tuple(e.get('themes',())))

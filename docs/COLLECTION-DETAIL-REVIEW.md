@@ -13,7 +13,7 @@ The active generator's legacy policy deliberately moves neutral colours as well 
 
 The shared Berries palette is read from actual aa_fade_red_blue colour parameters. It does not transplant the Five-SeveN composite/UV layout onto another weapon. Rolled variants have distinct palette checks and colour-prefixed names.
 
-New revisions use separate gc4 kit/material names. Old gc3 definitions and stable IDs remain available for owned items. Promote a revised collection only when all 16 slots can be generated; otherwise retain its complete prior pool and report the missing rebuild. Preserve 1 red / 2 pink / 3 purple / 4 blue / 6 industrial and two family slots. Do not create a partial sellable collection.
+New revisions use separate gc4 kit/material names. Old gc3 definitions and stable IDs remain available for owned items, and their actual materials receive the detail-preserving repair too. Historical colour variants are never removed. If an old variant cannot support a visible selective recolour, retain its original rendering and list it in existing_material_fallbacks for a deliberate redesign. Preserve existing alpha channels. The DEV finish-ID map and lineup history supplied by the user are the authoritative migration files; never substitute a fresh install's ID map. Promote a revised collection only when all 16 slots can be generated; otherwise retain its complete prior pool and report the missing rebuild. Preserve 1 red / 2 pink / 3 purple / 4 blue / 6 industrial and two family slots. Do not create a partial sellable collection.
 
 ## Detail and effect checks
 

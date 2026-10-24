@@ -196,7 +196,7 @@ class Plan(unittest.TestCase):
 
 class DetailRebuild(unittest.TestCase):
     def test_neutral_ink_metal_and_white_stay_unchanged_in_detail_material(self):
-        start=[[.04,.04,.04,1],[.8,.12,.08,1],[.94,.94,.94,1],[.18,.18,.18,1]]
+        start=[[.04,.04,.04,1],[.8,.12,.08,.37],[.94,.94,.94,1],[.18,.18,.18,1]]
         vmat='materials/x/detail.vmat'
         root=kv3.read_kv3(dict(kv3.read_resource(material(vmat,start))[1])['DATA'])[1]
         root.value.append(('m_floatParams',Node(kv3.ARRAY,[
@@ -210,6 +210,9 @@ class DetailRebuild(unittest.TestCase):
         after=gc.effective_params(read_root(made[0]),read_root(made[1]))
         for i in (0,2,3):self.assertEqual(after['g_vColor%d'%i],before['g_vColor%d'%i])
         self.assertNotEqual(after['g_vColor1'],before['g_vColor1'])
+        vectors=finishes._vector_params(kv3.read_kv3(dict(kv3.read_resource(made[1])[1])['DATA'])[1])
+        original_vectors=finishes._vector_params(root)
+        self.assertEqual(vectors['g_vColor1'].value[3],original_vectors['g_vColor1'].value[3])
         for key in before:
             if not key.startswith('g_vColor'):self.assertEqual(after[key],before[key],key)
         self.assertEqual(set(gc.observed_effects(after)),{'pearlescent','glitter'})
@@ -252,7 +255,7 @@ class DetailRebuild(unittest.TestCase):
         report=audit(result,rows(600))
         self.assertEqual(set(report),set(icons))
         self.assertEqual(len(report),36)
-        self.assertTrue(all(any('whole-palette' in i['issue'] for i in row['issues']) for row in report.values()))
+        self.assertTrue(all(any('existing generation' in i['issue'] for i in row['issues']) for row in report.values()))
 
 
     def test_full_rebuild_preserves_legacy_definitions_and_names_rolled_variants(self):
@@ -280,6 +283,7 @@ class DetailRebuild(unittest.TestCase):
             saved=json.loads(path.read_text())
             self.assertEqual(report.get('rebuilt_collections'),['forged'],report.get('rebuild_unavailable'))
             self.assertEqual(len(made[4]),16)
+            self.assertTrue(report['existing_material_repairs'],'existing gc3 inventory definitions must also benefit')
             self.assertTrue(all(e.get('detail') for e in saved['lineup']['forged']))
             self.assertTrue(any(name.startswith('gc3') for name,_,_ in made[0]),'owned legacy definitions retained')
             self.assertTrue(any(name.startswith('gc4') for name,_,_ in made[0]))

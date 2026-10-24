@@ -249,9 +249,9 @@ def make_recolour(source, kit, kit_path, new_name, theme, preserve_details=False
     for index in range(4):
         key = 'g_vColor%d' % index
         for colour in bindings.get(key, ()):
-            for channel, value in zip(colour.value, changed[index]): channel.value = max(0, min(255, round(value * 255)))
+            for channel, value in zip(colour.value, changed[index][:3] if preserve_details else changed[index]): channel.value = max(0, min(255, round(value * 255)))
         if key in template:
-            for channel, value in zip(template[key].value, changed[index]): channel.value = value
+            for channel, value in zip(template[key].value, changed[index][:3] if preserve_details else changed[index]): channel.value = value
     owned = finishes.VMAT_DIR + new_name + '.vmat'
     specific.value = owned
     label = m_root.get('m_materialName')
@@ -487,12 +487,18 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
         values.update(composite_material_path=path, _rarity=paint_rarity_for_weapon(tier, weapon, base_rarities))
         return values
 
+    repair_fallbacks = set()
+    repaired_existing = set()
+
     def define(icon, entry):
         """The loot entry kit for one lineup entry (defining it), or None when its colours would not show."""
         donor, tier, weapon, mode = entry['donor'], entry['tier'], entry['weapon'], entry['mode']
         if donor not in kits: return None
         title = entry.get('label') or finishes.source_title(donor, titles)
-        detail = bool(entry.get('detail'))
+        authored = bool(entry.get('detail'))
+        # DEV inventories reference gc3 names: repair their actual materials too,
+        # without changing the paint-kit names/IDs or dropping historical variants.
+        detail = mode != 'transfer'
         palette_source = entry.get('palette_source')
         name = kit_name(icon, entry)
         if mode == 'transfer':
@@ -502,6 +508,11 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
             return name
         if mode == 'fixed':
             path = material(donor, entry['themes'][0], detail, palette_source)
+            if path is None and not authored:
+                path = material(donor, entry['themes'][0])
+                repair_fallbacks.add(name)
+            elif path and not authored:
+                repaired_existing.add(name)
             if path is None: return None
             if name not in made:
                 new_kits.append((name, colour_title(title, entry['themes'][0]), values_for(donor, tier, weapon, path)))
@@ -511,8 +522,13 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
         palettes = []
         for theme in entry['themes']:
             path = material(donor, theme, detail, palette_source)
+            if path is None and not authored:
+                path = material(donor, theme)
+                repair_fallbacks.add(name)
+            elif path and not authored:
+                repaired_existing.add(name)
             if path is None: continue
-            if detail:
+            if authored:
                 from collection_detail import palettes_distinct
                 palette = report['colours']['gc4m_%s%s_%s'%(donor,'_berries' if palette_source else '',theme.lower())]['to']
                 if any(not palettes_distinct(palette,previous) for previous in palettes): continue
@@ -554,6 +570,8 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
                                          for prefix in ('gc3m_','gc4m_')))
              or path.rsplit('/', 1)[1].split('.')[0] in kept}
     report['colours'] = {name: row for name, row in report.get('colours', {}).items() if name in kept}
+    report['existing_material_repairs'] = sorted(repaired_existing - repair_fallbacks)
+    report['existing_material_fallbacks'] = sorted(repair_fallbacks)
     report['failed'] = [dict(entry, icon=icon) for icon, entry in failed]
     report['usable_finishes'] = len(rows)
     report['used_finishes'] = len({e['donor'] for es in lineup.values() for e in es if 'donor' in e})

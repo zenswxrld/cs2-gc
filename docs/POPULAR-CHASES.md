@@ -15,7 +15,7 @@ The broader review includes Printstream, Asiimov, Bloodsport, Vulcan, Redline, N
 | Rampart | AK Bloodsport | Blue/teal/steel red-lacquer changes; neutral sponsor lettering retained |
 | Warden | AK Fuel Injector | Cold blue/teal/steel body, mechanical texture retained |
 | Ashfall | AK Vulcan | Crimson/amber/teal panels, original black/white details retained |
-| Nebula | M4A1-S Hyper Beast | Teal/violet/magenta monster artwork |
+| Nebula | M4A1-S Hyper Beast | Emerald/violet/magenta monster artwork |
 | Nightwatch | M4A1-S Printstream | Neutral body/lettering inversion, original pearl retained |
 | Redoubt | M4A4 Neo-Noir | Amber artwork, neutral portrait shading retained |
 | Monsoon | M4A1-S Cyrex | Green/teal/steel panel family |

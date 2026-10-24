@@ -6,7 +6,7 @@ CHASES={
  'rampart':('gs_ak47_bloodsport','weapon_ak47','Oath Circuit','family',('Cobalt','Teal','Ash')),
  'warden':('gs_ak47_supercharged','weapon_ak47','Cold Ignition','family',('Cobalt','Teal','Ash')),
  'ashfall':('cu_ak47_rubber','weapon_ak47','Molten Guardian','family',('Crimson','Amber','Teal')),
- 'nebula':('cu_m4a1_hyper_beast','weapon_m4a1_silencer','Voidborn','family',('Teal','Violet','Magenta')),
+ 'nebula':('cu_m4a1_hyper_beast','weapon_m4a1_silencer','Voidborn','family',('Emerald','Violet','Magenta')),
  'nightwatch':('cu_m4a1s_printstream','weapon_m4a1_silencer','Blackout Print','fixed',('Inverse',)),
  'redoubt':('cu_m4a4_neo_noir','weapon_m4a1','Gilded Sentinel','fixed',('Amber',)),
  'monsoon':('cu_m4a1s_cyrex','weapon_m4a1_silencer','Storm Circuit','family',('Emerald','Teal','Ash')),

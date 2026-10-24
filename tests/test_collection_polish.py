@@ -118,14 +118,28 @@ class ClientReview(unittest.TestCase):
                  'weapon_galilar','weapon_m4a1_silencer','weapon_ak47','weapon_m249','weapon_elite','weapon_cz75a',
                  'weapon_sg556','weapon_g3sg1','weapon_usp_silencer','weapon_mac10']
         entries=self.entries(weapons);entries[0].update(donor='am_diamond_plate',mode='family')
-        result=refine({'juggernaut':entries},{'cu_m4_asimov':{}},lambda *args:True,{})
+        # Real neutral Tread Plate rejects Ash: this must not block the whole migration.
+        works=lambda donor,mode,themes: not (donor=='am_diamond_plate' and themes==['Ash'])
+        result=refine({'juggernaut':entries},{'cu_m4_asimov':{}},works,{})
         new=result['juggernaut']
         self.assertEqual([sum(e['tier']==t for e in new) for t,_ in gc.TIER_COUNTS],[1,2,3,4,6])
         self.assertEqual(len({e['weapon'] for e in new}),16)
         self.assertEqual(new[0]['weapon'],'weapon_m4a1')
         self.assertEqual(next(e for e in new if e['weapon']=='weapon_negev')['tier'],'mythical')
+        self.assertEqual(next(e for e in new if e['weapon']=='weapon_negev')['themes'],['Cobalt'])
         self.assertEqual(next(e for e in new if e['weapon']=='weapon_m249')['tier'],'rare')
         self.assertEqual(refine(result,{'cu_m4_asimov':{}},lambda *args:True,{}),result)
+
+    def test_ironclad_negev_changes_without_touching_approved_awp(self):
+        from collection_review import refine
+        negev=dict(detail=1,donor='am_negev_glory',weapon='weapon_negev',tier='ancient',mode='family',themes=['Cobalt','Teal','Ash'])
+        awp=dict(detail=1,donor='cu_awp_asimov',weapon='weapon_awp',tier='legendary',mode='fixed',themes=['Teal'],label='Composite Armour',review_revision=1)
+        result=refine({'ironclad':[negev,awp]}, {'cu_negev_impact':{},'cu_awp_asimov':{}},lambda *args:True,{})
+        self.assertEqual(result['ironclad'][0]['donor'],'cu_negev_impact')
+        self.assertEqual(result['ironclad'][0]['tier'],'ancient')
+        self.assertEqual(result['ironclad'][0]['themes'],['Cobalt','Teal','Ash'])
+        self.assertEqual(result['ironclad'][1],awp)
+        self.assertEqual(refine(result,{'cu_negev_impact':{},'cu_awp_asimov':{}},lambda *args:True,{}),result)
 
     def test_repeated_manowar_awps_use_different_actual_artwork(self):
         from collection_review import refine

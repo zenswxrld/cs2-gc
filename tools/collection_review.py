@@ -48,23 +48,33 @@ def refine(lineup,rows,works,report):
             if counts(entries)!=EXPECTED or not works(famas['donor'],'fixed',['Cobalt']) or not works(p2000['donor'],'fixed',['Cobalt']):
                 result['insignia']=before
                 unavailable.append('insignia: premium tier migration retained until all materials work')
+    # Ironclad: replace the plain Man-o'-war-derived Negev with detailed
+    # target-native industrial artwork, leaving Composite Armour AWP intact.
+    entries=result.get('ironclad',[])
+    for i,entry in enumerate(entries):
+        if entry['weapon']=='weapon_negev' and entry.get('donor') in ('am_negev_glory','cu_negev_impact'):
+            if 'cu_negev_impact' in rows and works('cu_negev_impact','family',('Cobalt','Teal','Ash')):
+                entries[i]=material_entry(entry,'cu_negev_impact','Dreadnought','family',('Cobalt','Teal','Ash'))
+                applied.append('ironclad: detailed Dreadnought Negev family')
+            else:unavailable.append('ironclad: detailed Negev artwork unavailable')
     # Keep the pictured Negev plate at Restricted. The M249 was already Mil-Spec.
     entries=result.get('juggernaut',[])
     heavy=next((e for e in entries if e.get('donor')=='am_diamond_plate' and e['tier']=='ancient'),None)
     rifle=next((e for e in entries if e['weapon']=='weapon_m4a1'),None)
     donor='cu_m4_asimov';themes=('Cobalt','Teal','Ash')
     if heavy and rifle:
-        if donor in rows and works(donor,'family',themes) and works(heavy['donor'],'fixed',['Ash']):
+        plate=next((theme for theme in ('Cobalt','Teal','Ash') if works(heavy['donor'],'fixed',[theme])),None)
+        if donor in rows and works(donor,'family',themes) and plate:
             candidate=deepcopy(entries)
             for i,entry in enumerate(candidate):
                 if entry['weapon']=='weapon_m4a1':
                     candidate[i]=material_entry(entry,donor,'Siege Protocol','family',themes)
                     candidate[i]['tier']='ancient'
                 elif entry['weapon']==heavy['weapon']:
-                    candidate[i].update(tier=rifle['tier'],mode='fixed',themes=['Ash'],label='Bastion Plate')
+                    candidate[i].update(tier=rifle['tier'],mode='fixed',themes=[plate],label='Bastion Plate')
             if counts(candidate)==EXPECTED:
                 result['juggernaut']=candidate
-                applied.append('juggernaut: Iron Sovereign chase; plate Negev downgraded')
+                applied.append('juggernaut: Siege Protocol chase; plate Negev downgraded')
         else:unavailable.append('juggernaut: replacement chase unavailable')
     for entries in result.values():entries.sort(key=lambda e:ORDER[e['tier']])
     report['client_review']={'applied':applied,'unavailable':unavailable,

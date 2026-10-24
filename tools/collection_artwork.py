@@ -10,7 +10,7 @@ DONORS = {'cu_famas_holo_ocean':'hue', 'cu_usp_printstream':'invert',
           'gsch_sport_ump45':'foil', 'aq_titanium_rainbow_galilar':'ramp',
           'aq_deagle_case_hardened_2':'spoon_target','gsch_ak_djiin':'foil_target',
           'awp_queens_gambit':'hue','cu_awp_asimov':'hue','cu_awp_cobra':'hue',
-          'cu_awp_chroma_pink':'hue','cu_m4_asimov':'hue'}
+          'cu_awp_chroma_pink':'hue','cu_m4_asimov':'hue','cu_negev_impact':'hue'}
 
 def make(source,kit,path,new_name,theme):
     import native_finishes as f

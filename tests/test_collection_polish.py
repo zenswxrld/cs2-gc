@@ -151,5 +151,31 @@ class ClientReview(unittest.TestCase):
         self.assertFalse(any(e['donor']=='am_awp_glory' for es in result.values() for e in es))
         self.assertEqual(refine(lineup,pool,lambda *args:False,{}),lineup)
 
+
+class PopularChases(unittest.TestCase):
+    def test_native_source_chases_keep_counts_unique_weapons_families_and_gold_brick(self):
+        from popular_chases import CHASES,apply
+        fixture=ClientReview()
+        lineup={icon:fixture.entries(GUNS[:16]) for icon in CHASES}
+        for entries in lineup.values():
+            entries[0].update(mode='family',themes=['Cobalt','Teal','Ash'])
+            entries[1].update(mode='family',themes=['Cobalt','Teal','Ash'])
+        gold=[dict(e) for e in lineup['rampart']]
+        gold[0].update(label='Gold Brick',pattern_source='am_doppler_phase2')
+        lineup['forged']=gold
+        pool={donor:{'guns':[weapon]} for donor,weapon,label,mode,themes in CHASES.values()}
+        report={};result=apply(lineup,pool,lambda *args:True,report)
+        self.assertFalse(report['popular_chases']['unavailable'])
+        for icon,recipe in CHASES.items():
+            entries=result[icon]
+            self.assertEqual((entries[0]['donor'],entries[0]['weapon'],entries[0]['tier']),(recipe[0],recipe[1],'ancient'))
+            self.assertEqual([sum(e['tier']==t for e in entries) for t,_ in gc.TIER_COUNTS],[1,2,3,4,6])
+            self.assertEqual(len({e['weapon'] for e in entries}),16)
+            self.assertLessEqual(sum(e['mode']=='family' for e in entries),2)
+        self.assertEqual(result['forged'],gold)
+        self.assertEqual(apply(result,pool,lambda *args:True,{}),result)
+        self.assertEqual(apply(lineup,pool,lambda *args:False,{}),lineup)
+
 if __name__=='__main__':unittest.main()
+
 

@@ -38,6 +38,8 @@ def polish(lineup,rows,works,report):
             entry.update(mode='fixed',themes=['Teal'],label='Blaze')
     from collection_review import refine
     lineup=refine(lineup,rows,works,report)
+    from popular_chases import apply as apply_popular
+    lineup=apply_popular(lineup,rows,works,report)
     coverage={};missing=[]
     for icon,entries in lineup.items():
         found=[]

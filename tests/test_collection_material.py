@@ -232,5 +232,52 @@ class AdaptedSignatureMaterials(unittest.TestCase):
             self.assertEqual(changed_material,material_root,'target UV artwork and masks must remain untouched')
             self.assertEqual(len(made[4]),1)
 
+
+class GoldBrickWood(unittest.TestCase):
+    def test_black_stain_keeps_grain_alpha_and_metal_pixels(self):
+        from gold_brick_wood import blacken
+        w=h=100;original=bytearray(bytes([100,100,100,255])*(w*h))
+        def put(x,y,value):original[(y*w+x)*4:(y*w+x)*4+4]=bytes(value)
+        put(50,60,[160,70,30,117]);put(51,60,[90,35,15,222])
+        put(52,60,[200,185,60,255]);put(50,10,[160,70,30,255])
+        put(53,60,[160,70,30,0])
+        out,count=blacken(original,w,h)
+        at=lambda data,x,y:data[(y*w+x)*4:(y*w+x)*4+4]
+        self.assertEqual(count,3)
+        self.assertEqual(at(out,53,60)[3],0,'base-albedo alpha is retained material data')
+        self.assertNotEqual(at(out,53,60)[:3],at(original,53,60)[:3])
+        self.assertGreater(at(out,50,60)[0],at(out,51,60)[0],'grain contrast must remain')
+        self.assertEqual(at(out,50,60)[0],at(out,50,60)[1])
+        for x,y in ((52,60),(50,10)):self.assertEqual(at(out,x,y),at(original,x,y))
+        self.assertEqual(out[3::4],original[3::4])
+
+    def test_owned_shared_input_is_attached_to_gold_only(self):
+        from unittest.mock import patch
+        import gold_brick_wood as wood
+        root=obj(('m_vecCompMatIncludes',Node(kv3.ARRAY,[string(wood.SHARED),string('other.vcompmat')])))
+        with patch.object(wood,'prepare',return_value=({'private.vtex_c':b'owned'}, {'legacy':{'changed_wood_pixels':10}})):
+            files,status=wood.attach(object(),root)
+        self.assertEqual([x.value for x in root.get('m_vecCompMatIncludes').value],[wood.OWNED,'other.vcompmat'])
+        self.assertEqual(status['status'],'black wood attached')
+        self.assertIn('private.vtex_c',files)
+        # The scope is a private includes reference, never an edit to shared stock materials.
+        self.assertNotIn(wood.SHARED+'_c',files)
+
+    @unittest.skipUnless(os.environ.get('CS2_GC_TEXTURE_DECODER'),'decoder executable required')
+    def test_selective_modes_keep_portrait_tones_and_gold_porcelain_frame(self):
+        path=os.environ['CS2_GC_TEXTURE_DECODER']
+        for mode,first,protected in ((6,(255,1,1),(181,121,91)),(7,(1,81,255),(201,141,21))):
+            data=texture()
+            # The fixture has two 4x4 BC7 blocks.
+            size=struct.unpack_from('<I',data)[0]
+            data=data[:size]+bc7_solid(*first)+bc7_solid(*protected)
+            _,_,_,w,h,payload=cm.texture_payload(data)
+            original=subprocess.run([path,str(w),str(h)],input=payload,capture_output=True,check=True).stdout
+            changed=subprocess.run([path,str(w),str(h),'148','.8',str(mode)],input=payload,capture_output=True,check=True)
+            self.assertNotEqual(changed.stdout[:64],original[:64])
+            self.assertEqual(changed.stdout[64:],original[64:])
+            self.assertEqual(changed.stdout[3::4],original[3::4])
+
 if __name__=='__main__':unittest.main()
+
 

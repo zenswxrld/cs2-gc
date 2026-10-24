@@ -212,7 +212,7 @@ def make_recolour(source, kit, kit_path, new_name, theme, preserve_details=False
     """(vcompmat bytes, vmat bytes, original colours, new colours) or None when the recolour would not show."""
     import native_finishes as finishes
     from collection_artwork import DONORS, make as make_artwork
-    if preserve_details and kit in DONORS:return make_artwork(source,kit,kit_path,new_name,theme)
+    if kit in DONORS:return make_artwork(source,kit,kit_path,new_name,theme)
     comp, mat = _read(source, kit_path), None
     if comp is None: return None
     data, guid, root = comp
@@ -277,12 +277,17 @@ def make_recolour(source, kit, kit_path, new_name, theme, preserve_details=False
             for channel, value in zip(colour.value, changed[index][:3] if preserve_details else changed[index]): channel.value = max(0, min(255, round(value * 255)))
         if key in template:
             for channel, value in zip(template[key].value, changed[index][:3] if preserve_details else changed[index]): channel.value = value
+    wood_files={};wood_report=None
+    if kit=='am_gold_brick' and pattern_source and theme=='Gold':
+        from gold_brick_wood import attach
+        wood_files,wood_report=attach(source,root)
     owned = finishes.VMAT_DIR + new_name + '.vmat'
     specific.value = owned
     label = m_root.get('m_materialName')
     if label is not None: label.value = owned
-    return (finishes._with_block(data, 'DATA', kv3.write_kv3(guid, root)),
-            finishes._with_block(m_data, 'DATA', kv3.write_kv3(m_guid, m_root)), original, changed)
+    made=(finishes._with_block(data, 'DATA', kv3.write_kv3(guid, root)),
+          finishes._with_block(m_data, 'DATA', kv3.write_kv3(m_guid, m_root)), original, changed)
+    return made+(wood_files,wood_report) if wood_report else made
 
 
 def clean_title(title):
@@ -493,6 +498,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
                 files[finishes.COMPMAT_DIR + name + '.vcompmat_c'], files[finishes.VMAT_DIR + name + '.vmat_c'] = made_files[:2]
                 if len(made_files)>4:files.update(made_files[4])
                 materials[name] = finishes.COMPMAT_DIR + name + '.vcompmat'
+                if len(made_files)>5 and made_files[5]:report['gold_brick_wood']=made_files[5]
                 report.setdefault('colours', {})[name] = {'from': made_files[2], 'to': made_files[3],
                     'policy': 'preserved-detail-v1' if detail else 'legacy-whole-palette'}
         return materials[name]

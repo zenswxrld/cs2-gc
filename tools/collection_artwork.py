@@ -10,7 +10,11 @@ DONORS = {'cu_famas_holo_ocean':'hue', 'cu_usp_printstream':'invert',
           'gsch_sport_ump45':'foil', 'aq_titanium_rainbow_galilar':'ramp',
           'aq_deagle_case_hardened_2':'spoon_target','gsch_ak_djiin':'foil_target',
           'awp_queens_gambit':'hue','cu_awp_asimov':'hue','cu_awp_cobra':'hue',
-          'cu_awp_chroma_pink':'hue','cu_m4_asimov':'hue','cu_negev_impact':'hue'}
+          'cu_awp_chroma_pink':'hue','cu_m4_asimov':'hue','cu_negev_impact':'hue',
+          'gs_ak47_bloodsport':'foil','gs_ak47_supercharged':'hue','cu_ak47_rubber':'hue',
+          'cu_m4a1s_cyrex':'hue','cu_m4a1_hyper_beast':'hue','cu_m4a1s_printstream':'invert',
+          'cu_m4a4_neo_noir':'hue','gs_ak47_empress':'portrait','cu_m4a4_temukau':'portrait',
+          'ak_porcelain':'blue_ink'}
 
 def make(source,kit,path,new_name,theme):
     import native_finishes as f
@@ -48,7 +52,7 @@ def make(source,kit,path,new_name,theme):
     elif theme in f.DUO_THEMES:hue,_,cap=f.DUO_THEMES[theme]
     else:
         hues,cap=f.GRADIENT_THEMES[theme];hue=hues[0]
-    child=subprocess.run([str(decoder),str(width),str(height),str(hue),str(cap),str({'invert':3,'hue':2,'foil':0,'ramp':1}[mode])],
+    child=subprocess.run([str(decoder),str(width),str(height),str(hue),str(cap),str({'invert':3,'hue':2,'foil':0,'ramp':1,'portrait':6,'blue_ink':7}[mode])],
         input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
         creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     if child.returncode==7:return None

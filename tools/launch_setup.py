@@ -134,7 +134,10 @@ def ensure_profile(directory, client_version, runner=subprocess.run):
                         stdout=output,stderr=subprocess.STDOUT,timeout=105,
                         creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     if result.returncode or not all(p.is_file() and p.stat().st_size for p in required):
-        raise SetupError('Steam profile initialization failed. Make sure Steam is online and signed into the account that owns CS2. See cs2_gc_profile.log beside the mod DLL.')
+        detail = log_path.read_text(encoding='utf-8',errors='replace').strip()[-1800:]
+        raise SetupError('Steam profile initialization failed.\n'+
+                         (detail+'\n' if detail else '')+
+                         'See cs2_gc_profile.log beside the mod DLL.')
     return True
 
 

@@ -1,7 +1,7 @@
 name: Complete portable mod ZIP
 on:
   push:
-    branches: [codex/drag-drop-release]
+    branches: [codex/drag-drop-release, codex/fix-fresh-profile-init]
   workflow_dispatch:
 permissions:
   contents: read

@@ -229,5 +229,29 @@ class ReleaseSetup(unittest.TestCase):
         self.assertFalse((game/'csgo/addons').exists())
 
 
+    def test_bootstrap_resolves_only_exports_present_in_supported_game(self):
+        import re
+        root = Path(__file__).resolve().parents[1]
+        source = (root/'cs2_gc/proxy/profile_bootstrap.cpp').read_text()
+        exports = {line.strip().split('=')[0] for line in
+                   (root/'data/steam_api64_exports.def').read_text().splitlines()
+                   if line.startswith('    ')}
+        requested = set(re.findall(r'GetProcAddress\(module,"([^"]+)"\)',source))
+        self.assertTrue(requested)
+        self.assertFalse(requested-exports,'Bootstrap requests missing DLL exports: '+str(requested-exports))
+        self.assertIn('SteamAPI_InitFlat',requested)
+        self.assertNotIn('SteamAPI_Init',requested)
+        self.assertIn('SteamErrorMessage=char[1024]',source)
+        self.assertIn('initialized=initResult==0',source)
+
+
+    def test_profile_error_dialog_includes_helper_failure_reason(self):
+        def runner(command,**kwargs):
+            kwargs['stdout'].write('Steam initialization failed (result=2): Steam is not running.\n')
+            return SimpleNamespace(returncode=1)
+        with self.assertRaisesRegex(setup.SetupError,'result=2.*Steam is not running'):
+            setup.ensure_profile(self.bin,2000933,runner)
+
+
 if __name__ == '__main__':
     unittest.main()

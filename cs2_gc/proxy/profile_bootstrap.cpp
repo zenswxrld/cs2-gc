@@ -40,7 +40,12 @@ int wmain(int argc,wchar_t **argv)
     SetEnvironmentVariableW(L"SteamGameId",L"730");
     const auto module=LoadLibraryExW((directory/L"steam_api64_real.dll").c_str(),nullptr,LOAD_WITH_ALTERED_SEARCH_PATH);
     if(!module){std::cerr<<"Original Steam API library could not load: "<<GetLastError()<<"\n";return 1;}
-    const auto init=reinterpret_cast<bool(__cdecl*)()>(GetProcAddress(module,"SteamAPI_Init"));
+    // SteamAPI_Init is inline in modern SDK headers, not a DLL export.
+    // Valve's dynamic-loading entry point returns ESteamAPIInitResult (0 = OK)
+    // and writes a SteamErrMsg (1024 chars), rather than returning bool.
+    using SteamErrorMessage=char[1024];
+    const auto init=reinterpret_cast<int(__cdecl*)(SteamErrorMessage*)>(
+        GetProcAddress(module,"SteamAPI_InitFlat"));
     const auto shutdown=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(module,"SteamAPI_Shutdown"));
     const auto callbacks=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(module,"SteamAPI_RunCallbacks"));
     const auto getUser=reinterpret_cast<int(__cdecl*)()>(GetProcAddress(module,"SteamAPI_GetHSteamUser"));
@@ -49,14 +54,25 @@ int wmain(int argc,wchar_t **argv)
     const auto getSteamId=reinterpret_cast<std::uint64_t(__cdecl*)(void*)>(
         GetProcAddress(module,"SteamAPI_ISteamUser_GetSteamID"));
     if(!init||!shutdown||!callbacks||!getUser||!find||!getSteamId){
-        std::cerr<<"Unsupported Steam API exports.\n";return 1;
+        std::cerr<<"Unsupported Steam API exports:";
+        if(!init)std::cerr<<" SteamAPI_InitFlat";
+        if(!shutdown)std::cerr<<" SteamAPI_Shutdown";
+        if(!callbacks)std::cerr<<" SteamAPI_RunCallbacks";
+        if(!getUser)std::cerr<<" SteamAPI_GetHSteamUser";
+        if(!find)std::cerr<<" SteamInternal_FindOrCreateUserInterface";
+        if(!getSteamId)std::cerr<<" SteamAPI_ISteamUser_GetSteamID";
+        std::cerr<<"\n";return 1;
     }
     bool initialized=false;
+    SteamErrorMessage initError{};
+    int initResult=-1;
     for(unsigned attempt=0;attempt<30&&!initialized;++attempt){
-        initialized=init();
+        initError[0]='\0';
+        initResult=init(&initError);
+        initialized=initResult==0;
         if(!initialized)Sleep(1000);
     }
-    if(!initialized){std::cerr<<"Steam initialization failed. Open Steam and sign in to the CS2 account.\n";return 1;}
+    if(!initialized){std::cerr<<"Steam initialization failed (result="<<initResult<<"): "<<initError<<"\n";return 1;}
     // Valve documents GC access through ISteamClient::GetISteamGenericInterface.
     // Use its exported flat wrapper rather than assuming a vtable slot.
     const auto create=reinterpret_cast<void*(__cdecl*)(const char*)>(

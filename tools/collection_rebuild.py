@@ -76,11 +76,15 @@ DESIGNS.update({
            'Trenchline','Reef Shadow','Drowned Signal','Tidal Mark','Salt Deposit','Ocean Floor','Dark Shoal','Depth Gauge','Silt Line','Undertow')},
 })
 
+from remaining_collection_designs import designs as remaining_designs
+DESIGNS.update(remaining_designs())
+
 def eligible(name,row,design,tier):
     allowed=design.get('allow')
     if allowed is None:return True
     if name not in allowed:return False
     if tier in ('ancient','legendary'):
+        if design.get('premium') and name not in design['premium']:return False
         return bool(row.get('effects')) or row.get('style') in (1,4,5)
     return True
 
@@ -128,7 +132,7 @@ def donor_fit(name,row,design,tier):
     patterned=row.get('style') in (1,2,4,5)
     return motif*20 + premium*50 + patterned*3
 
-def upgrade(lineup,rows,guns,icons,families,works,report):
+def upgrade(lineup,rows,guns,icons,families,works,report,accept=None):
     import gun_collections as gc
     selected=[icon for icon in icons if icon in DESIGNS and
               not all(e.get('detail')==DESIGNS[icon].get('revision',1) for e in lineup.get(icon,()))]
@@ -136,7 +140,7 @@ def upgrade(lineup,rows,guns,icons,families,works,report):
     reserved={e['donor'] for icon,entries in lineup.items() if icon not in selected
               for e in entries if 'donor' in e}
     planned=gc.plan(rows,guns,selected,families,works,seed='cs2gc-authored-detail-v1',
-                    designs=DESIGNS,reserved=reserved)
+                    designs=DESIGNS,reserved=reserved,accept=accept)
     result={icon:[dict(e) for e in entries] for icon,entries in lineup.items()}
     upgraded=[]
     for icon,entries in planned.items():

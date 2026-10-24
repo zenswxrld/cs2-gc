@@ -346,7 +346,9 @@ def study(source, kits, kit_path, source_text, titles):
         if recolourable or transferable:
             rows[kit] = {'guns': sorted(shipped[kit]), 'recolour': recolourable, 'transfer': transferable,
                          'style': params.get('F_PAINT_STYLE', 0), 'rarity': rarities.get(kit, 'rare'), 'pattern': pattern,
-                         'title': titles[kit], 'effects': observed_effects(params)}
+                         'title': titles[kit], 'effects': observed_effects(params),
+                         'colors': [list(params['g_vColor%d'%i])+[1] for i in range(4)] if all('g_vColor%d'%i in params for i in range(4)) else [],
+                         'brightness': float(params.get('g_flColorBrightness',1))}
     for row in rows.values(): row['pattern_guns'] = sorted(patterns.get(row['pattern'], ()))
     return rows
 
@@ -355,7 +357,7 @@ def _score(row):
     return STYLE_SCORE.get(row['style'], 1) * 10 + RANK.get(row['rarity'], 2)
 
 
-def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, seed='cs2gc-v1', designs=None, reserved=()):
+def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, seed='cs2gc-v1', designs=None, reserved=(), accept=None):
     """{icon: [entry]} where entry = {tier, weapon, mode, donor | family, themes}. Deterministic."""
     used, gun_count, lineup, looks = set(reserved), {}, {icon: [] for icon in icons}, set()
     pool = sorted(rows)
@@ -367,7 +369,7 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
         entries = lineup[icon]
         taken = {e['weapon'] for e in entries}
         chase_gun = design.get('weapon') or CHASE_GUNS[index % len(CHASE_GUNS)]
-        knife = KNIFE_CHASES.get(icon)
+        knife = KNIFE_CHASES.get(icon) if design.get('native_chase',True) else None
         for tier, count in (TIER_COUNTS[:1] if first_pass else TIER_COUNTS[1:]):
             for slot, mode in enumerate(design.get('modes',{}).get(tier,SLOT_MODES[tier])):
                 if tier == 'ancient' and knife and 'cgf_%s_ancient' % knife in families:
@@ -394,7 +396,8 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
                     if fixed_guns: choices = [g for g in choices if g in fixed_guns]
                     return [g for g in choices if g not in taken and
                             (not design.get('family') or forced or g!=design['family']['weapon']) and
-                            (name, g, tuple(themes)) not in looks]
+                            (name, g, tuple(themes)) not in looks and
+                            (accept is None or accept(name,g,mode,themes,forced or {}) is not None)]
                 target = RANK[tier]
 
                 def ranked(names):
@@ -409,7 +412,8 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
                         abs(RANK.get(rows[n]['rarity'], 2) - target) if tier not in ('ancient', 'legendary') else 0,
                         -_score(rows[n]) if tier in ('ancient', 'legendary', 'mythical') else 0))
                     return names
-                themes = (list(palette) if tier == 'ancient' else list(palette[:4]) if mode == 'family'
+                roll_palette = design.get('family_palette') or palette
+                themes = (list(roll_palette) if tier == 'ancient' else list(roll_palette[:4]) if mode == 'family'
                           else [palette[(slot + RANK[tier]) % 4]] if mode == 'fixed' else [])
                 if forced and forced.get('themes'):themes=list(forced['themes'])
                 # The first donor whose new colours really show (works() makes and checks the materials).
@@ -427,6 +431,9 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
                 rng.shuffle(choices)
                 choices.sort(key=lambda g: (g not in preferred, gun_count.get(g, 0)))
                 weapon = choices[0]
+                if accept is not None:
+                    themes = accept(donor,weapon,mode,themes,forced or {},commit=True)
+                    if themes is None:continue
                 entry = {'tier': tier, 'weapon': weapon, 'mode': mode, 'donor': donor, 'themes': themes}
                 if design:
                     entry.update(detail=design.get('revision',1), label=design['names'][len(entries)])
@@ -508,9 +515,25 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
             if all(palettes_distinct(palette,previous) for previous in accepted):
                 accepted.append(palette)
         return len(accepted)>=3
-    from collection_rebuild import upgrade, audit
-    lineup = upgrade(lineup, rows, guns, icons, families, detail_works, report)
+    def appearance_palette(donor,theme,entry):
+        row=rows[donor]
+        if theme is None:return row.get('colors') or []
+        suffix='_berries' if entry.get('palette_source') else '_gold_doppler' if entry.get('pattern_source') else ''
+        evidence=report.get('colours',{}).get('gc4m_%s%s_%s'%(donor,suffix,theme.lower()))
+        if evidence:return evidence['to']
+        palette=rows.get(entry.get('palette_source'),row).get('colors') or []
+        if not palette:return []
+        from collection_rebuild import recolour
+        return recolour(palette,theme)
+    from collection_similarity import Guard, audit as similarity_audit
+    guard=Guard(rows,appearance_palette)
+    from collection_rebuild import upgrade, audit, DESIGNS
+    selected={icon for icon in icons if icon in DESIGNS and
+              not all(e.get('detail')==DESIGNS[icon].get('revision',1) for e in lineup.get(icon,()))}
+    guard.reserve({icon:entries for icon,entries in lineup.items() if icon not in selected})
+    lineup = upgrade(lineup, rows, guns, icons, families, detail_works, report, accept=guard.allowed)
     report['audit'] = audit(lineup,rows)
+    report['similarity'] = similarity_audit(lineup,rows,appearance_palette)
     for icon, entries in lineup.items():
         for entry in entries:
             if 'donor' in entry: history[kit_name(icon, entry)] = dict(entry, icon=icon)

@@ -3,9 +3,11 @@ import colorsys
 import re
 
 DESIGNS = {
- 'forged': {'weapon':'weapon_ak47','palette':('Crimson','Amber','Cobalt','Teal','Violet','Ember'),
+ 'forged': {'revision':2,'weapon':'weapon_ak47','palette':('Crimson','Amber','Cobalt','Teal','Violet','Ember'),
   'motifs':('metal','steel','copper','brass','plate','forge','titanium','crystal'),
-  'names':('Crucible','Furnace Glass','Tempered Crown','Brassworks','Quenched Edge','Heat Bloom','Mill Scale',
+  'chase':{'donor':'am_gold_brick','weapon':'weapon_ak47','pattern_source':'am_doppler_phase2','label':'Gold Brick','themes':('Gold',)},
+  'modes':{'ancient':('fixed',),'legendary':('family','family')},
+  'names':('Gold Brick','Furnace Glass','Tempered Crown','Brassworks','Quenched Edge','Heat Bloom','Mill Scale',
            'Rivet Line','Oxide Vein','Sootfall','Foundry Dust','Cast Iron','Slag Trail','Heat Mark','Billet','Cold Press')},
  'phantom_blade': {'weapon':'weapon_m4a1_silencer','palette':('Violet','Cobalt','Teal','Rose','Midnight','Galaxy'),
   'motifs':('iridescent','pearl','glass','obsidian','shadow','night','shard','crystal'),
@@ -24,6 +26,7 @@ DESIGNS = {
 }
 
 def recolour(colors,theme):
+    if theme=='Gold':return [list(c) for c in colors]
     import native_finishes as f
     from collection_detail import recolour_details
     return recolour_details(colors,theme,f.THEMES,f.DUO_THEMES,f.GRADIENT_THEMES)
@@ -47,7 +50,7 @@ def donor_fit(name,row,design,tier):
 def upgrade(lineup,rows,guns,icons,families,works,report):
     import gun_collections as gc
     selected=[icon for icon in icons if icon in DESIGNS and
-              not all(e.get('detail')==1 for e in lineup.get(icon,()))]
+              not all(e.get('detail')==DESIGNS[icon].get('revision',1) for e in lineup.get(icon,()))]
     if not selected:return lineup
     reserved={e['donor'] for icon,entries in lineup.items() if icon not in selected
               for e in entries if 'donor' in e}

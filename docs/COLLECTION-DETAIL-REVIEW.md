@@ -6,7 +6,7 @@ The active generator's legacy policy deliberately moves neutral colours as well 
 
 ## First rebuild batch
 
-- Forged: AK-47 chase; forged/steel/metal pattern preferences and restrained contrasting accents.
+- Forged: AK-47 | Gold Brick fixed red chase, combining the real Gold Brick gold palette/material with the real Doppler smoke pattern. Both pink slots are colour families, keeping two family slots in total; forged/steel/metal pattern preferences and restrained contrasting accents.
 - Phantom Blade: M4A1-S chase; spectral/glass/shard motifs, with working native effect donors preferred in premium slots.
 - Harbor: AWP chase; nautical/patina motifs. Add a classified M4A1-S Berries and Cherries-derived colour family using the M4A1-S's own Fade material/masks.
 - Mosaic: Desert Eagle chase; tile/prism/geometric preferences. Add a classified AWP Berries and Cherries-derived colour family using the AWP's own Fade material/masks.

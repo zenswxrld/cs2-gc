@@ -234,6 +234,7 @@ class DetailRebuild(unittest.TestCase):
     def test_authored_plans_keep_counts_unique_weapons_and_two_berry_families(self):
         from collection_rebuild import DESIGNS,audit
         pool=rows(120)
+        pool['am_gold_brick']=dict(next(iter(pool.values())),guns=['weapon_mac10'],transfer=True)
         pool['aa_awp_fade']=dict(next(iter(pool.values())),guns=['weapon_awp'],transfer=False)
         pool['aa_fade_m4a1s']=dict(next(iter(pool.values())),guns=['weapon_m4a1_silencer'],transfer=False)
         pool['aa_fade_red_blue']=dict(next(iter(pool.values())),guns=['weapon_fiveseven'],transfer=False)
@@ -243,6 +244,10 @@ class DetailRebuild(unittest.TestCase):
             self.assertEqual(len({e['weapon'] for e in entries}),16)
             self.assertEqual(entries[0]['weapon'],DESIGNS[icon]['weapon'])
             self.assertTrue(all(e.get('detail') for e in entries))
+        self.assertEqual(result['forged'][0]['label'],'Gold Brick')
+        self.assertEqual(result['forged'][0]['mode'],'fixed')
+        self.assertEqual(result['forged'][0]['pattern_source'],'am_doppler_phase2')
+        self.assertEqual(sum(e['mode']=='family' for e in result['forged']),2)
         berries=[e for entries in result.values() for e in entries if e.get('palette_source')]
         self.assertEqual({e['weapon'] for e in berries},{'weapon_awp','weapon_m4a1_silencer'})
         self.assertEqual(len(audit(result,pool)),4)
@@ -272,6 +277,15 @@ class DetailRebuild(unittest.TestCase):
             files[vmat+'_c']=patterned(vmat,palette,'textures/'+name+'.vtex')
             kits[name]=(str(i+100),{'name':name})
             loot.append('"[%s]%s" "1"'%(name,GUNS[i%len(GUNS)]))
+        for name,pattern,colors in (
+            ('am_gold_brick','textures/gold_noise.vtex',[[1,.87,.53,1],[1,.93,.58,1],[.94,.80,.42,1],[.73,.60,.18,1]]),
+            ('am_doppler_phase2','textures/doppler_smoke.vtex',[[.38,.45,.72,1],[1,.31,.42,1],[.71,.51,.28,1],[1,.31,.42,1]])):
+            vmat='materials/x/'+name+'.vmat'
+            files['weapons/paints/legacy/'+name+'.vcompmat_c']=compmat(vmat)
+            files[vmat+'_c']=patterned(vmat,colors,pattern)
+            files[pattern+'_c']=b'owned synthetic texture fixture'
+            kits[name]=('1000',{'name':name})
+        loot.append('"[am_gold_brick]weapon_mac10" "1"')
         text='"items_game" { "items" { %s } "client_loot_lists" { "set_x_rare" { %s } } }'%(
             ' '.join('"%d" { "name" "%s" }'%(i+1,g) for i,g in enumerate(GUNS)),' '.join(loot))
         source=Recolour().source(files)
@@ -295,6 +309,23 @@ class DetailRebuild(unittest.TestCase):
             again=gc.build(text,kits,titles,finishes.kit_path,source,{},lineup_path=path,icons=['forged'])
             self.assertEqual(again[4],made[4])
             self.assertEqual(json.loads(path.read_text())['history'],saved['history'])
+
+    def test_gold_brick_uses_doppler_smoke_without_altering_gold_palette_or_masks(self):
+        gold='materials/x/gold.vmat';doppler='materials/x/doppler.vmat'
+        colors=[[1,.87,.53,.4],[1,.93,.58,1],[.94,.80,.42,1],[.73,.60,.18,1]]
+        files={'gold.vcompmat_c':compmat(gold),gold+'_c':patterned(gold,colors,'gold-noise.vtex'),
+               'doppler.vcompmat_c':compmat(doppler),doppler+'_c':patterned(doppler,GREYS,'doppler-smoke.vtex'),
+               'doppler-smoke.vtex_c':b'actual source texture fixture'}
+        source=Recolour().source(files)
+        made=gc.make_recolour(source,'am_gold_brick','gold.vcompmat','owned_gold','Gold',
+             preserve_details=True,pattern_source=('am_doppler_phase2',{'composite_material_path':'doppler.vcompmat'}))
+        self.assertIsNotNone(made)
+        before=gc.effective_params(read_root(compmat(gold)),read_root(files[gold+'_c']))
+        after=gc.effective_params(read_root(made[0]),read_root(made[1]))
+        self.assertEqual(after['g_tPattern'],'doppler-smoke.vtex')
+        for i in range(4):self.assertEqual(after['g_vColor%d'%i],before['g_vColor%d'%i])
+        before.pop('g_tPattern');after.pop('g_tPattern')
+        self.assertEqual(before,after)
 
 if __name__ == '__main__':
     unittest.main()

@@ -58,7 +58,7 @@ def upgrade(lineup,rows,guns,icons,families,works,report):
     for icon,entries in planned.items():
         counts=[sum(e['tier']==tier for e in entries) for tier,_ in gc.TIER_COUNTS]
         if counts != [count for _,count in gc.TIER_COUNTS]:
-            report.setdefault('rebuild_unavailable',[]).append(icon)
+            report.setdefault('rebuild_unavailable',[]).append({'collection':icon,'counts':counts})
             continue # keep the complete previous pool, never sell a partial set
         result[icon]=entries
         upgraded.append(icon)

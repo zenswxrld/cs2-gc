@@ -273,7 +273,7 @@ class DetailRebuild(unittest.TestCase):
             families,report={},{}
             made=gc.build(text,kits,titles,finishes.kit_path,source,families,lineup_path=path,icons=['forged'],report=report)
             saved=json.loads(path.read_text())
-            self.assertEqual(report.get('rebuilt_collections'),['forged'])
+            self.assertEqual(report.get('rebuilt_collections'),['forged'],report.get('rebuild_unavailable'))
             self.assertEqual(len(made[4]),16)
             self.assertTrue(all(e.get('detail') for e in saved['lineup']['forged']))
             self.assertTrue(any(name.startswith('gc3') for name,_,_ in made[0]),'owned legacy definitions retained')

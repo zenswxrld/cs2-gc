@@ -55,6 +55,9 @@ def polish(lineup,rows,works,report):
         if not found:missing.append(icon)
         coverage[icon]=found
     report['signature_families']=installed
+    report['signature_family_status']={icon:('available' if any(e.get('donor')==donor and e.get('signature_finish')
+        and e.get('mode')=='family' for e in lineup.get(icon,())) else 'material unavailable; saved slot retained')
+        for icon,donor,weapon,label,themes in recipes}
     report['special_finishes']={'coverage':coverage,'missing':missing,
       'policy':'active source effect or compatible shader with observed pearl scalar; client visual review required'}
     return lineup

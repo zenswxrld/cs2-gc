@@ -84,4 +84,9 @@ def designs():
       chase={'donor':'am_crystallized_blue','weapon':'weapon_deagle','label':'Bedrock','required':True})
     result['rampart'].update(weapon='weapon_m4a1_silencer',
       chase={'donor':'am_metals','weapon':'weapon_m4a1_silencer','label':'Iron Bastion','required':True})
+    for design in result.values():
+        forced=design.get('chase')
+        if forced:
+            design['allow']=tuple(dict.fromkeys(design['allow']+(forced['donor'],)))
+            design['premium']=tuple(dict.fromkeys(design['premium']+(forced['donor'],)))
     return result

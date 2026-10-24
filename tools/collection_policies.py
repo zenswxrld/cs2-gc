@@ -6,7 +6,7 @@ PALETTES={
  'mosaic':('Magenta','Violet','Rose','Amber'),
  'kestrel':('Amber','Emerald','Teal','Ash'),
  'juggernaut':('Crimson','Ember','Amber','Ash'),
- 'lodestar':('Cobalt','Violet','Magenta','Midnight'),
+ 'lodestar':('Violet','Teal','Magenta','Midnight'),
  'fathom':('Emerald','Teal','Violet','Midnight'),
  'ashfall':('Teal','Ember','Amber','Ash'),
  'aurora':('Emerald','Teal','Azure','Violet'),

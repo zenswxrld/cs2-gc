@@ -84,8 +84,6 @@ apply_designs(DESIGNS)
 def eligible(name,row,design,tier):
     allowed=design.get('allow')
     if allowed is None:return True
-    if tier=='uncommon' and name in ('am_carbon_fiber','am_oval_hex','an_silver','aq_blued','so_whiteout_riptide','so_night'):
-        return True
     if name not in allowed:return False
     if tier in ('ancient','legendary'):
         if name in ('am_diamond_plate','am_ddpatdense_silver','am_ddpatdense_peacock','am_carbon_fiber',

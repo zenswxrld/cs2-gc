@@ -152,7 +152,14 @@ class Build(unittest.TestCase):
             path.write_text(json.dumps(saved))
             second = gc.build(text, kits, titles, finishes.kit_path, source, {}, lineup_path=path, icons=['ashfall'])
             self.assertIn(old_kit, [name for name, _, _ in second[0]])
-            self.assertEqual(json.loads(path.read_text())['lineup'], saved['lineup'])  # reused, not reshuffled
+            coordinated=json.loads(path.read_text())['lineup']
+            # Palette correction may narrow themes or recolour a transferred pattern,
+            # but it must keep the saved donor, weapon and rarity layout.
+            layout=lambda items:[(e['donor'],e['weapon'],e['tier']) for e in items['ashfall']]
+            self.assertEqual(layout(coordinated),layout(saved['lineup']))
+            again=gc.build(text,kits,titles,finishes.kit_path,source,{},lineup_path=path,icons=['ashfall'])
+            self.assertEqual(json.loads(path.read_text())['lineup'],coordinated)
+            self.assertEqual(again[4],second[4])
             used = {v['composite_material_path'] for _, _, v in first[0]}
             shipped = {p.removesuffix('_c') for p in first[1] if p.startswith(finishes.COMPMAT_DIR)}
             self.assertTrue(shipped and shipped <= used)  # no unused trial colours shipped

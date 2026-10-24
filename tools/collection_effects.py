@@ -18,6 +18,11 @@ def apply(source,path,made,effect_source):
     from gun_collections import inspect
     donor=inspect(source,'weapons/paints/legacy/'+effect_source+'.vcompmat')
     if not donor:return None
+    target=inspect(source,path)
+    if not target:return None
+    parameters=target['params']
+    if parameters.get('g_bUsePearlescenceMask') and any(isinstance(value,str) and 'black' in value.lower()
+            for key,value in parameters.items() if 'pearl' in key.lower() and 'mask' in key.lower()):return None
     _,blocks=kv3.read_resource(made[0]);guid,root=kv3.read_kv3(dict(blocks)['DATA'])
     _,blocks=kv3.read_resource(made[1]);mguid,material=kv3.read_kv3(dict(blocks)['DATA'])
     shader=material.get('m_shaderName');source_shader=donor['material'][2].get('m_shaderName')

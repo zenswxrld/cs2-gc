@@ -153,4 +153,38 @@ class CompositeDetails(unittest.TestCase):
         w,h,bgra=finishes.read_vtex(rebuilt)
         self.assertEqual((w,h),(4,8));self.assertEqual(bgra[:4],recolored.stdout[:4][2::-1]+b'\xff')
 
+    @unittest.skipUnless(os.environ.get('CS2_GC_TEXTURE_DECODER'),'decoder executable required')
+    def test_artwork_rotation_preserves_neutrals_alpha_and_rejects_original_hue(self):
+        path=os.environ['CS2_GC_TEXTURE_DECODER']
+        _,_,_,w,h,payload=cm.texture_payload(texture())
+        original=subprocess.run([path,str(w),str(h)],input=payload,capture_output=True,check=True).stdout
+        rotated=subprocess.run([path,str(w),str(h),'270','.8','2'],input=payload,capture_output=True,check=True)
+        self.assertNotEqual(rotated.stdout[:3],original[:3])
+        self.assertEqual(rotated.stdout[64:],original[64:])
+        self.assertEqual(rotated.stdout[3::4],original[3::4])
+        self.assertEqual(subprocess.run([path,str(w),str(h),'0','.8','2'],input=payload,capture_output=True).returncode,7)
+        inverse=subprocess.run([path,str(w),str(h),'0','1','3'],input=payload,capture_output=True,check=True)
+        self.assertEqual(inverse.stdout[:64],original[:64])
+        self.assertEqual(inverse.stdout[64:67],bytes([128,128,128]))
+        self.assertEqual(inverse.stdout[3::4],original[3::4])
+
+    @unittest.skipUnless(os.environ.get('CS2_GC_TEXTURE_DECODER'),'decoder executable required')
+    def test_artwork_changes_only_pattern_binding_retaining_effect_and_wear_masks(self):
+        import collection_artwork as ca
+        root=composite()
+        variables=root.get('m_Points').value[0].get('m_vecCompositeInputContainers').value[-1].get('m_vecLooseVariables')
+        variables.value.append(obj(('m_strName',string('g_tPattern')),
+            ('m_nVariableType',string('LOOSE_VARIABLE_TYPE_RESOURCE_TEXTURE')),('m_strTextureRuntimeResourcePath',string('art.vtex'))))
+        comp=kv3.write_resource(0,[['DATA',fixture_v4(root,True)]])
+        files={'paint.vcompmat_c':comp,'materials/template.vmat_c':material('materials/template.vmat',[[1,1,1,1]]*4),'art.vtex_c':texture()}
+        class Source:
+            def read(self,path):return files.get(path)
+        made=ca.make(Source(),'cu_famas_holo_ocean','paint.vcompmat','owned','Violet')
+        self.assertIsNotNone(made)
+        _,newroot=kv3.read_kv3(dict(kv3.read_resource(made[0])[1])['DATA'])
+        cm.exposed(newroot)['g_tPattern'][0].get('m_strTextureRuntimeResourcePath').value='art.vtex'
+        finishes._specific_material(newroot).value=finishes._specific_material(root).value
+        self.assertEqual(newroot,root)
+        self.assertEqual(len(made[4]),1)
+
 if __name__=='__main__':unittest.main()

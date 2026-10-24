@@ -211,6 +211,8 @@ def _colour_bindings(root):
 def make_recolour(source, kit, kit_path, new_name, theme, preserve_details=False, palette_source=None, pattern_source=None):
     """(vcompmat bytes, vmat bytes, original colours, new colours) or None when the recolour would not show."""
     import native_finishes as finishes
+    from collection_artwork import DONORS, make as make_artwork
+    if preserve_details and kit in DONORS:return make_artwork(source,kit,kit_path,new_name,theme)
     comp, mat = _read(source, kit_path), None
     if comp is None: return None
     data, guid, root = comp
@@ -263,7 +265,11 @@ def make_recolour(source, kit, kit_path, new_name, theme, preserve_details=False
     else:
         changed = finishes.recolor(original, theme, fade=kit in finishes.FADE_BASES)
         if not visible_change(original, changed): return None
-    if max(finishes.brightness(c) for c in changed) < 110 / 255: return None
+    # Blaze intentionally uses dark inputs with a brightness multiplier.
+    # Ignoring it rejected the protected backing and restored the flat wash.
+    params = effective_params(plain(root),plain(m_root))
+    gain = max(0,float(params.get('g_flColorBrightness',1)))
+    if max(finishes.brightness(c) for c in changed)*gain < 110 / 255: return None
     for index in range(4):
         key = 'g_vColor%d' % index
         for colour in bindings.get(key, ()):
@@ -333,6 +339,8 @@ def study(source, kits, kit_path, source_text, titles):
         if found is None: continue
         params = found['params']
         recolourable, transferable = classify(kit, params)
+        from collection_artwork import DONORS
+        if kit in DONORS:recolourable,transferable=True,False
         pattern = params.get('g_tPattern') or found['specific']
         patterns.setdefault(pattern, set()).update(shipped[kit])
         if recolourable or transferable:
@@ -365,12 +373,16 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
                 if tier == 'ancient' and knife and 'cgf_%s_ancient' % knife in families:
                     entries.append({'tier': tier, 'weapon': chase_gun, 'mode': 'knife_family', 'family': knife})
                     taken.add(chase_gun); continue
-                forced = design.get('chase') if tier=='ancient' else design.get('family') if tier=='legendary' and slot==0 else None
+                forced = design.get('slots',{}).get((tier,slot))
+                if forced is None:
+                    forced = design.get('chase') if tier=='ancient' else design.get('family') if tier=='legendary' and slot==0 else None
                 fixed_guns = (forced['weapon'],) if forced else (chase_gun,) if tier == 'ancient' else None
                 preferred = set(FEATURED_GUNS.get(tier, ()))
 
                 def options(name):
                     row = rows[name]
+                    from collection_rebuild import eligible
+                    if not forced and not eligible(name,row,design,tier):return []
                     if mode in ('family', 'fixed') and not row['recolour']: return []
                     if mode == 'transfer' and not row['transfer']: return []
                     if mode == 'transfer':
@@ -404,6 +416,7 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
                 in_collection = {e.get('donor') for e in entries}
                 forced_ok = bool(forced and forced['donor'] in rows and options(forced['donor']) and
                                  works(forced['donor'],mode,themes,forced.get('palette_source'),forced.get('pattern_source')))
+                if forced and forced.get('required') and not forced_ok:continue
                 donor = forced['donor'] if forced_ok else next((n for n in ranked(n for n in pool if n not in used and options(n))
                               if works(n, mode, themes)), None)
                 if donor is None:  # every fitting finish is used: a second use, never twice in one collection
@@ -461,6 +474,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
             materials[name] = None
             if made_files:
                 files[finishes.COMPMAT_DIR + name + '.vcompmat_c'], files[finishes.VMAT_DIR + name + '.vmat_c'] = made_files[:2]
+                if len(made_files)>4:files.update(made_files[4])
                 materials[name] = finishes.COMPMAT_DIR + name + '.vcompmat'
                 report.setdefault('colours', {})[name] = {'from': made_files[2], 'to': made_files[3],
                     'policy': 'preserved-detail-v1' if detail else 'legacy-whole-palette'}
@@ -540,7 +554,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
                 repaired_existing.add(name)
             if path is None: return None
             if name not in made:
-                new_kits.append((name, title if pattern_source else colour_title(title, entry['themes'][0]), values_for(donor, tier, weapon, path)))
+                new_kits.append((name, title if pattern_source or entry['themes'][0]=='Inverse' else colour_title(title, entry['themes'][0]), values_for(donor, tier, weapon, path)))
                 made.add(name)
             return name
         variants, first = [], None

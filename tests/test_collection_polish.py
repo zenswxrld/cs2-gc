@@ -89,13 +89,13 @@ class ClientReview(unittest.TestCase):
         entries[2]['donor']='am_awp_glory'
         entries[5].update(donor='hye_ak47_nouveau',themes=['Royal'],label='Laurel Steel')
         pool={name:dict(next(iter(rows(1).values())),effects=['pearl']) for name in
-              ('background','am_scales_bravo','am_awp_glory','hye_ak47_nouveau','gsch_ak_djiin','cu_awp_hannya')}
+              ('background','am_scales_bravo','am_awp_glory','hye_ak47_nouveau','gsch_ak_djiin','awp_queens_gambit')}
         result=polish({'insignia':entries},pool,lambda *args:True,{})
         new=result['insignia']
         self.assertEqual([sum(e['tier']==t for e in new) for t,_ in gc.TIER_COUNTS],[1,2,3,4,6])
         self.assertEqual(len({e['weapon'] for e in new}),16)
         self.assertEqual(sum(e['mode']=='family' for e in new),2)
-        self.assertEqual(new[0]['donor'],'cu_awp_hannya')
+        self.assertEqual(new[0]['donor'],'awp_queens_gambit')
         self.assertEqual(next(e for e in new if e['weapon']=='weapon_famas')['tier'],'mythical')
         self.assertEqual(next(e for e in new if e['weapon']=='weapon_ak47')['themes'],['Cobalt','Teal','Ash'])
         self.assertEqual(polish(result,pool,lambda *args:True,{}),result)
@@ -119,7 +119,7 @@ class ClientReview(unittest.TestCase):
         from collection_review import refine
         lineup={icon:[dict(detail=1,donor='am_awp_glory',weapon='weapon_awp',tier='legendary',
                           mode='fixed',themes=['Cobalt'])] for icon in ('insignia','ironclad','rampart','redoubt')}
-        pool={name:{} for name in ('cu_awp_hannya','cu_awp_asimov','cu_awp_cobra','cu_awp_chroma_pink')}
+        pool={name:{} for name in ('awp_queens_gambit','cu_awp_asimov','cu_awp_cobra','cu_awp_chroma_pink')}
         result=refine(lineup,pool,lambda *args:True,{})
         self.assertEqual(len({entries[0]['donor'] for entries in result.values()}),4)
         self.assertFalse(any(e['donor']=='am_awp_glory' for es in result.values() for e in es))

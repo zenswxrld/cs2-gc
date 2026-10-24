@@ -17,7 +17,7 @@ def refine(lineup,rows,works,report):
     result=deepcopy(lineup);applied=[];unavailable=[]
     # Change the repeated AWP geometry, rather than cycling Man-o'-war through more hues.
     awps={
-      'insignia':('cu_awp_hannya','Crown Regent','family',('Cobalt','Teal','Ash')),
+      'insignia':('awp_queens_gambit','Crown Regent','family',('Cobalt','Teal','Ash')),
       'ironclad':('cu_awp_asimov','Composite Armour','fixed',('Teal',)),
       'rampart':('cu_awp_cobra','Watchline','fixed',('Azure',)),
       'redoubt':('cu_awp_chroma_pink','Signal Breach','family',('Crimson','Amber','Ash')),
@@ -36,7 +36,7 @@ def refine(lineup,rows,works,report):
     if len(entries)==16 and all(w in by_weapon for w in ('weapon_famas','weapon_awp','weapon_hkp2000')):
         before=deepcopy(entries)
         famas,awp,p2000=(by_weapon[w] for w in ('weapon_famas','weapon_awp','weapon_hkp2000'))
-        if awp.get('donor')=='cu_awp_hannya' and any(e.get('signature_finish') for e in entries):
+        if awp.get('donor')=='awp_queens_gambit' and any(e.get('signature_finish') for e in entries):
             # A detailed AWP and the Foil AK earn the top tiers. The simple scale
             # FAMAS gets a lower rarity and a palette adjusted for its actual 5x gain.
             awp['tier']='ancient'

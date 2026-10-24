@@ -168,6 +168,19 @@ class Build(unittest.TestCase):
 
 
 class Plan(unittest.TestCase):
+    def test_three_colour_collection_palettes_fill_all_fixed_slots(self):
+        design={'test':{'palette':('Cobalt','Teal','Ash')}}
+        result=gc.plan(rows(100),GUNS,['test'],{},designs=None)
+        # Keep the standard names/modes while exercising a deliberately narrow palette.
+        from collection_rebuild import DESIGNS
+        narrow=dict(DESIGNS['insignia'],allow=None,premium=(),chase=None,family=None)
+        narrow['palette']=('Cobalt','Teal','Ash')
+        narrow['family_palette']=('Cobalt','Teal','Ash')
+        narrow['names']=tuple('Slot '+str(i) for i in range(16))
+        planned=gc.plan(rows(100),GUNS,['test'],{},designs={'test':narrow},works=lambda *args:True)
+        self.assertEqual(len(planned['test']),16)
+        self.assertTrue(all(set(e.get('themes',())).issubset(narrow['palette']) for e in planned['test']))
+
     def test_complete_collections_without_repeats_or_copies(self):
         pool = rows(60)
         pool.update({'own%02d' % i: dict(next(iter(rows(1).values())), transfer=False, guns=[GUNS[i % len(GUNS)]],

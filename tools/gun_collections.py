@@ -415,7 +415,7 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
                     return names
                 roll_palette = design.get('family_palette') or palette
                 themes = (list(roll_palette) if tier == 'ancient' else list(roll_palette if design.get('full_family_palette') else roll_palette[:4]) if mode == 'family'
-                          else [palette[(slot + RANK[tier]) % 4]] if mode == 'fixed' else [])
+                          else [palette[(slot + RANK[tier]) % len(palette)]] if mode == 'fixed' else [])
                 if forced and forced.get('themes'):themes=list(forced['themes'])
                 # The first donor whose new colours really show (works() makes and checks the materials).
                 in_collection = {e.get('donor') for e in entries}

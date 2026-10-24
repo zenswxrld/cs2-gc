@@ -46,6 +46,20 @@ SCHEMA = '''"items_game" {
 
 
 class ArmoryRotation(unittest.TestCase):
+    def test_all_custom_pools_including_drop_pools_can_be_bought_and_inspected(self):
+        from native_skins import CASE_COLLECTIONS,DROP_ONLY_COLLECTIONS
+        lists=' '.join('"'+name+'" { "[paint]weapon_test" "1" }' for name in CASE_COLLECTIONS)
+        source=SCHEMA.replace('"client_loot_lists" {','"client_loot_lists" { '+lists)
+        config=gameplay_config.parse('')
+        config['custom_cases']=1
+        goods=catalog.catalogue(source,config)
+        for name,title in CASE_COLLECTIONS.items():
+            self.assertIn('lootlist:'+name,goods)
+            self.assertEqual(goods['lootlist:'+name]['local_rotation_slot'],'collection')
+            self.assertEqual(goods['lootlist:'+name]['callout'],title)
+        self.assertTrue(DROP_ONLY_COLLECTIONS)
+        self.assertTrue(all('lootlist:'+name in goods for name in DROP_ONLY_COLLECTIONS))
+
     @unittest.skipUnless(shutil.which('node'),'Node required for custom title fixture')
     def test_phantom_blade_title_overrides_stale_underscore_callout_and_suffix(self):
         import native_skins

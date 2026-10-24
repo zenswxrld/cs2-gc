@@ -152,7 +152,14 @@ class Build(unittest.TestCase):
             path.write_text(json.dumps(saved))
             second = gc.build(text, kits, titles, finishes.kit_path, source, {}, lineup_path=path, icons=['ashfall'])
             self.assertIn(old_kit, [name for name, _, _ in second[0]])
-            self.assertEqual(json.loads(path.read_text())['lineup'], saved['lineup'])  # reused, not reshuffled
+            coordinated=json.loads(path.read_text())['lineup']
+            # Palette correction may narrow themes or recolour a transferred pattern,
+            # but it must keep the saved donor, weapon and rarity layout.
+            layout=lambda items:[(e['donor'],e['weapon'],e['tier']) for e in items['ashfall']]
+            self.assertEqual(layout(coordinated),layout(saved['lineup']))
+            again=gc.build(text,kits,titles,finishes.kit_path,source,{},lineup_path=path,icons=['ashfall'])
+            self.assertEqual(json.loads(path.read_text())['lineup'],coordinated)
+            self.assertEqual(again[4],second[4])
             used = {v['composite_material_path'] for _, _, v in first[0]}
             shipped = {p.removesuffix('_c') for p in first[1] if p.startswith(finishes.COMPMAT_DIR)}
             self.assertTrue(shipped and shipped <= used)  # no unused trial colours shipped
@@ -161,6 +168,19 @@ class Build(unittest.TestCase):
 
 
 class Plan(unittest.TestCase):
+    def test_three_colour_collection_palettes_fill_all_fixed_slots(self):
+        design={'test':{'palette':('Cobalt','Teal','Ash')}}
+        result=gc.plan(rows(100),GUNS,['test'],{},designs=None)
+        # Keep the standard names/modes while exercising a deliberately narrow palette.
+        from collection_rebuild import DESIGNS
+        narrow=dict(DESIGNS['insignia'],allow=None,premium=(),chase=None,family=None)
+        narrow['palette']=('Cobalt','Teal','Ash')
+        narrow['family_palette']=('Cobalt','Teal','Ash')
+        narrow['names']=tuple('Slot '+str(i) for i in range(16))
+        planned=gc.plan(rows(100),GUNS,['test'],{},designs={'test':narrow},works=lambda *args:True)
+        self.assertEqual(len(planned['test']),16)
+        self.assertTrue(all(set(e.get('themes',())).issubset(narrow['palette']) for e in planned['test']))
+
     def test_complete_collections_without_repeats_or_copies(self):
         pool = rows(60)
         pool.update({'own%02d' % i: dict(next(iter(rows(1).values())), transfer=False, guns=[GUNS[i % len(GUNS)]],
@@ -304,11 +324,26 @@ class DetailRebuild(unittest.TestCase):
             self.assertEqual(len([k for k in families if k.startswith('gc4')]),2)
             variants={v for k,values in families.items() if k.startswith('gc4') for v in values}
             names={name:title for name,title,_ in made[0]}
-            self.assertTrue(all(any(names[v].startswith(theme+' ') for theme in ('Crimson','Amber','Cobalt','Teal','Violet','Ember')) for v in variants))
+            self.assertTrue(all(any(names[v].startswith(theme+' ') for theme in ('Crimson','Amber','Cobalt','Teal','Violet','Ember','Ash')) for v in variants))
             self.assertEqual(gc.clean_title('The Fuschia Is Now'),'Chromatic Current')
             again=gc.build(text,kits,titles,finishes.kit_path,source,{},lineup_path=path,icons=['forged'])
             self.assertEqual(again[4],made[4])
             self.assertEqual(json.loads(path.read_text())['history'],saved['history'])
+
+    def test_laurel_steel_review_changes_colour_channels_without_changing_artwork(self):
+        from collection_channel_palettes import channels
+        vmat='materials/x/nouveau.vmat';colors=[[.71,.70,.63,1],[.70,.57,.37,1],[.32,.11,.08,1],[.39,.31,.17,1]]
+        original=patterned(vmat,colors,'scrollwork.vtex')
+        source=Recolour().source({'nouveau.vcompmat_c':compmat(vmat),vmat+'_c':original})
+        made=gc.make_recolour(source,'hye_ak47_nouveau','nouveau.vcompmat','owned_royal','Royal',preserve_details=True)
+        self.assertIsNotNone(made)
+        before=gc.effective_params(read_root(compmat(vmat)),read_root(original))
+        after=gc.effective_params(read_root(made[0]),read_root(made[1]))
+        for index,color in enumerate(channels('hye_ak47_nouveau','Royal')):
+            for actual,expected in zip(after.pop('g_vColor%d'%index),color[:3]):self.assertAlmostEqual(actual,expected,places=6)
+            before.pop('g_vColor%d'%index)
+        self.assertEqual(before,after,'artwork, masks, material gain and wear remain intact')
+        self.assertLess(max(channels('am_scales_bravo','Cobalt')[0][:3])*5,.4)
 
     def test_gold_brick_uses_doppler_smoke_without_altering_gold_palette_or_masks(self):
         gold='materials/x/gold.vmat';doppler='materials/x/doppler.vmat'
@@ -398,6 +433,119 @@ class DetailRebuild(unittest.TestCase):
         self.assertEqual(params['g_tPattern'],'flamegraphic.vtex')
         self.assertEqual(params['g_flColorBrightness'],3.0)
         self.assertGreater(max(params['g_vColor0']),max(params['g_vColor2'])*3)
+
+class RemainingCollections(unittest.TestCase):
+    def pool(self):
+        from remaining_collection_designs import POOLS
+        pool={}
+        for group,names in POOLS.items():
+            for name in names.split():
+                pool[name]=dict(next(iter(rows(1).values())),title=name,style=4,
+                               colors=[[.8,.15,.1,1],[.1,.5,.8,1],[.9,.65,.2,1],[.5,.1,.7,1]],
+                               effects=[],pattern='textures/'+name+'.vtex')
+        for design in __import__('remaining_collection_designs').designs().values():
+            for role in ('chase','family'):
+                forced=design.get(role,{})
+                if forced and forced['donor'] not in pool:
+                    pool[forced['donor']]=dict(next(iter(rows(1).values())),title=forced['donor'],style=4,effects=['pearlescent'],pattern=forced['donor'])
+        return pool
+
+    def test_all_28_are_complete_themed_and_use_two_premium_families(self):
+        from remaining_collection_designs import designs
+        designs=designs();pool=self.pool()
+        result=gc.plan(pool,GUNS,list(designs),{},works=lambda *args:True,designs=designs)
+        self.assertEqual(len(result),28)
+        for icon,entries in result.items():
+            self.assertEqual([sum(e['tier']==t for e in entries) for t,_ in gc.TIER_COUNTS],[1,2,3,4,6],icon)
+            self.assertEqual(len({e['weapon'] for e in entries}),16,icon)
+            self.assertEqual(sum(e['mode']=='family' for e in entries),2,icon)
+            self.assertTrue(all(e['mode']!='knife_family' for e in entries))
+            self.assertTrue(all(e['donor'] in designs[icon]['allow'] for e in entries))
+            self.assertTrue(all(e['donor'] in designs[icon]['premium'] for e in entries if e['tier'] in ('ancient','legendary')))
+            self.assertTrue(all(e['mode']=='fixed' for e in entries if e['tier'] in ('mythical','rare')))
+            self.assertTrue(all(e['mode'] in ('fixed','transfer') for e in entries if e['tier']=='uncommon'))
+
+    def test_rebuild_keeps_the_eight_reviewed_pools_and_gold_brick(self):
+        from collection_rebuild import DESIGNS,upgrade
+        from remaining_collection_designs import designs
+        pending=designs();lineup={}
+        for icon,design in DESIGNS.items():
+            lineup[icon]=[dict(detail=0 if icon in pending else design.get('revision',1),
+                              donor='am_crystallized',weapon=GUNS[i],tier=tier,mode='fixed',
+                              themes=['Teal'],label='Gold Brick' if icon=='forged' and i==0 else 'saved',
+                              feedback_revision=1)
+                          for i,(tier,_) in enumerate([(t,j) for t,n in gc.TIER_COUNTS for j in range(n)])]
+        approved={icon:entries for icon,entries in lineup.items() if icon not in pending}
+        report={}
+        result=upgrade(lineup,self.pool(),GUNS,list(lineup),{},lambda *args:True,report)
+        self.assertEqual(set(report['rebuilt_collections']),set(pending),report.get('rebuild_unavailable'))
+        self.assertEqual({icon:result[icon] for icon in approved},approved)
+
+    def test_insufficient_theme_pool_retains_whole_saved_collection(self):
+        from collection_rebuild import upgrade
+        saved={'rampart':[{'detail':0,'donor':'unavailable','weapon':'weapon_ak47'}]*16}
+        report={}
+        result=upgrade(saved,{},GUNS,['rampart'],{},lambda *args:True,report)
+        self.assertEqual(result,saved)
+        self.assertEqual(report['rebuild_unavailable'][0]['collection'],'rampart')
+
+    def test_all_28_can_plan_with_similarity_filter_and_audit_has_no_near_matches(self):
+        from remaining_collection_designs import designs
+        from collection_rebuild import recolour
+        from collection_similarity import Guard,audit
+        pool=self.pool();planned_designs=designs()
+        def palette(donor,theme,entry):
+            return recolour(pool[donor]['colors'],theme) if theme else pool[donor]['colors']
+        guard=Guard(pool,palette)
+        result=gc.plan(pool,GUNS,list(planned_designs),{},works=lambda *args:True,
+                       designs=planned_designs,accept=guard.allowed)
+        for icon,entries in result.items():self.assertEqual(len(entries),16,icon)
+        self.assertFalse(audit(result,pool,palette)['near_matches'])
+
+class VisualSimilarity(unittest.TestCase):
+    def fixture(self):
+        from collection_rebuild import recolour
+        pool={'am_jorm_blue':dict(next(iter(rows(1).values())),guns=['weapon_p90'],style=4,
+                    colors=[[.8,.05,.05,1]]*4),
+              'am_jorm_green':dict(next(iter(rows(1).values())),guns=['weapon_awp'],style=4,
+                    colors=[[.8,.05,.05,1]]*4)}
+        def palette(donor,theme,entry):
+            return recolour(pool[donor]['colors'],theme) if theme else pool[donor]['colors']
+        from collection_similarity import Guard
+        return pool,palette,Guard(pool,palette)
+
+    def test_different_names_and_ids_do_not_hide_same_weapon_pattern_copy(self):
+        pool,palette,guard=self.fixture()
+        # Equivalent geometry under a different source name is still rejected.
+        self.assertIsNone(guard.allowed('am_jorm_green','weapon_p90','transfer',[]))
+        self.assertIsNotNone(guard.allowed('am_jorm_green','weapon_negev','transfer',[]))
+        # A visibly distinct fixed colourway on that geometry is allowed.
+        self.assertEqual(guard.allowed('am_jorm_green','weapon_p90','fixed',['Teal']),['Teal'])
+
+    def test_weak_recolour_and_brightness_clipping_are_near_matches(self):
+        from collection_similarity import near,effective
+        base=[[.4,.4,.4,1]]*4
+        self.assertTrue(near(base,[[.41,.4,.4,1]]*4))
+        # A tiny isolated accent is insufficient, even if one channel moved.
+        self.assertTrue(near(base,[[.69,.4,.4,1]]+base[1:]))
+        self.assertTrue(near(effective([[.7,.7,.7]]*4,3),effective([[.9,.9,.9]]*4,3)))
+
+    def test_family_rolls_are_checked_individually_and_other_customs_are_reserved(self):
+        pool,palette,guard=self.fixture()
+        allowed=guard.allowed('am_jorm_green','weapon_p90','family',['Crimson','Teal','Violet','Emerald'])
+        self.assertEqual(allowed,['Teal','Violet','Emerald'])
+        guard.allowed('am_jorm_green','weapon_negev','fixed',['Teal'],commit=True)
+        self.assertIsNone(guard.allowed('am_jorm_blue','weapon_negev','fixed',['Teal']))
+
+    def test_audit_checks_every_collection_and_flags_close_originals(self):
+        from collection_similarity import audit
+        pool,palette,_=self.fixture()
+        lineup={icon:[{'donor':'am_jorm_green','weapon':'weapon_p90','mode':'transfer','tier':'rare','themes':[]}]
+                for icon in gc.IDENTITIES}
+        report=audit(lineup,pool,palette)
+        self.assertEqual(report['collections'],36)
+        self.assertEqual(report['slots'],36)
+        self.assertEqual(len(report['near_matches']),36)
 
 if __name__ == '__main__':
     unittest.main()

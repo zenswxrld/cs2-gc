@@ -31,6 +31,12 @@ static std::array<float,3> rgb(float h,float s,float v) {
         case 3:return {p,q,v};case 4:return {u,p,v};default:return {v,p,q};
     }
 }
+static bool protectedArtwork(const std::array<float,3>& c,int mode) {
+    // Keep natural warm portrait tones and the gold framing on blue-ink porcelain.
+    if(mode==6 && c[0]>=18.f/360 && c[0]<=50.f/360 &&
+        c[1]>=.18f && c[1]<=.65f && c[2]>=.35f) return true;
+    return mode==7 && (c[0]<160.f/360 || c[0]>265.f/360);
+}
 int main(int argc,char**argv) {
 #ifdef _WIN32
     _setmode(_fileno(stdin),_O_BINARY);_setmode(_fileno(stdout),_O_BINARY);
@@ -56,14 +62,15 @@ int main(int argc,char**argv) {
     if(argc==6) {
         float target=std::strtof(argv[3],nullptr)/360,cap=std::strtof(argv[4],nullptr);
         int mode=std::atoi(argv[5]);
-        if(mode<0||mode>3) return 5;
+        if(mode<0||mode>7||mode==4||mode==5) return 5;
+        bool rotate=mode==2||mode==6||mode==7;
         bool ramp=mode==1;
         float anchor=0;
-        if(mode==2) {
+        if(rotate) {
             std::array<std::size_t,360> hues{};
             for(std::size_t p=0;p<pixels.size();p+=4) {
                 auto c=hsv(pixels[p]/255.f,pixels[p+1]/255.f,pixels[p+2]/255.f);
-                if(c[1]>=.18f&&c[2]>=.15f&&pixels[p+3]!=0)
+                if(c[1]>=.18f&&c[2]>=.15f&&pixels[p+3]!=0&&!protectedArtwork(c,mode))
                     ++hues[std::min(359,int(c[0]*360))];
             }
             anchor=float(std::max_element(hues.begin(),hues.end())-hues.begin())/360;
@@ -80,10 +87,11 @@ int main(int argc,char**argv) {
             } else if(c[1]<.18f||c[2]<.15f) continue;
             float distance=std::min(c[0],1-c[0]);
             if(mode==0 && distance>40.f/360) continue; // Foil: only the authored red lacquer.
+            if(protectedArtwork(c,mode)) continue;
             ++eligible;
             float hue=ramp?target+std::sin(c[0]*6.28318530718f)*38.f/360:
                 target+(c[0]>.5f?c[0]-1:c[0]);
-            if(mode==2) hue=c[0]+target-anchor;
+            if(rotate) hue=c[0]+target-anchor;
             auto v=rgb(hue,std::min(c[1],cap),c[2]);
             if(mode==3) v={1-pixels[p]/255.f,1-pixels[p+1]/255.f,1-pixels[p+2]/255.f};
             bool differs=false;

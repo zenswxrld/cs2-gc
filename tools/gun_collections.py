@@ -212,7 +212,7 @@ def make_recolour(source, kit, kit_path, new_name, theme, preserve_details=False
     """(vcompmat bytes, vmat bytes, original colours, new colours) or None when the recolour would not show."""
     import native_finishes as finishes
     from collection_artwork import DONORS, make as make_artwork
-    if preserve_details and kit in DONORS:return make_artwork(source,kit,kit_path,new_name,theme)
+    if kit in DONORS:return make_artwork(source,kit,kit_path,new_name,theme)
     comp, mat = _read(source, kit_path), None
     if comp is None: return None
     data, guid, root = comp
@@ -260,7 +260,8 @@ def make_recolour(source, kit, kit_path, new_name, theme, preserve_details=False
         palette = [list(params['g_vColor%d'%i][:3])+[1.0] for i in range(4)]
     if preserve_details:
         from collection_rebuild import recolour, visible_accent_change
-        changed = recolour(palette, theme)
+        from collection_channel_palettes import channels
+        changed = channels(kit,theme) or recolour(palette, theme)
         if not pattern_changed and not visible_accent_change(original, changed): return None
     else:
         changed = finishes.recolor(original, theme, fade=kit in finishes.FADE_BASES)
@@ -276,12 +277,17 @@ def make_recolour(source, kit, kit_path, new_name, theme, preserve_details=False
             for channel, value in zip(colour.value, changed[index][:3] if preserve_details else changed[index]): channel.value = max(0, min(255, round(value * 255)))
         if key in template:
             for channel, value in zip(template[key].value, changed[index][:3] if preserve_details else changed[index]): channel.value = value
+    wood_files={};wood_report=None
+    if kit=='am_gold_brick' and pattern_source and theme=='Gold':
+        from gold_brick_wood import attach
+        wood_files,wood_report=attach(source,root)
     owned = finishes.VMAT_DIR + new_name + '.vmat'
     specific.value = owned
     label = m_root.get('m_materialName')
     if label is not None: label.value = owned
-    return (finishes._with_block(data, 'DATA', kv3.write_kv3(guid, root)),
-            finishes._with_block(m_data, 'DATA', kv3.write_kv3(m_guid, m_root)), original, changed)
+    made=(finishes._with_block(data, 'DATA', kv3.write_kv3(guid, root)),
+          finishes._with_block(m_data, 'DATA', kv3.write_kv3(m_guid, m_root)), original, changed)
+    return made+(wood_files,wood_report) if wood_report else made
 
 
 def clean_title(title):
@@ -346,7 +352,9 @@ def study(source, kits, kit_path, source_text, titles):
         if recolourable or transferable:
             rows[kit] = {'guns': sorted(shipped[kit]), 'recolour': recolourable, 'transfer': transferable,
                          'style': params.get('F_PAINT_STYLE', 0), 'rarity': rarities.get(kit, 'rare'), 'pattern': pattern,
-                         'title': titles[kit], 'effects': observed_effects(params)}
+                         'title': titles[kit], 'effects': observed_effects(params),
+                         'colors': [list(params['g_vColor%d'%i])+[1] for i in range(4)] if all('g_vColor%d'%i in params for i in range(4)) else [],
+                         'brightness': float(params.get('g_flColorBrightness',1))}
     for row in rows.values(): row['pattern_guns'] = sorted(patterns.get(row['pattern'], ()))
     return rows
 
@@ -355,7 +363,7 @@ def _score(row):
     return STYLE_SCORE.get(row['style'], 1) * 10 + RANK.get(row['rarity'], 2)
 
 
-def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, seed='cs2gc-v1', designs=None, reserved=()):
+def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, seed='cs2gc-v1', designs=None, reserved=(), accept=None):
     """{icon: [entry]} where entry = {tier, weapon, mode, donor | family, themes}. Deterministic."""
     used, gun_count, lineup, looks = set(reserved), {}, {icon: [] for icon in icons}, set()
     pool = sorted(rows)
@@ -367,7 +375,7 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
         entries = lineup[icon]
         taken = {e['weapon'] for e in entries}
         chase_gun = design.get('weapon') or CHASE_GUNS[index % len(CHASE_GUNS)]
-        knife = KNIFE_CHASES.get(icon)
+        knife = KNIFE_CHASES.get(icon) if design.get('native_chase',True) else None
         for tier, count in (TIER_COUNTS[:1] if first_pass else TIER_COUNTS[1:]):
             for slot, mode in enumerate(design.get('modes',{}).get(tier,SLOT_MODES[tier])):
                 if tier == 'ancient' and knife and 'cgf_%s_ancient' % knife in families:
@@ -394,7 +402,8 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
                     if fixed_guns: choices = [g for g in choices if g in fixed_guns]
                     return [g for g in choices if g not in taken and
                             (not design.get('family') or forced or g!=design['family']['weapon']) and
-                            (name, g, tuple(themes)) not in looks]
+                            (name, g, tuple(themes)) not in looks and
+                            (accept is None or accept(name,g,mode,themes,forced or {}) is not None)]
                 target = RANK[tier]
 
                 def ranked(names):
@@ -409,8 +418,9 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
                         abs(RANK.get(rows[n]['rarity'], 2) - target) if tier not in ('ancient', 'legendary') else 0,
                         -_score(rows[n]) if tier in ('ancient', 'legendary', 'mythical') else 0))
                     return names
-                themes = (list(palette) if tier == 'ancient' else list(palette[:4]) if mode == 'family'
-                          else [palette[(slot + RANK[tier]) % 4]] if mode == 'fixed' else [])
+                roll_palette = design.get('family_palette') or palette
+                themes = (list(roll_palette) if tier == 'ancient' else list(roll_palette if design.get('full_family_palette') else roll_palette[:4]) if mode == 'family'
+                          else [palette[(slot + RANK[tier]) % len(palette)]] if mode == 'fixed' else [])
                 if forced and forced.get('themes'):themes=list(forced['themes'])
                 # The first donor whose new colours really show (works() makes and checks the materials).
                 in_collection = {e.get('donor') for e in entries}
@@ -427,6 +437,9 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
                 rng.shuffle(choices)
                 choices.sort(key=lambda g: (g not in preferred, gun_count.get(g, 0)))
                 weapon = choices[0]
+                if accept is not None:
+                    themes = accept(donor,weapon,mode,themes,forced or {},commit=True)
+                    if themes is None:continue
                 entry = {'tier': tier, 'weapon': weapon, 'mode': mode, 'donor': donor, 'themes': themes}
                 if design:
                     entry.update(detail=design.get('revision',1), label=design['names'][len(entries)])
@@ -440,12 +453,18 @@ def plan(rows, guns, icons, families, works=lambda donor, mode, themes: True, se
     return lineup
 
 
+def material_name(donor,theme,detail=True,palette_source=None,pattern_source=None,effect_source=None):
+    return ('gc4m_' if detail else 'gc3m_') + '%s%s%s_%s' % (
+        donor,'_berries' if palette_source else '_gold_doppler' if pattern_source else '',
+        '_pearl' if effect_source else '',theme.lower())
+
 def kit_name(icon, entry, theme=None):
     if entry['mode'] == 'knife_family': return 'cgf_%s_ancient' % entry['family']
     base = ('gc4' if entry.get('detail') else 'gc3') + '%s_%s_%s_%s_%s' % ({'family': 'f', 'fixed': 'r', 'transfer': 't'}[entry['mode']], icon, entry['donor'],
                                    entry['weapon'].removeprefix('weapon_'), entry['tier'])
     if entry.get('palette_source'): base += '_berries'
     if entry.get('pattern_source'): base += '_gold_doppler'
+    if entry.get('effect_source'): base += '_pearl'
     return base + ('_' + theme.lower() if theme else '')
 
 
@@ -465,17 +484,21 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
     rows = study(source, kits, kit_path, source_text, titles)
     new_kits, files, made, materials = [], {}, set(), {}
 
-    def material(donor, theme, detail=False, palette_source=None, pattern_source=None):
-        name = ('gc4m_' if detail else 'gc3m_') + '%s%s_%s' % (donor,'_berries' if palette_source else '_gold_doppler' if pattern_source else '',theme.lower())
+    def material(donor, theme, detail=False, palette_source=None, pattern_source=None, effect_source=None):
+        name = material_name(donor,theme,detail,palette_source,pattern_source,effect_source)
         if name not in materials:
             made_files = make_recolour(source, donor, kit_path(donor, kits[donor][1]), name, theme, preserve_details=detail,
                 palette_source=(palette_source,kits[palette_source][1]) if palette_source and palette_source in kits else None,
                 pattern_source=(pattern_source,kits[pattern_source][1]) if pattern_source and pattern_source in kits else None)
+            if made_files and effect_source:
+                from collection_effects import apply as apply_effect
+                made_files=apply_effect(source,kit_path(donor,kits[donor][1]),made_files,effect_source)
             materials[name] = None
             if made_files:
                 files[finishes.COMPMAT_DIR + name + '.vcompmat_c'], files[finishes.VMAT_DIR + name + '.vmat_c'] = made_files[:2]
                 if len(made_files)>4:files.update(made_files[4])
                 materials[name] = finishes.COMPMAT_DIR + name + '.vcompmat'
+                if len(made_files)>5 and made_files[5]:report['gold_brick_wood']=made_files[5]
                 report.setdefault('colours', {})[name] = {'from': made_files[2], 'to': made_files[3],
                     'policy': 'preserved-detail-v1' if detail else 'legacy-whole-palette'}
         return materials[name]
@@ -493,27 +516,49 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
     # Keep the previous kits and their legacy material policy for owned items.
     for icon, entries in lineup.items():
         for entry in entries:
-            if 'donor' in entry: history[kit_name(icon, entry)] = dict(entry, icon=icon)
-    def detail_works(donor, mode, themes, palette_source=None, pattern_source=None):
+            if 'donor' in entry:
+                from collection_policies import history_entry
+                history_entry(history,kit_name(icon,entry),dict(entry,icon=icon))
+    def detail_works(donor, mode, themes, palette_source=None, pattern_source=None, effect_source=None):
         if pattern_source and pattern_source not in kits:return False
         if palette_source and palette_source not in kits: return False
         if mode == 'transfer': return True
-        made = [(theme,material(donor,theme,True,palette_source,pattern_source)) for theme in themes]
+        made = [(theme,material(donor,theme,True,palette_source,pattern_source,effect_source)) for theme in themes]
         if mode == 'fixed': return all(path for _,path in made)
         from collection_detail import palettes_distinct
         accepted = []
         for theme,path in made:
             if not path: continue
-            palette = report['colours']['gc4m_%s%s_%s'%(donor,'_berries' if palette_source else '',theme.lower())]['to']
+            palette = report['colours'][material_name(donor,theme,True,palette_source,pattern_source,effect_source)]['to']
             if all(palettes_distinct(palette,previous) for previous in accepted):
                 accepted.append(palette)
         return len(accepted)>=3
-    from collection_rebuild import upgrade, audit
-    lineup = upgrade(lineup, rows, guns, icons, families, detail_works, report)
+    def appearance_palette(donor,theme,entry):
+        row=rows[donor]
+        if theme is None:return row.get('colors') or []
+        suffix='_berries' if entry.get('palette_source') else '_gold_doppler' if entry.get('pattern_source') else ''
+        evidence=report.get('colours',{}).get(material_name(donor,theme,True,entry.get('palette_source'),entry.get('pattern_source'),entry.get('effect_source')))
+        if evidence:return evidence['to']
+        palette=rows.get(entry.get('palette_source'),row).get('colors') or []
+        if not palette:return []
+        from collection_rebuild import recolour
+        return recolour(palette,theme)
+    from collection_similarity import Guard, audit as similarity_audit
+    guard=Guard(rows,appearance_palette)
+    from collection_rebuild import upgrade, audit, DESIGNS
+    selected={icon for icon in icons if icon in DESIGNS and
+              not all(e.get('detail')==DESIGNS[icon].get('revision',1) for e in lineup.get(icon,()))}
+    guard.reserve({icon:entries for icon,entries in lineup.items() if icon not in selected})
+    lineup = upgrade(lineup, rows, guns, icons, families, detail_works, report, accept=guard.allowed)
+    from collection_polish import polish
+    lineup=polish(lineup,rows,detail_works,report)
     report['audit'] = audit(lineup,rows)
+    report['similarity'] = similarity_audit(lineup,rows,appearance_palette)
     for icon, entries in lineup.items():
         for entry in entries:
-            if 'donor' in entry: history[kit_name(icon, entry)] = dict(entry, icon=icon)
+            if 'donor' in entry:
+                from collection_policies import history_entry
+                history_entry(history,kit_name(icon,entry),dict(entry,icon=icon))
     if lineup_path is not None:
         lineup_path.write_text(json.dumps({'version': VERSION, 'lineup': lineup, 'history': history},
                                           indent=1, sort_keys=True) + '\n', encoding='utf-8')
@@ -539,6 +584,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
         detail = mode != 'transfer'
         palette_source = entry.get('palette_source')
         pattern_source = entry.get('pattern_source')
+        effect_source = entry.get('effect_source')
         name = kit_name(icon, entry)
         if mode == 'transfer':
             if name not in made:
@@ -546,7 +592,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
                 made.add(name)
             return name
         if mode == 'fixed':
-            path = material(donor, entry['themes'][0], detail, palette_source, pattern_source)
+            path = material(donor, entry['themes'][0], detail, palette_source, pattern_source,effect_source)
             if path is None and not authored:
                 path = material(donor, entry['themes'][0])
                 repair_fallbacks.add(name)
@@ -560,7 +606,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
         variants, first = [], None
         palettes = []
         for theme in entry['themes']:
-            path = material(donor, theme, detail, palette_source)
+            path = material(donor, theme, detail, palette_source,pattern_source,effect_source)
             if path is None and not authored:
                 path = material(donor, theme)
                 repair_fallbacks.add(name)
@@ -569,7 +615,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
             if path is None: continue
             if authored:
                 from collection_detail import palettes_distinct
-                palette = report['colours']['gc4m_%s%s_%s'%(donor,'_berries' if palette_source else '',theme.lower())]['to']
+                palette = report['colours'][material_name(donor,theme,True,palette_source,pattern_source,effect_source)]['to']
                 if any(not palettes_distinct(palette,previous) for previous in palettes): continue
                 palettes.append(palette)
             variant = kit_name(icon, entry, theme)

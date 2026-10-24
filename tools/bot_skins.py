@@ -254,9 +254,10 @@ def _bundle_prefix(names):
     return None
 
 
-def _install_improver(proxy, game, data, owned=()):
+def _install_improver(proxy, game, data, owned=(), resource_reader=None):
     """Copy their addons (plugins, plugin data, Metamod plugins) and write configs; returns the files written."""
     csgo = game / 'csgo'
+    resource_reader = resource_reader or (lambda name: _get(IMPROVER_RAW + name))
     written = []
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         names = [n.replace('\\', '/') for n in archive.namelist()]
@@ -281,9 +282,10 @@ def _install_improver(proxy, game, data, owned=()):
             return None
         normal = member('cfg/my_bot_normal_config_rules_unchanged.cfg', 'cfg/my_bot_normal_config.cfg')
         ffa = member('cfg/my_bot_ffa_config_rules_unchanged.cfg', 'cfg/my_bot_ffa_config.cfg')
-    normal = normal or _get(IMPROVER_RAW + 'cfg/my_bot_normal_config_rules_unchanged.cfg').decode('utf-8-sig')
-    ffa = ffa or _get(IMPROVER_RAW + 'cfg/my_bot_ffa_config_rules_unchanged.cfg').decode('utf-8-sig')
+    normal = normal or resource_reader('cfg/my_bot_normal_config_rules_unchanged.cfg').decode('utf-8-sig')
+    ffa = ffa or resource_reader('cfg/my_bot_ffa_config_rules_unchanged.cfg').decode('utf-8-sig')
     cfg = csgo / 'cfg'
+    cfg.mkdir(parents=True, exist_ok=True)
     (cfg / 'cs2_gc_bot_improver.cfg').write_text(bot_config(normal), encoding='utf-8')
     (cfg / 'cs2_gc_bot_improver_ffa.cfg').write_text(bot_config(ffa), encoding='utf-8')
     for mode, name in SERVER_CFGS.items():
@@ -296,7 +298,7 @@ def _install_improver(proxy, game, data, owned=()):
     for tier in PRESET_TIERS:
         target = proxy / 'cs2_gc_bot_presets' / tier / 'botprofile.db'
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(_get(IMPROVER_RAW + 'overrides/%s/botprofile.db' % tier))
+        target.write_bytes(resource_reader('overrides/%s/botprofile.db' % tier))
     return written
 
 
@@ -350,6 +352,7 @@ def install(proxy):
                                     'botimprover': [release.get('tag_name'), assets[0]['name']],
                                     'files': sorted(set(installed))}, indent=1) + '\n', encoding='utf-8')
     report = recurate(proxy)
+    (proxy / 'cs2_gc_bot_plugins_disabled').unlink(missing_ok=True)
     print('Installed Bot Improver %s (Metamod/CounterStrikeSharp: %s).' % (release.get('tag_name'), name))
     print('Popular loadouts: %d gloves, %d sticker capsules (%d stickers).' % (report['gloves'], len(report['capsules']), report['stickers']))
     if report['missing']: print('Finish names not in this CS2 build (skipped): ' + json.dumps(report['missing']))
@@ -359,6 +362,7 @@ def install(proxy):
 
 def uninstall(proxy):
     game = _games(proxy)
+    (proxy / 'cs2_gc_bot_plugins_disabled').touch()
     _mount(game, False)
     _remove_improver(proxy, game)
     manifest = proxy / MANIFEST

@@ -154,6 +154,8 @@ def run(directory):
     if not app_id.exists() or app_id.read_text(encoding='ascii').strip() != '730':
         atomic_bytes(app_id,b'730\n')
     ensure_schema(directory)
+    import bundled_bots
+    bundled_bots.ensure(directory)
     ensure_profile(directory,manifest['supported_build']['client_version'])
     print('Preparing native resources. The first launch can take several minutes.\n'
           'Progress and diagnostics: '+str(directory/'cs2_gc_prepare.log'),flush=True)
@@ -170,6 +172,7 @@ def main():
     args = parser.parse_args()
     failure = args.proxy_dir/'cs2_gc_launch_error.txt'
     try:
+        failure.unlink(missing_ok=True)
         run(args.proxy_dir)
         failure.unlink(missing_ok=True)
         return 0

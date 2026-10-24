@@ -25,6 +25,7 @@ Complete ZIP candidates are built by the [portable ZIP workflow](https://github.
 - Saves the original Steam DLL as `steam_api64_real.dll` before activating the mod.
 - Extracts the matching `items_game.txt` from the installed VPK, including schemas larger than 8 MiB.
 - Initializes missing own-account welcome/Store recordings through Steam; never distributes personal recordings.
+- Installs the bundled bot skins and Bot Improver plugins/presets, preserving owned installations and refusing unrelated addons.
 - Prepares the native resources before CS2 opens them, then reuses the preparation cache.
 - Preserves existing inventory, settings, finish IDs and replay files during ZIP upgrades.
 - Shows preparation failures and early game exit codes instead of silently closing.
@@ -39,11 +40,12 @@ The first preparation can take several minutes. Later unchanged launches use the
 | Native Armory rotation, stars, selling, souvenirs and custom knife/glove cases | User-tested; individual economy and finish issues remain |
 | Profile XP, local Premier-style rating and bot-match rewards | Working baseline; mode-specific behaviour still needs coverage |
 | Care packages | Claims and case rewards user-confirmed after the favourite-message fix; packages default to profile level-ups |
+| Bot skins and Bot Improver | Already implemented: popular cosmetic loadouts, AI/aim/grenade/buying plugins and rating-based difficulty with Low/Medium/High presets; bundled version needs fresh-install confirmation |
 | Bot names, scoreboard labels and mission-to-bot-match launching | Working baseline; not every language/HUD location is verified |
 | Custom gun collections and colour families | Implemented; visual quality, distribution, duplicate and trade-up review ongoing |
 | Mission progress and tier rewards | Implemented; live validation still needed |
 | Complete ZIP and direct launcher | Implemented in the packaging branch; fresh-install/profile bootstrap and upgrade smoke tests required in the target client |
-| Career UI, achievements and advanced bot behaviour | Future work |
+| Career UI, achievements, bot chat/personality and nemesis systems | Future work |
 
 See [feature details and known issues](docs/FEATURES.md) and [future plans](docs/FEATURE-ROADMAP.md). “Implemented” and passing automated tests do not establish live-client correctness.
 
@@ -80,4 +82,4 @@ The portable workflow also builds the Windows proxy, launcher, profile bootstrap
 
 ## Credits
 
-Original BSD license and upstream credits are retained. The package includes the project's license, the gold-pool data attribution, BCDEC's license and the embedded Python runtime's own license. Game assets are read from the user's own CS2 installation.
+Original BSD license and upstream credits are retained. The package includes the project's license, the gold-pool data attribution, BCDEC's license the embedded Python runtime's own license, and the bundled bot components' notices and source snapshots. Game assets are read from the user's own CS2 installation.

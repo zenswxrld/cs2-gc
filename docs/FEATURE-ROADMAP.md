@@ -13,7 +13,7 @@ The current implementation and validation status live in [FEATURES.md](FEATURES.
 
 - Career and statistics: track only observed events; never infer past rewards/wins from an inventory snapshot.
 - Mission completion presentation and reliable mode/map/weapon attribution.
-- Bot identity and difficulty refinements, then optional event-driven chat/personalities.
+- Refine the existing BotRandomizer loadouts, Bot Improver and rating-based skill presets; optional event-driven chat/personalities come later.
 - Fix remaining graffiti/music/tool flows and individual material issues.
 - Better localization, launcher visuals and owned-file removal.
 

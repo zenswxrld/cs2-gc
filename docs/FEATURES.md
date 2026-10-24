@@ -12,6 +12,8 @@ Status reflects the repository and user test reports through **24 October 2026**
 | Local stars and selling | User-tested persistence and selling. Rarity/wear and purchase-origin safeguards exist; the full economy still needs a loop audit. |
 | Profile XP and local rating | Bot-match XP/stars, native results and local Premier-style placement/rating baseline exist. Not official competitive matchmaking ranks. |
 | Care packages | User confirmed claims and opening awarded cases after the tournament-favourite message fix. Three of four rewards; level-up packages by default; optional match packages are configurable. |
+| Bot skins | BotRandomizer is already installed in the working copy, with curated popular weapon/knife/glove finishes and sticker crafts. The complete ZIP bundles its existing Bot Improver release and frameworks. |
+| Bot improvement and difficulty | Bot Improver plugins for aim, AI, movement, buying and grenades are already integrated. Local rating sets stock difficulty (below 5k / 10k / 20k / 20k+) and selects Low below 10k, Medium below 30k, High from 30k. Presence/setup is confirmed; not every AI behaviour has live coverage. |
 | Bot identity | Realistic names and scoreboard decoration work; BOT labels/killfeed/language coverage vary. |
 | Mission launch | Native mission cards can launch the relevant bot modes/maps. This is separate from progress tracking. |
 | Preparation cache | User confirmed substantially faster repeat launch. Mounted VPKs are prepared before CS2 starts. |
@@ -37,7 +39,7 @@ Status reflects the repository and user test reports through **24 October 2026**
 - Career/statistics page with accurate local match, collection, opening, spending and selling history.
 - Achievements and unique collectible rewards, only where supported by the actual CS2 schema/UI.
 - More complete mission completion presentation and rewards.
-- Difficulty-aware bot progression, richer bot identity and optional bot chat/personality systems.
+- Richer bot identity, optional bot chat/personality and nemesis systems. Existing rating-based difficulty and Bot Improver are already implemented.
 - Wider language coverage, clearer error reporting, launcher polish and complete owned-file cleanup.
 - Compatibility with newer CS2 builds after explicit testing.
 

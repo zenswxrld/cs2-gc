@@ -194,5 +194,66 @@ class Plan(unittest.TestCase):
         self.assertEqual(gc.plan(rows(40), GUNS, ['ashfall'], set()), gc.plan(rows(40), GUNS, ['ashfall'], set()))
 
 
+class DetailRebuild(unittest.TestCase):
+    def test_neutral_ink_metal_and_white_stay_unchanged_in_detail_material(self):
+        start=[[.04,.04,.04,1],[.8,.12,.08,1],[.94,.94,.94,1],[.18,.18,.18,1]]
+        vmat='materials/x/detail.vmat'
+        root=kv3.read_kv3(dict(kv3.read_resource(material(vmat,start))[1])['DATA'])[1]
+        root.value.append(('m_floatParams',Node(kv3.ARRAY,[
+            obj(('m_name',string('g_flPearlescentScale')),('m_flValue',Node(kv3.FLOAT,1.5))),
+            obj(('m_name',string('g_fGlitterIntensity')),('m_flValue',Node(kv3.FLOAT,.12)))])))
+        original=kv3.write_resource(0,[['DATA',kv3.write_kv3(GUID,root)]])
+        source=Recolour().source({'paint.vcompmat_c':exposed_compmat(vmat,start),vmat+'_c':original})
+        made=gc.make_recolour(source,'detail','paint.vcompmat','gc4m_detail_teal','Teal',preserve_details=True)
+        self.assertIsNotNone(made)
+        before=gc.effective_params(read_root(exposed_compmat(vmat,start)),read_root(original))
+        after=gc.effective_params(read_root(made[0]),read_root(made[1]))
+        for i in (0,2,3):self.assertEqual(after['g_vColor%d'%i],before['g_vColor%d'%i])
+        self.assertNotEqual(after['g_vColor1'],before['g_vColor1'])
+        for key in before:
+            if not key.startswith('g_vColor'):self.assertEqual(after[key],before[key],key)
+        self.assertEqual(set(gc.observed_effects(after)),{'pearlescent','glitter'})
+
+    def test_berries_palette_uses_target_guns_own_masks_and_effects(self):
+        target='materials/x/target_fade.vmat'
+        berry='materials/x/berries.vmat'
+        colors=[[.84,.22,.22,1],[.73,.15,.20,1],[.39,.36,.36,1],[.28,.58,.92,1]]
+        source=Recolour().source({'target.vcompmat_c':compmat(target),target+'_c':patterned(target,GREYS,'target-mask-pattern.vtex'),
+          'berries.vcompmat_c':compmat(berry),berry+'_c':patterned(berry,colors,'not-the-target-mask.vtex')})
+        made=gc.make_recolour(source,'target','target.vcompmat','gc4m_berry_target_teal','Teal',
+            preserve_details=True,palette_source=('aa_fade_red_blue',{'composite_material_path':'berries.vcompmat'}))
+        self.assertIsNotNone(made)
+        params=gc.effective_params(read_root(made[0]),read_root(made[1]))
+        self.assertEqual(params['g_tPattern'],'target-mask-pattern.vtex')
+        self.assertNotEqual(params['g_vColor0'],params['g_vColor3'])
+        self.assertEqual(params['g_vColor2'],colors[2][:3])
+
+    def test_authored_plans_keep_counts_unique_weapons_and_two_berry_families(self):
+        from collection_rebuild import DESIGNS,audit
+        pool=rows(120)
+        pool['aa_awp_fade']=dict(next(iter(pool.values())),guns=['weapon_awp'],transfer=False)
+        pool['aa_fade_m4a1s']=dict(next(iter(pool.values())),guns=['weapon_m4a1_silencer'],transfer=False)
+        pool['aa_fade_red_blue']=dict(next(iter(pool.values())),guns=['weapon_fiveseven'],transfer=False)
+        result=gc.plan(pool,GUNS,list(DESIGNS),set(),works=lambda *args:True,designs=DESIGNS)
+        for icon,entries in result.items():
+            self.assertEqual([sum(e['tier']==t for e in entries) for t,_ in gc.TIER_COUNTS],[1,2,3,4,6])
+            self.assertEqual(len({e['weapon'] for e in entries}),16)
+            self.assertEqual(entries[0]['weapon'],DESIGNS[icon]['weapon'])
+            self.assertTrue(all(e.get('detail') for e in entries))
+        berries=[e for entries in result.values() for e in entries if e.get('palette_source')]
+        self.assertEqual({e['weapon'] for e in berries},{'weapon_awp','weapon_m4a1_silencer'})
+        self.assertEqual(len(audit(result,pool)),4)
+        for e in berries:self.assertIn('_berries',gc.kit_name('test',e,'Teal'))
+
+    def test_audit_covers_all_collections_and_flags_legacy_whole_palette_and_copies(self):
+        from collection_rebuild import audit
+        icons=list(gc.IDENTITIES)
+        result=gc.plan(rows(600),GUNS,icons,set())
+        report=audit(result,rows(600))
+        self.assertEqual(set(report),set(icons))
+        self.assertEqual(len(report),36)
+        self.assertTrue(all(any('whole-palette' in i['issue'] for i in row['issues']) for row in report.values()))
+
+
 if __name__ == '__main__':
     unittest.main()

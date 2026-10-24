@@ -194,5 +194,138 @@ class Plan(unittest.TestCase):
         self.assertEqual(gc.plan(rows(40), GUNS, ['ashfall'], set()), gc.plan(rows(40), GUNS, ['ashfall'], set()))
 
 
+class DetailRebuild(unittest.TestCase):
+    def test_neutral_ink_metal_and_white_stay_unchanged_in_detail_material(self):
+        start=[[.04,.04,.04,1],[.8,.12,.08,.37],[.94,.94,.94,1],[.18,.18,.18,1]]
+        vmat='materials/x/detail.vmat'
+        root=kv3.read_kv3(dict(kv3.read_resource(material(vmat,start))[1])['DATA'])[1]
+        root.value.append(('m_floatParams',Node(kv3.ARRAY,[
+            obj(('m_name',string('g_flPearlescentScale')),('m_flValue',Node(kv3.FLOAT,1.5))),
+            obj(('m_name',string('g_fGlitterIntensity')),('m_flValue',Node(kv3.FLOAT,.12)))])))
+        original=kv3.write_resource(0,[['DATA',kv3.write_kv3(GUID,root)]])
+        source=Recolour().source({'paint.vcompmat_c':exposed_compmat(vmat,start),vmat+'_c':original})
+        made=gc.make_recolour(source,'detail','paint.vcompmat','gc4m_detail_teal','Teal',preserve_details=True)
+        self.assertIsNotNone(made)
+        before=gc.effective_params(read_root(exposed_compmat(vmat,start)),read_root(original))
+        after=gc.effective_params(read_root(made[0]),read_root(made[1]))
+        for i in (0,2,3):self.assertEqual(after['g_vColor%d'%i],before['g_vColor%d'%i])
+        self.assertNotEqual(after['g_vColor1'],before['g_vColor1'])
+        vectors=finishes._vector_params(kv3.read_kv3(dict(kv3.read_resource(made[1])[1])['DATA'])[1])
+        original_vectors=finishes._vector_params(root)
+        self.assertEqual(vectors['g_vColor1'].value[3],original_vectors['g_vColor1'].value[3])
+        for key in before:
+            if not key.startswith('g_vColor'):self.assertEqual(after[key],before[key],key)
+        self.assertEqual(set(gc.observed_effects(after)),{'pearlescent','glitter'})
+
+    def test_berries_palette_uses_target_guns_own_masks_and_effects(self):
+        target='materials/x/target_fade.vmat'
+        berry='materials/x/berries.vmat'
+        colors=[[.84,.22,.22,1],[.73,.15,.20,1],[.39,.36,.36,1],[.28,.58,.92,1]]
+        source=Recolour().source({'target.vcompmat_c':compmat(target),target+'_c':patterned(target,GREYS,'target-mask-pattern.vtex'),
+          'berries.vcompmat_c':compmat(berry),berry+'_c':patterned(berry,colors,'not-the-target-mask.vtex')})
+        made=gc.make_recolour(source,'target','target.vcompmat','gc4m_berry_target_teal','Teal',
+            preserve_details=True,palette_source=('aa_fade_red_blue',{'composite_material_path':'berries.vcompmat'}))
+        self.assertIsNotNone(made)
+        params=gc.effective_params(read_root(made[0]),read_root(made[1]))
+        self.assertEqual(params['g_tPattern'],'target-mask-pattern.vtex')
+        self.assertNotEqual(params['g_vColor0'],params['g_vColor3'])
+        self.assertEqual(params['g_vColor2'],gc.effective_params(read_root(compmat(berry)),read_root(source.read(berry+'_c')))['g_vColor2'])
+
+    def test_authored_plans_keep_counts_unique_weapons_and_two_berry_families(self):
+        from collection_rebuild import DESIGNS,audit
+        pool=rows(120)
+        pool['am_gold_brick']=dict(next(iter(pool.values())),guns=['weapon_mac10'],transfer=True)
+        pool['aa_awp_fade']=dict(next(iter(pool.values())),guns=['weapon_awp'],transfer=False)
+        pool['aa_fade_m4a1s']=dict(next(iter(pool.values())),guns=['weapon_m4a1_silencer'],transfer=False)
+        pool['aa_fade_red_blue']=dict(next(iter(pool.values())),guns=['weapon_fiveseven'],transfer=False)
+        result=gc.plan(pool,GUNS,list(DESIGNS),set(),works=lambda *args:True,designs=DESIGNS)
+        for icon,entries in result.items():
+            self.assertEqual([sum(e['tier']==t for e in entries) for t,_ in gc.TIER_COUNTS],[1,2,3,4,6])
+            self.assertEqual(len({e['weapon'] for e in entries}),16)
+            self.assertEqual(entries[0]['weapon'],DESIGNS[icon]['weapon'])
+            self.assertTrue(all(e.get('detail') for e in entries))
+        self.assertEqual(result['forged'][0]['label'],'Gold Brick')
+        self.assertEqual(result['forged'][0]['mode'],'fixed')
+        self.assertEqual(result['forged'][0]['pattern_source'],'am_doppler_phase2')
+        self.assertEqual(sum(e['mode']=='family' for e in result['forged']),2)
+        berries=[e for entries in result.values() for e in entries if e.get('palette_source')]
+        self.assertEqual({e['weapon'] for e in berries},{'weapon_awp','weapon_m4a1_silencer'})
+        self.assertEqual(len(audit(result,pool)),4)
+        for e in berries:self.assertIn('_berries',gc.kit_name('test',e,'Teal'))
+
+    def test_audit_covers_all_collections_and_flags_legacy_whole_palette_and_copies(self):
+        from collection_rebuild import audit
+        icons=list(gc.IDENTITIES)
+        result=gc.plan(rows(600),GUNS,icons,set())
+        report=audit(result,rows(600))
+        self.assertEqual(set(report),set(icons))
+        self.assertEqual(len(report),36)
+        self.assertTrue(all(any('existing generation' in i['issue'] for i in row['issues']) for row in report.values()))
+
+
+    def test_full_rebuild_preserves_legacy_definitions_and_names_rolled_variants(self):
+        files,kits,loot={},{},[]
+        for i in range(50):
+            name='hy_detail_%02d'%i
+            vmat='materials/x/'+name+'.vmat'
+            files['weapons/paints/legacy/'+name+'.vcompmat_c']=compmat(vmat)
+            import colorsys
+            palette=[]
+            for color in ([.8,.2,.1],[.2,.6,.9],[.9,.9,.3],[.4,.1,.5]):
+                h,s,v=colorsys.rgb_to_hsv(*color)
+                palette.append([*colorsys.hsv_to_rgb((h+i*.17)%1,s,v),1])
+            files[vmat+'_c']=patterned(vmat,palette,'textures/'+name+'.vtex')
+            kits[name]=(str(i+100),{'name':name})
+            loot.append('"[%s]%s" "1"'%(name,GUNS[i%len(GUNS)]))
+        for name,pattern,colors in (
+            ('am_gold_brick','textures/gold_noise.vtex',[[1,.87,.53,1],[1,.93,.58,1],[.94,.80,.42,1],[.73,.60,.18,1]]),
+            ('am_doppler_phase2','textures/doppler_smoke.vtex',[[.38,.45,.72,1],[1,.31,.42,1],[.71,.51,.28,1],[1,.31,.42,1]])):
+            vmat='materials/x/'+name+'.vmat'
+            files['weapons/paints/legacy/'+name+'.vcompmat_c']=compmat(vmat)
+            files[vmat+'_c']=patterned(vmat,colors,pattern)
+            files[pattern+'_c']=b'owned synthetic texture fixture'
+            kits[name]=('1000',{'name':name})
+        loot.append('"[am_gold_brick]weapon_mac10" "1"')
+        text='"items_game" { "items" { %s } "client_loot_lists" { "set_x_rare" { %s } } }'%(
+            ' '.join('"%d" { "name" "%s" }'%(i+1,g) for i,g in enumerate(GUNS)),' '.join(loot))
+        source=Recolour().source(files)
+        titles={name:'Copper Pattern '+name for name in kits}
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/gc.LINEUP_FILE
+            families,report={},{}
+            made=gc.build(text,kits,titles,finishes.kit_path,source,families,lineup_path=path,icons=['forged'],report=report)
+            saved=json.loads(path.read_text())
+            self.assertEqual(report.get('rebuilt_collections'),['forged'],report.get('rebuild_unavailable'))
+            self.assertEqual(len(made[4]),16)
+            self.assertTrue(report['existing_material_repairs'],'existing gc3 inventory definitions must also benefit')
+            self.assertTrue(all(e.get('detail') for e in saved['lineup']['forged']))
+            self.assertTrue(any(name.startswith('gc3') for name,_,_ in made[0]),'owned legacy definitions retained')
+            self.assertTrue(any(name.startswith('gc4') for name,_,_ in made[0]))
+            self.assertEqual(len([k for k in families if k.startswith('gc4')]),2)
+            variants={v for k,values in families.items() if k.startswith('gc4') for v in values}
+            names={name:title for name,title,_ in made[0]}
+            self.assertTrue(all(any(names[v].startswith(theme+' ') for theme in ('Crimson','Amber','Cobalt','Teal','Violet','Ember')) for v in variants))
+            self.assertEqual(gc.clean_title('The Fuschia Is Now'),'Chromatic Current')
+            again=gc.build(text,kits,titles,finishes.kit_path,source,{},lineup_path=path,icons=['forged'])
+            self.assertEqual(again[4],made[4])
+            self.assertEqual(json.loads(path.read_text())['history'],saved['history'])
+
+    def test_gold_brick_uses_doppler_smoke_without_altering_gold_palette_or_masks(self):
+        gold='materials/x/gold.vmat';doppler='materials/x/doppler.vmat'
+        colors=[[1,.87,.53,.4],[1,.93,.58,1],[.94,.80,.42,1],[.73,.60,.18,1]]
+        files={'gold.vcompmat_c':compmat(gold),gold+'_c':patterned(gold,colors,'gold-noise.vtex'),
+               'doppler.vcompmat_c':compmat(doppler),doppler+'_c':patterned(doppler,GREYS,'doppler-smoke.vtex'),
+               'doppler-smoke.vtex_c':b'actual source texture fixture'}
+        source=Recolour().source(files)
+        made=gc.make_recolour(source,'am_gold_brick','gold.vcompmat','owned_gold','Gold',
+             preserve_details=True,pattern_source=('am_doppler_phase2',{'composite_material_path':'doppler.vcompmat'}))
+        self.assertIsNotNone(made)
+        before=gc.effective_params(read_root(compmat(gold)),read_root(files[gold+'_c']))
+        after=gc.effective_params(read_root(made[0]),read_root(made[1]))
+        self.assertEqual(after['g_tPattern'],'doppler-smoke.vtex')
+        for i in range(4):self.assertEqual(after['g_vColor%d'%i],before['g_vColor%d'%i])
+        before.pop('g_tPattern');after.pop('g_tPattern')
+        self.assertEqual(before,after)
+
 if __name__ == '__main__':
     unittest.main()

@@ -352,6 +352,21 @@ class DetailRebuild(unittest.TestCase):
         self.assertEqual(famas['themes'],['Violet','Emerald','Coral','Amber'])
         self.assertNotIn('Cobalt',famas['themes'])
 
+    def test_stardust_family_has_three_distinct_changes_without_repeating_cobalt(self):
+        from collection_rebuild import DESIGNS,recolour,visible_accent_change
+        from collection_detail import palettes_distinct
+        # Neutral pearl with one muted warm accent: neighbouring warm names
+        # barely change it and must not silently remove the entire family.
+        colors=[[.302,.302,.302,1],[.255,.255,.255,1],[.816,.855,.859,1],[.737,.643,.592,1]]
+        themes=DESIGNS['lodestar']['palette'][:4]
+        self.assertNotIn('Cobalt',themes)
+        accepted=[]
+        for theme in themes:
+            changed=recolour(colors,theme)
+            if visible_accent_change(colors,changed) and all(palettes_distinct(changed,p) for p in accepted):
+                accepted.append(changed)
+        self.assertGreaterEqual(len(accepted),3)
+
     def test_feedback_retains_approved_chase_and_downgrades_nova(self):
         from collection_rebuild import feedback
         entries=[dict(detail=1,tier=t,weapon=GUNS[i],mode='fixed',donor='kit000',themes=['Teal'],label='Slot'+str(i))

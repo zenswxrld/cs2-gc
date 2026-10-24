@@ -121,6 +121,30 @@ def smoke_test(archive_data):
             cwd=bin_dir,env=env,check=True)
 
 
+        # Install the REAL pinned addon archive offline in a disposable fake game.
+        # VPK curation/mounts need Valve files and remain target-client checks.
+        bot_check = """
+from pathlib import Path
+import shutil,tempfile
+from unittest.mock import patch
+import bundled_bots,bot_skins
+with tempfile.TemporaryDirectory(prefix='cs2gc-bot-smoke-') as temp:
+    game=Path(temp)/'game'
+    proxy=game/'bin/win64'
+    proxy.mkdir(parents=True)
+    (game/'csgo').mkdir()
+    (game/'csgo/gameinfo.gi').write_text('"GameInfo" {}')
+    shutil.copytree(Path.cwd()/'cs2_gc_payload/bots',proxy/'cs2_gc_payload/bots')
+    with patch.object(bot_skins,'_get',side_effect=AssertionError('Runtime download forbidden')), patch.object(bot_skins,'_mount'), patch.object(bot_skins,'recurate'):
+        assert bundled_bots.ensure(proxy)
+        assert (game/bot_skins.PLUGIN_DIR/'BotRandomizer.dll').is_file()
+        assert all((proxy/'cs2_gc_bot_presets'/tier/'botprofile.db').is_file() for tier in bot_skins.PRESET_TIERS)
+        assert not bundled_bots.ensure(proxy)
+print('Real bundled bot payload installs offline and reuses its owned files.')
+"""
+        subprocess.run([str(bin_dir/'cs2_gc_python/python.exe'),'-B','-c',bot_check],
+                       cwd=bin_dir,env=env,check=True)
+
 
 def fetch_bytes(url, limit=128*1024*1024):
     request = urllib.request.Request(url,headers={'User-Agent':'cs2-gc-release'})

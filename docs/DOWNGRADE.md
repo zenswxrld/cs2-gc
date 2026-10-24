@@ -24,7 +24,7 @@ Windows executable and DLLs:
 
 Enter your password/Steam Guard approval in DepotDownloader locally; do not put credentials in a script or send them to anyone. The tool supports interactive authentication and downloads from Steam. See its [usage documentation](https://github.com/SteamRE/DepotDownloader#usage).
 
-Wait for both downloads to complete successfully. Then extract the whole mod ZIP over `G:CS2-GC-25966348` and open **Launch CS2 GC.exe**.
+Wait for both downloads to complete successfully. Then extract the whole mod ZIP over `G:\CS2-GC-25966348` and open **Launch CS2 GC.exe**.
 
 These are the runtime/content depots used for the supported Windows game. The second manifest predates the common-content hotfix because the Windows binaries did not change in that hotfix. Workshop Tools and optional low-violence content are not needed for this mod's normal setup.
 

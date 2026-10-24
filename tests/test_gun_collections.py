@@ -317,6 +317,21 @@ class DetailRebuild(unittest.TestCase):
             self.assertEqual(again[4],made[4])
             self.assertEqual(json.loads(path.read_text())['history'],saved['history'])
 
+    def test_laurel_steel_review_changes_colour_channels_without_changing_artwork(self):
+        from collection_channel_palettes import channels
+        vmat='materials/x/nouveau.vmat';colors=[[.71,.70,.63,1],[.70,.57,.37,1],[.32,.11,.08,1],[.39,.31,.17,1]]
+        original=patterned(vmat,colors,'scrollwork.vtex')
+        source=Recolour().source({'nouveau.vcompmat_c':compmat(vmat),vmat+'_c':original})
+        made=gc.make_recolour(source,'hye_ak47_nouveau','nouveau.vcompmat','owned_royal','Royal',preserve_details=True)
+        self.assertIsNotNone(made)
+        before=gc.effective_params(read_root(compmat(vmat)),read_root(original))
+        after=gc.effective_params(read_root(made[0]),read_root(made[1]))
+        for index,color in enumerate(channels('hye_ak47_nouveau','Royal')):
+            for actual,expected in zip(after.pop('g_vColor%d'%index),color[:3]):self.assertAlmostEqual(actual,expected,places=6)
+            before.pop('g_vColor%d'%index)
+        self.assertEqual(before,after,'artwork, masks, material gain and wear remain intact')
+        self.assertLess(max(channels('am_scales_bravo','Cobalt')[0][:3])*5,.4)
+
     def test_gold_brick_uses_doppler_smoke_without_altering_gold_palette_or_masks(self):
         gold='materials/x/gold.vmat';doppler='materials/x/doppler.vmat'
         colors=[[1,.87,.53,.4],[1,.93,.58,1],[.94,.80,.42,1],[.73,.60,.18,1]]

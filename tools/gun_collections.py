@@ -260,7 +260,8 @@ def make_recolour(source, kit, kit_path, new_name, theme, preserve_details=False
         palette = [list(params['g_vColor%d'%i][:3])+[1.0] for i in range(4)]
     if preserve_details:
         from collection_rebuild import recolour, visible_accent_change
-        changed = recolour(palette, theme)
+        from collection_channel_palettes import channels
+        changed = channels(kit,theme) or recolour(palette, theme)
         if not pattern_changed and not visible_accent_change(original, changed): return None
     else:
         changed = finishes.recolor(original, theme, fade=kit in finishes.FADE_BASES)

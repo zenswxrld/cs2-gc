@@ -28,7 +28,7 @@ def polish(lineup,rows,works,report):
     installed=[]
     recipes=(('phantom_blade','aq_deagle_case_hardened_2','weapon_deagle','Rainbow Spoon',
               ('Cobalt','Violet','Magenta','Midnight')),
-             ('insignia','gsch_ak_djiin','weapon_ak47','Foil',('Cobalt','Violet','Royal','Ash')))
+             ('insignia','gsch_ak_djiin','weapon_ak47','Foil',('Cobalt','Teal','Ash')))
     for icon,donor,weapon,label,themes in recipes:
         entries=lineup.get(icon,[])
         if entries and not any(e.get('donor')==donor and e.get('signature_finish') for e in entries):
@@ -36,6 +36,8 @@ def polish(lineup,rows,works,report):
     for entry in lineup.get('ashfall',()):
         if entry.get('donor')=='aa_flames' and entry['weapon']=='weapon_deagle' and works('aa_flames','fixed',['Teal']):
             entry.update(mode='fixed',themes=['Teal'],label='Blaze')
+    from collection_review import refine
+    lineup=refine(lineup,rows,works,report)
     coverage={};missing=[]
     for icon,entries in lineup.items():
         found=[]

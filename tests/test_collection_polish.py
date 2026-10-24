@@ -73,4 +73,57 @@ class SignatureFamilies(unittest.TestCase):
         history_entry(history,'family',{'mode':'family','themes':['Cobalt','Teal','Violet']})
         self.assertEqual(history['family']['themes'],['Ember','Cobalt','Teal','Violet'])
 
+
+class ClientReview(unittest.TestCase):
+    def entries(self,weapons):
+        return [dict(detail=1,tier=tier,weapon=weapons[i],donor='background',mode='fixed',themes=['Cobalt'],label='Saved')
+           for i,(tier,_) in enumerate([(t,j) for t,n in gc.TIER_COUNTS for j in range(n)])]
+
+    def test_insignia_tiers_and_foil_remain_complete_unique_and_stable(self):
+        weapons=['weapon_famas','weapon_hkp2000','weapon_awp','weapon_usp_silencer','weapon_fiveseven','weapon_ak47',
+                 'weapon_mac10','weapon_scar20','weapon_galilar','weapon_nova','weapon_m4a1_silencer','weapon_deagle',
+                 'weapon_ump45','weapon_ssg08','weapon_negev','weapon_xm1014']
+        entries=self.entries(weapons)
+        entries[0].update(donor='am_scales_bravo',mode='family',themes=['Amber','Cobalt','Violet'],label='High Command')
+        entries[1].update(mode='family',themes=['Cobalt','Violet','Ash'])
+        entries[2]['donor']='am_awp_glory'
+        entries[5].update(donor='hye_ak47_nouveau',themes=['Royal'],label='Laurel Steel')
+        pool={name:dict(next(iter(rows(1).values())),effects=['pearl']) for name in
+              ('background','am_scales_bravo','am_awp_glory','hye_ak47_nouveau','gsch_ak_djiin','cu_awp_hannya')}
+        result=polish({'insignia':entries},pool,lambda *args:True,{})
+        new=result['insignia']
+        self.assertEqual([sum(e['tier']==t for e in new) for t,_ in gc.TIER_COUNTS],[1,2,3,4,6])
+        self.assertEqual(len({e['weapon'] for e in new}),16)
+        self.assertEqual(sum(e['mode']=='family' for e in new),2)
+        self.assertEqual(new[0]['donor'],'cu_awp_hannya')
+        self.assertEqual(next(e for e in new if e['weapon']=='weapon_famas')['tier'],'mythical')
+        self.assertEqual(next(e for e in new if e['weapon']=='weapon_ak47')['themes'],['Cobalt','Teal','Ash'])
+        self.assertEqual(polish(result,pool,lambda *args:True,{}),result)
+
+    def test_negev_plate_moves_down_and_m249_remains_milspec(self):
+        from collection_review import refine
+        weapons=['weapon_negev','weapon_glock','weapon_scar20','weapon_m4a1','weapon_tec9','weapon_fiveseven',
+                 'weapon_galilar','weapon_m4a1_silencer','weapon_ak47','weapon_m249','weapon_elite','weapon_cz75a',
+                 'weapon_sg556','weapon_g3sg1','weapon_usp_silencer','weapon_mac10']
+        entries=self.entries(weapons);entries[0].update(donor='am_diamond_plate',mode='family')
+        result=refine({'juggernaut':entries},{'cu_m4_asimov':{}},lambda *args:True,{})
+        new=result['juggernaut']
+        self.assertEqual([sum(e['tier']==t for e in new) for t,_ in gc.TIER_COUNTS],[1,2,3,4,6])
+        self.assertEqual(len({e['weapon'] for e in new}),16)
+        self.assertEqual(new[0]['weapon'],'weapon_m4a1')
+        self.assertEqual(next(e for e in new if e['weapon']=='weapon_negev')['tier'],'mythical')
+        self.assertEqual(next(e for e in new if e['weapon']=='weapon_m249')['tier'],'rare')
+        self.assertEqual(refine(result,{'cu_m4_asimov':{}},lambda *args:True,{}),result)
+
+    def test_repeated_manowar_awps_use_different_actual_artwork(self):
+        from collection_review import refine
+        lineup={icon:[dict(detail=1,donor='am_awp_glory',weapon='weapon_awp',tier='legendary',
+                          mode='fixed',themes=['Cobalt'])] for icon in ('insignia','ironclad','rampart','redoubt')}
+        pool={name:{} for name in ('cu_awp_hannya','cu_awp_asimov','cu_awp_cobra','cu_awp_chroma_pink')}
+        result=refine(lineup,pool,lambda *args:True,{})
+        self.assertEqual(len({entries[0]['donor'] for entries in result.values()}),4)
+        self.assertFalse(any(e['donor']=='am_awp_glory' for es in result.values() for e in es))
+        self.assertEqual(refine(lineup,pool,lambda *args:False,{}),lineup)
+
 if __name__=='__main__':unittest.main()
+

@@ -82,6 +82,7 @@ from collection_policies import apply_designs
 apply_designs(DESIGNS)
 
 def eligible(name,row,design,tier):
+    if name=='am_awp_glory':return False # keep historical Man-o'-war kits; stop selecting more
     allowed=design.get('allow')
     if allowed is None:return True
     if name not in allowed:return False

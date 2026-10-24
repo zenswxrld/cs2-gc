@@ -5,7 +5,7 @@ PALETTES={
  'harbor':('Emerald','Teal','Azure','Cobalt','Ash'),
  'mosaic':('Magenta','Violet','Rose','Amber'),
  'kestrel':('Amber','Emerald','Teal','Ash'),
- 'juggernaut':('Crimson','Ember','Amber','Ash'),
+ 'juggernaut':('Cobalt','Teal','Azure','Ash'),
  'lodestar':('Violet','Teal','Magenta','Midnight'),
  'fathom':('Emerald','Teal','Violet','Midnight'),
  'ashfall':('Teal','Ember','Amber','Ash'),
@@ -34,7 +34,7 @@ PALETTES={
  'undertow':('Emerald','Teal','Azure','Cobalt','Ash'),
  'cipher':('Emerald','Teal','Azure','Ash'),
  'driftwood':('Amber','Lime','Emerald','Teal','Ash'),
- 'insignia':('Amber','Cobalt','Violet','Royal','Ash'),
+ 'insignia':('Cobalt','Teal','Ash'),
  'warden':('Cobalt','Teal','Azure','Ash'),
 }
 
@@ -70,7 +70,7 @@ def coordinate(lineup,rows,works,report):
         allowed=PALETTES.get(icon)
         if not allowed:continue
         for slot,entry in enumerate(entries):
-            if entry.get('label')=='Gold Brick' or entry.get('pattern_source') or entry.get('signature_finish') or entry.get('themes')==['Inverse']:
+            if entry.get('label')=='Gold Brick' or entry.get('pattern_source') or entry.get('signature_finish') or entry.get('review_revision') or entry.get('themes')==['Inverse']:
                 continue
             donor=entry.get('donor')
             if donor not in rows:continue

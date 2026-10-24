@@ -55,18 +55,37 @@ int main(int argc,char**argv) {
     std::array<std::array<unsigned char,4>,4096> samples{};
     if(argc==6) {
         float target=std::strtof(argv[3],nullptr)/360,cap=std::strtof(argv[4],nullptr);
-        bool ramp=std::atoi(argv[5])==1;
+        int mode=std::atoi(argv[5]);
+        if(mode<0||mode>3) return 5;
+        bool ramp=mode==1;
+        float anchor=0;
+        if(mode==2) {
+            std::array<std::size_t,360> hues{};
+            for(std::size_t p=0;p<pixels.size();p+=4) {
+                auto c=hsv(pixels[p]/255.f,pixels[p+1]/255.f,pixels[p+2]/255.f);
+                if(c[1]>=.18f&&c[2]>=.15f&&pixels[p+3]!=0)
+                    ++hues[std::min(359,int(c[0]*360))];
+            }
+            anchor=float(std::max_element(hues.begin(),hues.end())-hues.begin())/360;
+            float delta=std::abs(target-anchor);delta-=std::floor(delta);
+            if(std::min(delta,1-delta)<25.f/360) return 7;
+        }
         if(!std::isfinite(target)||!std::isfinite(cap)||cap<0||cap>1) return 5;
         for(std::size_t p=0;p<pixels.size();p+=4) {
             auto c=hsv(pixels[p]/255.f,pixels[p+1]/255.f,pixels[p+2]/255.f);
             // Grayscale foil, dark ink and transparent artwork are protected.
-            if(c[1]<.18f||c[2]<.15f||pixels[p+3]==0) continue;
+            if(pixels[p+3]==0) continue;
+            if(mode==3) {
+                if(c[1]>.12f) continue; // Neutral Printstream body/ink only.
+            } else if(c[1]<.18f||c[2]<.15f) continue;
             float distance=std::min(c[0],1-c[0]);
-            if(!ramp && distance>40.f/360) continue; // Foil: only the authored red lacquer.
+            if(mode==0 && distance>40.f/360) continue; // Foil: only the authored red lacquer.
             ++eligible;
             float hue=ramp?target+std::sin(c[0]*6.28318530718f)*38.f/360:
                 target+(c[0]>.5f?c[0]-1:c[0]);
+            if(mode==2) hue=c[0]+target-anchor;
             auto v=rgb(hue,std::min(c[1],cap),c[2]);
+            if(mode==3) v={1-pixels[p]/255.f,1-pixels[p+1]/255.f,1-pixels[p+2]/255.f};
             bool differs=false;
             for(int channel=0;channel<3;++channel) {
                 auto value=static_cast<unsigned char>(std::clamp(int(std::lround(v[channel]*255)),0,255));

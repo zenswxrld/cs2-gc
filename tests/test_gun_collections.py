@@ -119,7 +119,7 @@ def rows(count, **row):
 
 GUNS = sorted(['weapon_ak47', 'weapon_m4a1', 'weapon_m4a1_silencer', 'weapon_awp', 'weapon_deagle', 'weapon_usp_silencer',
                'weapon_glock', 'weapon_p250', 'weapon_fiveseven', 'weapon_tec9', 'weapon_mp9', 'weapon_mac10', 'weapon_mp7',
-               'weapon_ump45', 'weapon_p90', 'weapon_nova', 'weapon_xm1014', 'weapon_mag7', 'weapon_negev', 'weapon_famas'])
+               'weapon_ump45', 'weapon_aug', 'weapon_sg556', 'weapon_hkp2000', 'weapon_cz75a', 'weapon_nova', 'weapon_xm1014', 'weapon_mag7', 'weapon_negev', 'weapon_famas'])
 
 
 class Build(unittest.TestCase):
@@ -238,7 +238,7 @@ class DetailRebuild(unittest.TestCase):
         pool['aa_awp_fade']=dict(next(iter(pool.values())),guns=['weapon_awp'],transfer=False)
         pool['aa_fade_m4a1s']=dict(next(iter(pool.values())),guns=['weapon_m4a1_silencer'],transfer=False)
         pool['aa_fade_red_blue']=dict(next(iter(pool.values())),guns=['weapon_fiveseven'],transfer=False)
-        result=gc.plan(pool,GUNS,list(DESIGNS),set(),works=lambda *args:True,designs=DESIGNS)
+        result=gc.plan(pool,GUNS,list(DESIGNS)[:4],set(),works=lambda *args:True,designs=DESIGNS)
         for icon,entries in result.items():
             self.assertEqual([sum(e['tier']==t for e in entries) for t,_ in gc.TIER_COUNTS],[1,2,3,4,6])
             self.assertEqual(len({e['weapon'] for e in entries}),16)
@@ -326,6 +326,63 @@ class DetailRebuild(unittest.TestCase):
         for i in range(4):self.assertEqual(after['g_vColor%d'%i],before['g_vColor%d'%i])
         before.pop('g_tPattern');after.pop('g_tPattern')
         self.assertEqual(before,after)
+
+    def test_second_batch_uses_only_theme_pool_and_two_premium_families(self):
+        from collection_rebuild import DESIGNS,eligible
+        designs={icon:DESIGNS[icon] for icon in ('kestrel','juggernaut','lodestar','fathom')}
+        pool={}
+        for design in designs.values():
+            for name in design['allow']:
+                pool[name]=dict(next(iter(rows(1).values())),title=name,effects=['pearlescent'],style=4)
+        for name,weapon in (('hy_feathers_aug','weapon_aug'),('hy_p250_crackshot','weapon_p250'),
+                            ('ht_white_edges','weapon_glock'),('soe_pink_pearl','weapon_cz75a'),
+                            ('cu_famas_holo_ocean','weapon_famas'),('soe_teal_glitter','weapon_hkp2000')):
+            pool[name].update(transfer=False,guns=[weapon],pattern_guns=[weapon])
+        pool['soe_tropical']=dict(next(iter(rows(1).values())),effects=['iridescent'],title='Tropical floral flowers')
+        result=gc.plan(pool,GUNS,list(designs),{},works=lambda *args:True,designs=designs)
+        for icon,entries in result.items():
+            self.assertEqual([sum(e['tier']==t for e in entries) for t,_ in gc.TIER_COUNTS],[1,2,3,4,6],icon)
+            self.assertEqual(len({e['weapon'] for e in entries}),16,icon)
+            self.assertEqual(sum(e['mode']=='family' for e in entries),2,icon)
+            self.assertTrue(all(e['tier'] in ('ancient','legendary') for e in entries if e['mode']=='family'))
+            self.assertTrue(all(e['donor'] in designs[icon]['allow'] for e in entries))
+            self.assertFalse(eligible('soe_tropical',pool['soe_tropical'],designs[icon],'legendary'))
+        famas=next(e for e in result['fathom'] if e['donor']=='cu_famas_holo_ocean')
+        self.assertEqual(famas['weapon'],'weapon_famas')
+        self.assertEqual(famas['themes'],['Violet','Emerald','Coral','Amber'])
+        self.assertNotIn('Cobalt',famas['themes'])
+
+    def test_feedback_retains_approved_chase_and_downgrades_nova(self):
+        from collection_rebuild import feedback
+        entries=[dict(detail=1,tier=t,weapon=GUNS[i],mode='fixed',donor='kit000',themes=['Teal'],label='Slot'+str(i))
+                 for i,(t,_) in enumerate([(tier,j) for tier,count in gc.TIER_COUNTS for j in range(count)])]
+        entries[0].update(mode='family',label='Veil Piercer')
+        entries[2].update(weapon='weapon_nova',label='Wraith Edge')
+        before=dict(entries[0]);lineup={'phantom_blade':entries,'forged':[{'label':'Gold Brick'}]}
+        result=feedback(lineup,{'cu_usp_printstream':{},'hy_geometric_steps_pearl':{}},lambda *args:True,{})
+        self.assertEqual(result['phantom_blade'][0],dict(before,feedback_revision=1))
+        self.assertEqual(result['forged'],lineup['forged'])
+        nova=next(e for e in result['phantom_blade'] if e.get('label')=='Wraith Edge')
+        self.assertEqual(nova['tier'],'mythical')
+        self.assertEqual(result['phantom_blade'][1]['themes'],['Inverse'])
+        self.assertEqual(sum(e['mode']=='family' for e in result['phantom_blade']),2)
+        self.assertEqual(feedback(result,{},lambda *args:False,{}),result)
+
+    def test_blaze_uses_authored_brightness_and_keeps_black_backing(self):
+        start=[[.431,.071,.039,1],[.133,.008,.004,1],[.110,.110,.110,1],[.353,.235,.016,1]]
+        vmat='materials/x/blaze.vmat';original=patterned(vmat,start,'flamegraphic.vtex')
+        guid,root=kv3.read_kv3(dict(kv3.read_resource(original)[1])['DATA'])
+        root.value.append(('m_floatParams',Node(kv3.ARRAY,[obj(('m_name',string('g_flColorBrightness')),
+            ('m_flValue',Node(kv3.FLOAT,3.0)))])))
+        original=kv3.write_resource(0,[['DATA',kv3.write_kv3(guid,root)]])
+        source=Recolour().source({'blaze.vcompmat_c':compmat(vmat),vmat+'_c':original})
+        made=gc.make_recolour(source,'aa_flames','blaze.vcompmat','gc3m_aa_flames_teal','Teal',preserve_details=True)
+        self.assertIsNotNone(made,'source brightness must not trigger flat legacy fallback')
+        params=gc.effective_params(read_root(made[0]),read_root(made[1]))
+        for a,b in zip(params['g_vColor2'],start[2][:3]):self.assertAlmostEqual(a,b)
+        self.assertEqual(params['g_tPattern'],'flamegraphic.vtex')
+        self.assertEqual(params['g_flColorBrightness'],3.0)
+        self.assertGreater(max(params['g_vColor0']),max(params['g_vColor2'])*3)
 
 if __name__ == '__main__':
     unittest.main()

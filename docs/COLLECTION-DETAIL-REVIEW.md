@@ -69,3 +69,17 @@ The audit is written under gun_collections.audit in the local cs2_gc_weapon_pale
 ## Validation still required
 
 Automated tests check the colour-channel/mask/effect contract, target-gun Berries palette adaptation, naming, family distinctness, slot counts and history. Actual game assets remain on the player's machine. The first regenerated report and native inspections must confirm donor availability, the intended appearance, icons and rolled outcomes before this batch is labelled visually working. Do not overwrite the separate known-good knife/glove systems.
+
+## Batch two and client feedback (24 October 2026)
+
+- Kestrel: aviation, feathers and tactical patterns. The AUG chase respects Wings' source-weapon layout.
+- Juggernaut: plate, carbon and industrial metal; Negev plate chase and an iridescent Glock family.
+- Lodestar: celestial charts, lunar marks and star metal; Twilight Galaxy AWP family and glitter/iridescent CZ75 Stardust.
+- Fathom: sea and abyssal patterns; pearlescent Jörmungandr MP9 family, FAMAS Waters of Nephthys artwork family and glitter P2000.
+- Each new pool has two premium colour families. FAMAS rolls exclude the stock blue, and the decoder also rejects near-original dominant hue shifts under 25 degrees. The FAMAS artwork stays on its original weapon, preserving neutral pixels, alpha, UVs and shader masks.
+- Phantom Blade corrections retain its approved chase: move Wraith Edge from Classified to Restricted, replace floral Ghostglass with an inverse Printstream USP-S candidate, and add a pearlescent faceted SG 553 family. Existing historical definitions stay available to owned items.
+- Teal Blaze now accounts for its authored brightness multiplier rather than rejecting the protected dark backing and falling back to a flat palette.
+- Explicit theme pools prevent effects from admitting unrelated art. Insufficient compatible donors keep the previous complete pool and report the shortage.
+- Rampart awaits a later themed rebuild. Missions and Armory purchase refresh are deferred while skins are completed.
+
+These are candidate appearances until checked in the target game. CI verifies data integrity, material bindings, counts, deterministic plans and texture-channel preservation; it cannot approve visual quality.

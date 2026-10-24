@@ -11,7 +11,7 @@ Python, a compiler, .NET and manual console commands are not installation requir
 
 ## Fresh installation
 
-1. Finish both supported depot downloads into one separate folder, for example `G:CS2-GC-25966348`.
+1. Finish both supported depot downloads into one separate folder, for example `G:\CS2-GC-25966348`.
 2. Extract the whole mod ZIP directly into that folder. The result must include:
 ```text
 CS2-GC-25966348/
@@ -38,6 +38,22 @@ CS2-GC-25966348/
 The first profile initialization requires Steam online. The bootstrap requests a welcome, Store data and a mission schema using your account's Steam session. It sends no purchases, equips, case openings or inventory modifications to the real GC. Those recordings stay local. This new first-run path still needs live validation on a clean installation; failures stop with a diagnostic rather than opening an empty local profile.
 
 The launcher automatically preserves the original Steam library, installs the mod proxy, writes the local App ID file and extracts the schema. Do not rename DLLs or copy a schema from another game version manually.
+
+## Included bot mods
+
+Bot skins and the Bot Improver/difficulty integration are already part of CS2 GC. This ZIP carries the same pinned **Bot Improver v1.4.6** release as the working copy, including BotRandomizer, Metamod, CounterStrikeSharp with its runtime, and Low/Medium/High skill presets. The launcher installs these from the local payload; it does not fetch the latest plugins during setup.
+
+The local Premier rating selects the presets and stock difficulty. Bot cosmetic loadouts are curated against the installed schema. Existing owned installations are reused; unrelated addons are never silently replaced. Your own mode server configs are preserved; if you customized one, setup logs which bot config it needs to execute.
+
+The bundled bot plugins still need a fresh-gameplay check with the new ZIP. Installation checks alone do not prove every AI behaviour.
+
+To disable the bot plugins, close CS2 and run the bundled bot removal helper using its private runtime:
+
+```text
+game\bin\win64\cs2_gc_python\python.exe -B game\bin\win64\bot_skins.py uninstall
+```
+
+This also saves a disabled preference so later launches and ZIP upgrades do not reinstall them. To enable the bundled version again, remove `game/bin/win64/cs2_gc_bot_plugins_disabled` with CS2 closed, then open the root launcher.
 
 ## Upgrading an existing installation
 
@@ -85,6 +101,6 @@ Use a separate supported copy for the mod and keep the normal Steam installation
 
 ## Removal
 
-Close CS2. Keep a backup of your own saved files. Restore the original `steam_api64_real.dll` as `steam_api64.dll` and disable the owned VPK mounts using the bundled disable helper. The native resource tools keep backups of edited game information. For an ordinary Steam copy, verifying files restores Valve-managed files but does not remove every extra mod file.
+Close CS2. Remove the bot plugins using the bundled helper above, then keep a backup of your own saved files. Restore the original `steam_api64_real.dll` as `steam_api64.dll` and disable the owned VPK mounts using the bundled disable helper. The native resource tools keep backups of edited game information. For an ordinary Steam copy, verifying files restores Valve-managed files but does not remove every extra mod file.
 
 Do not delete the entire game folder to remove the mod. Full owned-file cleanup and a polished removal flow remain future work.

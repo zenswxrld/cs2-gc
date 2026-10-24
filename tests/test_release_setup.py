@@ -14,6 +14,8 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
 import launch_setup as setup
 import package_release as package
 import native_resources
+import bundled_bots
+import bot_skins
 
 
 def exports(data, target=None):
@@ -153,6 +155,78 @@ class ReleaseSetup(unittest.TestCase):
         self.assertNotIn('k_EMsgGCStorePurchase',source)
         self.assertIn('cache.owner.id!=steamId',source)
         self.assertIn('SaveIfMissing',source)
+
+
+    def bot_payload(self):
+        game = self.root/'game'
+        (game/'csgo').mkdir(exist_ok=True)
+        (game/'csgo/gameinfo.gi').write_text('"GameInfo" {}')
+        payload = self.bin/'cs2_gc_payload/bots'
+        payload.mkdir(parents=True)
+        files = {'addons/metamod/bin/server.dll':b'metamod',
+                 'addons/counterstrikesharp/api/CounterStrikeSharp.API.dll':b'api',
+                 'addons/counterstrikesharp/dotnet/host/fxr.dll':b'runtime'}
+        for name in ('BotRandomizer','BotAI','BotAimImprover','BotBuy','BotState','NadeSystem'):
+            files['addons/counterstrikesharp/plugins/'+name+'/'+name+'.dll'] = name.encode()
+        data = io.BytesIO()
+        with zipfile.ZipFile(data,'w') as archive:
+            for name,content in files.items():
+                archive.writestr(name,content)
+        data = data.getvalue()
+        (payload/'bot_improver.zip').write_bytes(data)
+        (payload/'bundle.json').write_text(json.dumps({'version':'v1.4.6','asset':'test.zip',
+                                                       'sha256':hashlib.sha256(data).hexdigest()}))
+        for tier in bot_skins.PRESET_TIERS:
+            path = payload/'resources/overrides'/tier/'botprofile.db'
+            path.parent.mkdir(parents=True)
+            path.write_bytes(('preset '+tier).encode())
+        cfg = payload/'resources/cfg'
+        cfg.mkdir()
+        for mode in ('normal','ffa'):
+            (cfg/('my_bot_%s_config_rules_unchanged.cfg'%mode)).write_text('bot_difficulty 4\nbind F1 nope\nbot_quota 9\n')
+        return game,payload
+
+    def test_bundled_bots_install_without_network_and_preserve_existing_config(self):
+        game,payload = self.bot_payload()
+        cfg = game/'csgo/cfg'
+        cfg.mkdir()
+        personal = cfg/'gamemode_casual_server.cfg'
+        personal.write_text('my own server config')
+        with patch.object(bot_skins,'_get',side_effect=AssertionError('No runtime network')), \
+             patch.object(bot_skins,'_mount') as mount, patch.object(bot_skins,'recurate') as curate:
+            self.assertTrue(bundled_bots.ensure(self.bin))
+            self.assertEqual(curate.call_count,1)
+            self.assertTrue((game/bot_skins.PLUGIN_DIR/'BotRandomizer.dll').is_file())
+            self.assertEqual(personal.read_text(),'my own server config')
+            self.assertNotIn('bind F1',(cfg/'cs2_gc_bot_improver.cfg').read_text())
+            self.assertNotIn('bot_difficulty',(cfg/'cs2_gc_bot_improver.cfg').read_text())
+            self.assertIn('exec cs2_gc_premier_bots',(cfg/'gamemode_competitive_server.cfg').read_text())
+            self.assertFalse(bundled_bots.ensure(self.bin))
+            self.assertEqual(curate.call_count,1)
+            # An interrupted/deleted plugin is repaired on the next launch.
+            (game/bot_skins.PLUGIN_DIR/'BotRandomizer.dll').unlink()
+            self.assertTrue(bundled_bots.ensure(self.bin))
+            self.assertEqual(curate.call_count,2)
+
+    def test_bot_setup_preserves_foreign_addons_and_respects_disable_preference(self):
+        game,payload = self.bot_payload()
+        foreign = game/'csgo/addons/metamod'
+        foreign.mkdir(parents=True)
+        marker = foreign/'personal.txt'
+        marker.write_text('preserve')
+        with self.assertRaisesRegex(ValueError,'ownership record'):
+            bundled_bots.ensure(self.bin)
+        self.assertEqual(marker.read_text(),'preserve')
+        (self.bin/'cs2_gc_bot_plugins_disabled').touch()
+        self.assertFalse(bundled_bots.ensure(self.bin))
+        self.assertEqual(marker.read_text(),'preserve')
+
+    def test_bot_checksum_failure_does_not_install_any_addon(self):
+        game,payload = self.bot_payload()
+        (payload/'bot_improver.zip').write_bytes(b'corrupt')
+        with self.assertRaisesRegex(ValueError,'checksum'):
+            bundled_bots.ensure(self.bin)
+        self.assertFalse((game/'csgo/addons').exists())
 
 
 if __name__ == '__main__':

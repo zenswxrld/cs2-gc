@@ -1,0 +1,46 @@
+{
+  "version": "v1.4.6",
+  "asset": "CS2BotImprover_rules_unchanged.zip.zip",
+  "url": "https://github.com/ed0ard/CS2-Bot-Improver/releases/download/v1.4.6/CS2BotImprover_rules_unchanged.zip.zip",
+  "sha256": "90015707b93c61e6d7627a6fdcf34efdbcb8e4c13145d24bdcee07535f57e30e",
+  "source_repo": "ed0ard/CS2-Bot-Improver",
+  "source_commit": "55772a6a6a332e4f896223adbc7d2000749cfa1b",
+  "plugin_sources": [
+    {
+      "repo": "XBribo/CS2-Bot-Controller",
+      "commit": "0ae8f18fd6872a369cb984e0e95e5a352be092fe"
+    },
+    {
+      "repo": "XBribo/CS2-Bot-Hider",
+      "commit": "12069c25a756deedc72f8fc116ac3b18045d1223"
+    },
+    {
+      "repo": "XBribo/CS2-Bot-Vision",
+      "commit": "33ab01fc5ec4e27b6f07aff653d54638ad84ebcb"
+    },
+    {
+      "repo": "ed0ard/CS2-BotAI",
+      "commit": "a23f7e24bd485cc23e0d9340ba74e8d8aa3ba6e0"
+    },
+    {
+      "repo": "ed0ard/CS2-Bullseye-Bot",
+      "commit": "17e895b68e0c5c365d5c6fea12f1f74342724ce8"
+    },
+    {
+      "repo": "ed0ard/CS2-Bot-Buy",
+      "commit": "11884e0564b8b57bee5f4729a5fca781bd5e6749"
+    },
+    {
+      "repo": "ed0ard/CS2-Bot-Randomizer",
+      "commit": "024f314b782433daf1150eba700a7b381e99baa1"
+    },
+    {
+      "repo": "ed0ard/CS2-Smarter-Bot",
+      "commit": "ce28e5c1359e9be910a3578694c94e5e8715d2a4"
+    },
+    {
+      "repo": "ed0ard/CS2-Bot-NadeSystem",
+      "commit": "009ce03005af68ba68dae62967bddc8e92ad172c"
+    }
+  ]
+}

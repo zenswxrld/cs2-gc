@@ -37,7 +37,7 @@ def expected_exports(root):
                   if line.startswith('    '))
 
 
-def build_archive(root, runtime_data):
+def build_archive(root, runtime_data, bot_files):
     root = Path(root)
     build = root/'build/Release'
     proxy = build/'steam_api64.dll'
@@ -76,6 +76,8 @@ def build_archive(root, runtime_data):
             if name in ('README-INSTALL.md','FEATURES.md'):
                 data = data.replace(b'(DOWNGRADE.md)',b'(README-DOWNGRADE.md)').replace(b'(INSTALL.md)',b'(README-INSTALL.md)')
             add(name,data)
+        for name,data in bot_files.items():
+            add(name,data)
         with zipfile.ZipFile(io.BytesIO(runtime_data)) as runtime:
             for info in runtime.infolist():
                 if info.is_dir():
@@ -109,7 +111,7 @@ def smoke_test(archive_data):
         env.pop('PYTHONPATH',None)
         env['PATH'] = str(Path(os.environ['SystemRoot'])/'System32')
         subprocess.run([str(bin_dir/'cs2_gc_python/python.exe'),'-B','-c',
-            'import launch_setup,prepare_native,gsi_rewards,ctypes,lzma,ssl; print("Bundled runtime imports OK")'],
+            'import launch_setup,prepare_native,gsi_rewards,bundled_bots,ctypes,lzma,ssl; print("Bundled runtime imports OK")'],
             cwd=bin_dir,env=env,check=True)
         profile = subprocess.run([str(bin_dir/'cs2_gc_profile.exe')],cwd=bin_dir,env=env)
         if profile.returncode != 1:
@@ -119,12 +121,58 @@ def smoke_test(archive_data):
             cwd=bin_dir,env=env,check=True)
 
 
+
+def fetch_bytes(url, limit=128*1024*1024):
+    request = urllib.request.Request(url,headers={'User-Agent':'cs2-gc-release'})
+    with urllib.request.urlopen(request,timeout=120) as response:
+        data = response.read(limit+1)
+    if len(data)>limit:
+        raise ValueError('Release dependency exceeds limit: '+url)
+    return data
+
+
+def bot_payload(root, fetch=fetch_bytes):
+    from bundled_bots import bundle_names
+    metadata = json.loads((root/'data/bot_bundle.json').read_text())
+    data = fetch(metadata['url'])
+    if hashlib.sha256(data).hexdigest() != metadata['sha256']:
+        raise ValueError('Upstream bot archive checksum mismatch')
+    names = bundle_names(data)
+    forbidden = ('engine2.dll','client.dll','steam_api64.dll','steam_api64_real.dll')
+    if any(Path(n).name in forbidden or n.endswith('.vpk') for n in names):
+        raise ValueError('Bot archive must not distribute Valve binaries or VPKs')
+    base = BIN+'cs2_gc_payload/bots/'
+    files = {base+'bot_improver.zip':data,
+             base+'bundle.json':json.dumps(metadata,indent=2).encode()}
+    raw = 'https://raw.githubusercontent.com/'+metadata['source_repo']+'/'+metadata['source_commit']+'/'
+    resources = ['overrides/%s/botprofile.db'%tier for tier in ('Low','Medium','High')]
+    resources += ['cfg/my_bot_%s_config_rules_unchanged.cfg'%mode for mode in ('normal','ffa')]
+    for name in resources:
+        files[base+'resources/'+name] = fetch(raw+name)
+    files['licenses/CS2-Bot-Improver-LICENSE.txt'] = fetch(raw+'LICENSE')
+    # Keep the unmodified upstream archive and exact plugin source snapshots
+    # alongside notices; third-party plugins retain their own licences.
+    sources = [{'repo':metadata['source_repo'],'commit':metadata['source_commit']}]+metadata['plugin_sources']
+    notices = ['Bundled bot components: unmodified CS2-Bot-Improver '+metadata['version'],
+               'Windows release: '+metadata['url'],
+               'Framework/plugin licences inside cs2_gc_payload/bots/bot_improver.zip are retained.',
+               'Exact source snapshots for the bot project and its pinned plugin submodules:','']
+    for source in sources:
+        repo,commit = source['repo'],source['commit']
+        name = 'licenses/bot-sources/'+repo.replace('/','-')+'-'+commit+'.tar.gz'
+        files[name] = fetch('https://api.github.com/repos/'+repo+'/tarball/'+commit)
+        notices.append('https://github.com/'+repo+'/tree/'+commit+' -> '+name)
+    files['licenses/BOT-SOURCES.txt'] = ('\n'.join(notices)+'\n').encode()
+    print('Validated bundled bot frameworks, plugins, presets and source notices.')
+    return files
+
+
 def main():
     root = Path(__file__).resolve().parents[1]
     print('Fetching the private Python runtime from '+PYTHON_URL)
     with urllib.request.urlopen(PYTHON_URL,timeout=60) as response:
         runtime = response.read(32*1024*1024)
-    data = build_archive(root,runtime)
+    data = build_archive(root,runtime,bot_payload(root))
     smoke_test(data)
     out = root/'dist'
     out.mkdir(exist_ok=True)

@@ -260,15 +260,20 @@ def collection_item_sets(lists_text, names, families):
              for node in parse('"lists"\n{\n' + lists_text + '\n}').one('lists').children}
     seen, blocks, tokens = set(), [], {}
     for name in names:
+        if name not in lists:
+            raise ValueError('Custom trade-up collection has no loot list: '+name)
         items = []
         for tier in lists.get(name, ()):
+            if tier not in lists or not lists[tier]:
+                raise ValueError('Custom trade-up collection has an empty tier: '+name+' / '+tier)
             for entry in lists.get(tier, ()):
                 match = re.fullmatch(r'\[([^\]]+)\](\w+)', entry)
                 if not match: continue
                 for kit in families.get(match.group(1)) or [match.group(1)]:
                     item = '[%s]%s' % (kit, match.group(2))
                     if item not in seen: seen.add(item); items.append(item)
-        if not items: continue
+        if not items:
+            raise ValueError('Custom trade-up collection has no weapon outcomes: '+name)
         title = CASE_COLLECTIONS.get(name) or name
         tokens['CSGO_' + name] = title
         tokens['CSGO_' + name + '_desc'] = 'A custom collection.'

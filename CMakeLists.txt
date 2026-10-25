@@ -227,3 +227,8 @@ if(BUILD_TESTING AND Python3_FOUND)
         ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
 endif()
 
+if(BUILD_TESTING AND Python3_FOUND)
+    add_test(NAME cs2_collection_colourways COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_collection_colourways.py -v)
+    set_tests_properties(cs2_collection_colourways PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
+endif()

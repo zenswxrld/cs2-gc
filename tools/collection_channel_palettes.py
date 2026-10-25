@@ -1,6 +1,10 @@
 """Reviewed four-channel palettes; retain the original pattern, mask and wear bindings."""
 
 def channels(kit,theme):
+    if kit=='soe_tropical' and theme=='Rose':
+        # Dark navy hardware, rose petals and pale shell highlights. Change the
+        # authored colour channels rather than covering its floral artwork.
+        return [[.035,.055,.095,1],[.65,.12,.27,1],[.88,.71,.58,1],[.13,.06,.17,1]]
     if kit=='hye_ak47_nouveau' and theme=='Royal':
         # Body, scrollwork, coloured enamel and dark hardware, respectively.
         # The original ivory/red pairing became muddy brown under a hue-only shift.

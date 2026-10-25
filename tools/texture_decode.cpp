@@ -133,7 +133,7 @@ int main(int argc,char**argv) {
         return std::cout?0:6;
     }
     bool auditOnly=argc==4 && std::string(argv[3])=="--audit";
-    if(argc!=3 && argc!=6 && !auditOnly) return 2;
+    if(argc!=3 && argc!=6 && argc!=7 && !auditOnly) return 2;
     int w=std::atoi(argv[1]),h=std::atoi(argv[2]);
     if(w<1||h<1||w>4096||h>4096) return 3;
     std::size_t blocksX=(w+3)/4,blocksY=(h+3)/4;
@@ -163,16 +163,18 @@ int main(int argc,char**argv) {
     std::size_t changed=0,eligible=0;
     std::array<std::size_t,4096> histogram{};
     std::array<std::array<unsigned char,4>,4096> samples{};
-    if(argc==6) {
+    if(argc==6 || argc==7) {
         float target=std::strtof(argv[3],nullptr)/360,cap=std::strtof(argv[4],nullptr);
         int mode=std::atoi(argv[5]);
-        if(mode<0||mode>9) return 5;
+        if(mode<0||mode>10 || (mode==10)!=(argc==7)) return 5;
+        float accent=mode==10?std::strtof(argv[6],nullptr)/360:0;
+        if(!std::isfinite(accent))return 5;
         // Paint alpha carries finish masks, not opacity. These opt-in modes
         // recolour RGB on zero-alpha paint islands while preserving the mask.
-        bool materialAlpha=mode==4||mode==5||mode==8||mode==9;
+        bool materialAlpha=mode==4||mode==5||mode==8||mode==9||mode==10;
         bool coordinated=mode==5||mode==9;
         bool inverse=mode==3||mode==8;
-        bool rotate=mode==2||mode==6||mode==7||mode==4||coordinated;
+        bool rotate=mode==2||mode==6||mode==7||mode==4||mode==10||coordinated;
         bool ramp=mode==1;
         float anchor=0;
         if(rotate) {
@@ -184,7 +186,7 @@ int main(int argc,char**argv) {
             }
             anchor=float(std::max_element(hues.begin(),hues.end())-hues.begin())/360;
             float delta=std::abs(target-anchor);delta-=std::floor(delta);
-            if(!coordinated && std::min(delta,1-delta)<25.f/360) return 7;
+            if(!coordinated && mode!=10 && std::min(delta,1-delta)<25.f/360) return 7;
         }
         if(!std::isfinite(target)||!std::isfinite(cap)||cap<0||cap>1) return 5;
         for(std::size_t p=0;p<pixels.size();p+=4) {
@@ -204,6 +206,17 @@ int main(int argc,char**argv) {
             if(coordinated) {
                 float delta=c[0]-anchor;delta-=std::floor(delta+.5f);
                 hue=target+std::clamp(delta,-.5f,.5f)*.10f;
+            }
+            if(mode==10) {
+                // Separate the dominant authored ink from its accent family.
+                // Keep local hue variation, saturation, value and exact alpha;
+                // never compress both colours onto one hue as mode 5 does.
+                float delta=c[0]-anchor;delta-=std::floor(delta+.5f);
+                float distance=std::abs(delta)*360;
+                float blend=std::clamp((distance-38.f)/32.f,0.f,1.f);
+                blend=blend*blend*(3-2*blend);
+                float arc=accent-target;arc-=std::floor(arc+.5f);
+                hue=target+arc*blend+std::clamp(delta,-.08f,.08f)*.35f;
             }
             auto v=rgb(hue,std::min(c[1],cap),c[2]);
             if(inverse) v={1-pixels[p]/255.f,1-pixels[p+1]/255.f,1-pixels[p+2]/255.f};
@@ -237,4 +250,3 @@ int main(int argc,char**argv) {
     std::cout.write(reinterpret_cast<const char*>(pixels.data()),static_cast<std::streamsize>(pixels.size()));
     return std::cout?0:6;
 }
-

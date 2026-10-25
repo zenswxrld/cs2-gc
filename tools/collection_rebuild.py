@@ -97,6 +97,7 @@ def eligible(name,row,design,tier):
 def feedback(lineup,rows,works,report):
     """Repair reviewed slots without reshuffling the approved chases."""
     current=lineup.get('phantom_blade',[])
+    if len(current)==16 and all(e.get('all_collection_revision') for e in current):return lineup
     if len(current)!=16 or not all(e.get('detail') for e in current):return lineup
     if all(e.get('feedback_revision')==1 for e in current):return lineup
     if 'cu_usp_printstream' not in rows or 'hy_geometric_steps_pearl' not in rows:return lineup
@@ -141,7 +142,7 @@ def donor_fit(name,row,design,tier):
 def upgrade(lineup,rows,guns,icons,families,works,report,accept=None):
     import gun_collections as gc
     selected=[icon for icon in icons if icon in DESIGNS and
-              not all(e.get('detail')==DESIGNS[icon].get('revision',1) for e in lineup.get(icon,()))]
+              not all(e.get('detail')==DESIGNS[icon].get('revision',1) or e.get('all_collection_revision') for e in lineup.get(icon,()))]
     if not selected:return feedback(lineup,rows,works,report)
     reserved={e['donor'] for icon,entries in lineup.items() if icon not in selected
               for e in entries if 'donor' in e}

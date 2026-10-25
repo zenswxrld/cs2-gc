@@ -16,6 +16,10 @@ DONORS = {'cu_famas_holo_ocean':'hue', 'cu_usp_printstream':'invert',
           'cu_m4a4_neo_noir':'hue','gs_ak47_empress':'portrait','cu_m4a4_temukau':'portrait',
           'ak_porcelain':'blue_ink'}
 
+# Explicit reviewed native artwork sources for the complete collection matrix.
+from collection_art_sources import SOURCES
+DONORS.update(SOURCES)
+
 def make(source,kit,path,new_name,theme):
     import native_finishes as f
     from gun_collections import inspect

@@ -24,6 +24,7 @@ def refine(lineup,rows,works,report):
     }
     for icon,(donor,label,mode,themes) in awps.items():
         entries=result.get(icon,[])
+        if len(entries)==16 and all(e.get('all_collection_revision') for e in entries):continue
         at=next((i for i,e in enumerate(entries) if e['weapon']=='weapon_awp' and
                  (icon=='insignia' or e.get('donor')=='am_awp_glory' or e.get('donor')==donor)),None)
         if at is None and icon=='insignia':
@@ -35,6 +36,7 @@ def refine(lineup,rows,works,report):
         entries[at]['weapon']='weapon_awp'
         applied.append(icon+': '+label)
     entries=result.get('insignia',[])
+    if entries and all(e.get('all_collection_revision') for e in entries):entries=[]
     by_weapon={e['weapon']:e for e in entries}
     if len(entries)==16 and all(w in by_weapon for w in ('weapon_famas','weapon_awp','weapon_hkp2000')):
         before=deepcopy(entries)
@@ -51,6 +53,7 @@ def refine(lineup,rows,works,report):
     # Ironclad: replace the plain Man-o'-war-derived Negev with detailed
     # target-native industrial artwork, leaving Composite Armour AWP intact.
     entries=result.get('ironclad',[])
+    if entries and all(e.get('all_collection_revision') for e in entries):entries=[]
     for i,entry in enumerate(entries):
         if entry['weapon']=='weapon_negev' and entry.get('donor') in ('am_negev_glory','cu_negev_impact'):
             if 'cu_negev_impact' in rows and works('cu_negev_impact','family',('Cobalt','Teal','Ash')):
@@ -59,6 +62,7 @@ def refine(lineup,rows,works,report):
             else:unavailable.append('ironclad: detailed Negev artwork unavailable')
     # Keep the pictured Negev plate at Restricted. The M249 was already Mil-Spec.
     entries=result.get('juggernaut',[])
+    if entries and all(e.get('all_collection_revision') for e in entries):entries=[]
     heavy=next((e for e in entries if e.get('donor')=='am_diamond_plate' and e['tier']=='ancient'),None)
     rifle=next((e for e in entries if e['weapon']=='weapon_m4a1'),None)
     donor='cu_m4_asimov';themes=('Cobalt','Teal','Ash')

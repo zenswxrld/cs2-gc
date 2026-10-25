@@ -352,6 +352,7 @@ def study(source, kits, kit_path, source_text, titles):
         if recolourable or transferable:
             rows[kit] = {'guns': sorted(shipped[kit]), 'recolour': recolourable, 'transfer': transferable,
                          'style': params.get('F_PAINT_STYLE', 0), 'rarity': rarities.get(kit, 'rare'), 'pattern': pattern,
+                         'texture_authored': kit in DONORS,
                          'title': titles[kit], 'effects': observed_effects(params),
                          'colors': [list(params['g_vColor%d'%i])+[1] for i in range(4)] if all('g_vColor%d'%i in params for i in range(4)) else [],
                          'brightness': float(params.get('g_flColorBrightness',1))}
@@ -547,7 +548,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
     guard=Guard(rows,appearance_palette)
     from collection_rebuild import upgrade, audit, DESIGNS
     selected={icon for icon in icons if icon in DESIGNS and
-              not all(e.get('detail')==DESIGNS[icon].get('revision',1) for e in lineup.get(icon,()))}
+              not all(e.get('detail')==DESIGNS[icon].get('revision',1) or e.get('all_collection_revision') for e in lineup.get(icon,()))}
     guard.reserve({icon:entries for icon,entries in lineup.items() if icon not in selected})
     lineup = upgrade(lineup, rows, guns, icons, families, detail_works, report, accept=guard.allowed)
     from collection_polish import polish
@@ -661,3 +662,5 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
     report['usable_finishes'] = len(rows)
     report['used_finishes'] = len({e['donor'] for es in lineup.values() for e in es if 'donor' in e})
     return new_kits, files, '\n'.join(lists), specs, entries_out, icon_map
+
+

@@ -40,6 +40,8 @@ def polish(lineup,rows,works,report):
     lineup=refine(lineup,rows,works,report)
     from popular_chases import apply as apply_popular
     lineup=apply_popular(lineup,rows,works,report)
+    from collection_catalogue import apply as apply_catalogue
+    lineup=apply_catalogue(lineup,rows,works,report)
     coverage={};missing=[]
     for icon,entries in lineup.items():
         found=[]

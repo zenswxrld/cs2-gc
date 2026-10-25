@@ -84,27 +84,10 @@ def pack(folder, extra=()):
     proxy = folder.parent / 'bin' / 'win64'
     if (proxy / KILL_SWITCH).exists():
         removed = False
-        for path in (directory_path, archive_path):
+        from artwork_archive import owned_archives
+        for path in [directory_path]+owned_archives(folder):
             if path.exists():
                 path.unlink(); removed = True
         return removed
-    files = sorted(_files(folder) + list(extra))
-    if not files:
-        return False
-    directory, archive = build(files)
-    if (directory_path.exists() and archive_path.exists() and directory_path.read_bytes() == directory
-            and archive_path.read_bytes() == archive):
-        return False
-    _write(archive_path, archive)
-    _write(directory_path, directory)
-    return True
-
-
-def status(proxy_directory):
-    """One line for the rewards log: kill switch state and which override folders hold a VPK."""
-    proxy = Path(proxy_directory).resolve()
-    game = proxy.parent.parent
-    if (proxy / KILL_SWITCH).exists():
-        return 'OFF (' + KILL_SWITCH + ' exists beside the DLL)'
-    folders = sorted(path.name for path in game.glob('cs2_gc_*') if (path / 'pak01_dir.vpk').is_file())
-    return ('on; VPKs present in ' + ', '.join(folders)) if folders else 'on; no override VPKs written yet'
+    from artwork_archive import pack as stream_pack
+    return stream_pack(folder,extra)

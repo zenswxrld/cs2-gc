@@ -820,6 +820,10 @@ def prepare(proxy_directory, config, items_game_text):
             for wear in WEARS:
                 path = '%s%s_%s_%s_png.vtex_c' % (ICON_DIR, match.group(2), match.group(1), wear)
                 if not source.exists(path): icons.append((path, fallback))
+    # Generation is finished; release payload maps before streaming the archives.
+    files.clear()
+    if 'case_files' in locals():case_files.clear()
+    if 'gc_files' in locals():gc_files.clear()
     from vpk_pack import pack
     changed = pack(mod, icons)
     if mounted != current:
@@ -862,3 +866,4 @@ def read_vtex(data):
             return width, height, chunk
         position += stored
     raise ValueError('Icon texture has no mips')
+

@@ -20,6 +20,7 @@ def apply(lineup,rows,works,report):
     result=deepcopy(lineup);applied=[];unavailable=[]
     for icon,(donor,weapon,label,mode,themes) in CHASES.items():
         entries=result.get(icon,[])
+        if len(entries)==16 and all(e.get('all_collection_revision') for e in entries):continue
         chase=next((i for i,e in enumerate(entries) if e['tier']=='ancient'),None)
         if chase is None:continue
         # Explicit protection for the user's approved centrepiece and artwork.

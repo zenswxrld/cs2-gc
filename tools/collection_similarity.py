@@ -35,6 +35,10 @@ class Guard:
         self.rejected=0
         self.unrated=set()
         for name,row in sorted(rows.items()):
+            # Custom paint/gunsmith colours live in the texture. Their four
+            # shader constants are placeholders, not an official-art palette;
+            # the decoder enforces a visible non-stock hue shift instead.
+            if row.get('texture_authored'):continue
             palette=row.get('colors') or []
             if not palette:continue
             for weapon in row.get('guns',()):
@@ -110,6 +114,7 @@ def audit(lineup,rows,palette_for):
                 unrated.append({'collection':icon,'slot':index+1,'reason':'external family; target-client review'})
                 continue
             themes=entry.get('themes',()) if entry['mode']!='transfer' else [None]
+            pending=[]
             for theme in themes:
                 outcomes+=1
                 palette=palette_for(donor,theme,entry)
@@ -119,7 +124,14 @@ def audit(lineup,rows,palette_for):
                 matches=guard.matches(donor,entry['weapon'],palette,entry)
                 if matches:flags.append({'collection':icon,'slot':index+1,'weapon':entry['weapon'],
                     'donor':donor,'theme':theme,'matches':matches,'issue':'same pattern family and near palette'})
+                pending.append((theme,palette))
+            # Deliberate family colours use palettes_distinct during material
+            # construction. Compare their outcomes to other skins, not to other
+            # colours of the same named family using the trim-distance metric.
+            for theme,palette in pending:
                 guard.record(donor,entry['weapon'],palette,icon+':'+str(index+1)+':'+str(theme),entry)
     return {'collections':len(lineup),'slots':slots,'outcomes':outcomes,'near_matches':flags,'unrated':unrated,
-            'scope':'same weapon, actual shared pattern or known geometry family, brightness-adjusted palettes',
+            'scope':'same weapon and actual shared pattern; brightness-adjusted native palettes; texture stock hue and family distinctness checked by material generation',
             'visual_status':'target-client review required; different patterns can still look similar'}
+
+

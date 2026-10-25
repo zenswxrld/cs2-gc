@@ -6,7 +6,7 @@ The ten approved popular chase additions remain, along with Gold Brick and its b
 
 Selection uses [tracked player loadouts](https://prosettings.net/items/) and [completed-sale activity](https://www.steamanalyst.com/most-sold), checked 25 October 2026. These cover different audiences and are not a universal popularity ranking. Recognizable designs also extend to pistols, SMGs, shotguns, snipers and heavies: Kill Confirmed, Water Elemental, Ocean Drive, Dragonfire, Disco Tech, Chatterbox, Akihabara Accept, Hyper Beast, Starlight Protector, Power Loader and others.
 
-Fixed skins use the collection palette, with protected black/white lettering and hardware. One or two premium colour families randomize on pulls; existing owned variants remain defined. Printstream inversions retain the source pearl material, and native glitter/pearl finishes keep their observed effects. Every collection has at least one active special material.
+Fixed skins use the collection palette, with protected black/white lettering and hardware. One or two premium colour families randomize on pulls (Undertow has three following the requested AXIA family); existing owned variants remain defined. Printstream inversions retain the source pearl material, and native glitter/pearl finishes keep their observed effects. Every collection has at least one active special material.
 
 | Collection | Fixed palette / neutral hardware | Covert chase | Classified artwork sources |
 | --- | --- | --- | --- |
@@ -92,3 +92,5 @@ Automated material and packaging checks do not replace mounted client review. Li
 | usp_silencer | 22 |
 | xm1014 | 17 |
 
+
+Client-reviewed repairs and the full alpha-mask audit are documented in [Client review](CLIENT-REVIEW.md).

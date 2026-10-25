@@ -17,7 +17,7 @@ def apply(lineup,rows,works,report):
         reason=None
         if counts(proposed)!=EXPECTED or len({e['weapon'] for e in proposed})!=16:
             reason='invalid authored tier/weapon layout'
-        elif not 1<=sum(e['mode']=='family' for e in proposed)<=2:
+        elif not 1<=sum(e['mode']=='family' for e in proposed)<=(3 if icon=='undertow' else 2):
             reason='invalid authored family count'
         else:
             for entry in proposed:
@@ -35,7 +35,7 @@ def apply(lineup,rows,works,report):
         # from the preflight baseline. Never silently replace a later revision.
         for entry in current:
             if entry.get('popular_chase_revision') or entry.get('signature_finish') or entry.get('pattern_source') or entry.get('palette_source'):
-                comparable=lambda e:{k:v for k,v in e.items() if k!='all_collection_revision'}
+                comparable=lambda e:{k:v for k,v in e.items() if k not in ('all_collection_revision','client_review_revision')}
                 if not any(comparable(e)==comparable(entry) for e in proposed):
                     reason=entry.get('label','approved finish')+': retain newer approved entry';break
         if reason:
@@ -49,4 +49,5 @@ def apply(lineup,rows,works,report):
         'policy':'native artwork, narrow pool palette, retained approved additions/history, complete pools only',
         'visual_status':'material preflight passed; mounted client appearance needs review'}
     return result
+
 

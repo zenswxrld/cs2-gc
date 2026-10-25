@@ -77,7 +77,8 @@ int main(int argc,char**argv) {
         std::cout.write(reinterpret_cast<const char*>(compressed.data()),static_cast<std::streamsize>(compressed.size()));
         return std::cout?0:6;
     }
-    if(argc!=3 && argc!=6) return 2;
+    bool auditOnly=argc==4 && std::string(argv[3])=="--audit";
+    if(argc!=3 && argc!=6 && !auditOnly) return 2;
     int w=std::atoi(argv[1]),h=std::atoi(argv[2]);
     if(w<1||h<1||w>4096||h>4096) return 3;
     std::vector<unsigned char> input((std::istreambuf_iterator<char>(std::cin)),{});
@@ -92,44 +93,64 @@ int main(int argc,char**argv) {
             if(xx<w&&yy<h) std::copy_n(block.data()+(j*4+i)*4,4,pixels.data()+(yy*w+xx)*4);
         }
     }
+    if(auditOnly) {
+        std::size_t chromatic=0,masked=0,neutral=0,maskedNeutral=0;
+        for(std::size_t p=0;p<pixels.size();p+=4) {
+            auto c=hsv(pixels[p]/255.f,pixels[p+1]/255.f,pixels[p+2]/255.f);
+            if(c[1]>=.18f&&c[2]>=.15f) {++chromatic;if(pixels[p+3]==0)++masked;}
+            if(c[1]<=.12f) {++neutral;if(pixels[p+3]==0)++maskedNeutral;}
+        }
+        std::cout<<"{\"chromatic_pixels\":"<<chromatic<<",\"zero_alpha_chromatic_pixels\":"<<masked
+                 <<",\"neutral_pixels\":"<<neutral<<",\"zero_alpha_neutral_pixels\":"<<maskedNeutral<<"}\n";
+        return std::cout?0:6;
+    }
     std::size_t changed=0,eligible=0;
     std::array<std::size_t,4096> histogram{};
     std::array<std::array<unsigned char,4>,4096> samples{};
     if(argc==6) {
         float target=std::strtof(argv[3],nullptr)/360,cap=std::strtof(argv[4],nullptr);
         int mode=std::atoi(argv[5]);
-        if(mode<0||mode>7||mode==4||mode==5) return 5;
-        bool rotate=mode==2||mode==6||mode==7;
+        if(mode<0||mode>9) return 5;
+        // Paint alpha carries finish masks, not opacity. These opt-in modes
+        // recolour RGB on zero-alpha paint islands while preserving the mask.
+        bool materialAlpha=mode==4||mode==5||mode==8||mode==9;
+        bool coordinated=mode==5||mode==9;
+        bool inverse=mode==3||mode==8;
+        bool rotate=mode==2||mode==6||mode==7||mode==4||coordinated;
         bool ramp=mode==1;
         float anchor=0;
         if(rotate) {
             std::array<std::size_t,360> hues{};
             for(std::size_t p=0;p<pixels.size();p+=4) {
                 auto c=hsv(pixels[p]/255.f,pixels[p+1]/255.f,pixels[p+2]/255.f);
-                if(c[1]>=.18f&&c[2]>=.15f&&pixels[p+3]!=0&&!protectedArtwork(c,mode))
+                if(c[1]>=.18f&&c[2]>=.15f&&(materialAlpha||pixels[p+3]!=0)&&!protectedArtwork(c,mode==9?6:mode))
                     ++hues[std::min(359,int(c[0]*360))];
             }
             anchor=float(std::max_element(hues.begin(),hues.end())-hues.begin())/360;
             float delta=std::abs(target-anchor);delta-=std::floor(delta);
-            if(std::min(delta,1-delta)<25.f/360) return 7;
+            if(!coordinated && std::min(delta,1-delta)<25.f/360) return 7;
         }
         if(!std::isfinite(target)||!std::isfinite(cap)||cap<0||cap>1) return 5;
         for(std::size_t p=0;p<pixels.size();p+=4) {
             auto c=hsv(pixels[p]/255.f,pixels[p+1]/255.f,pixels[p+2]/255.f);
             // Grayscale foil, dark ink and transparent artwork are protected.
-            if(pixels[p+3]==0) continue;
-            if(mode==3) {
+            if(!materialAlpha && pixels[p+3]==0) continue;
+            if(inverse) {
                 if(c[1]>.12f) continue; // Neutral Printstream body/ink only.
             } else if(c[1]<.18f||c[2]<.15f) continue;
             float distance=std::min(c[0],1-c[0]);
             if(mode==0 && distance>40.f/360) continue; // Foil: only the authored red lacquer.
-            if(protectedArtwork(c,mode)) continue;
+            if(protectedArtwork(c,mode==9?6:mode)) continue;
             ++eligible;
             float hue=ramp?target+std::sin(c[0]*6.28318530718f)*38.f/360:
                 target+(c[0]>.5f?c[0]-1:c[0]);
             if(rotate) hue=c[0]+target-anchor;
+            if(coordinated) {
+                float delta=c[0]-anchor;delta-=std::floor(delta+.5f);
+                hue=target+std::clamp(delta,-.5f,.5f)*.10f;
+            }
             auto v=rgb(hue,std::min(c[1],cap),c[2]);
-            if(mode==3) v={1-pixels[p]/255.f,1-pixels[p+1]/255.f,1-pixels[p+2]/255.f};
+            if(inverse) v={1-pixels[p]/255.f,1-pixels[p+1]/255.f,1-pixels[p+2]/255.f};
             bool differs=false;
             for(int channel=0;channel<3;++channel) {
                 auto value=static_cast<unsigned char>(std::clamp(int(std::lround(v[channel]*255)),0,255));
@@ -160,3 +181,4 @@ int main(int argc,char**argv) {
     std::cout.write(reinterpret_cast<const char*>(pixels.data()),static_cast<std::streamsize>(pixels.size()));
     return std::cout?0:6;
 }
+

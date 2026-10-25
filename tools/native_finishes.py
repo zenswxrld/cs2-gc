@@ -801,6 +801,7 @@ def prepare(proxy_directory, config, items_game_text):
     atomic_write(proxy / PREVIEW_FILE, json.dumps(previews, sort_keys=True) + '\n')
     atomic_write(manifest_path, json.dumps(dict(owner=OWNER, files=len(files), **details), indent=2) + '\n')
     wanted = {mod / path for path in files}
+    print('Finish resources: writing %d generated files.' % len(files),flush=True)
     for path, content in files.items():
         target = mod / path
         if not target.exists() or target.read_bytes() != content:
@@ -825,6 +826,7 @@ def prepare(proxy_directory, config, items_game_text):
     if 'case_files' in locals():case_files.clear()
     if 'gc_files' in locals():gc_files.clear()
     from vpk_pack import pack
+    print('Finish resources: packing generated artwork into native archives.',flush=True)
     changed = pack(mod, icons)
     if mounted != current:
         backup = info.with_name(info.name + '.' + FOLDER + '_backup')
@@ -866,4 +868,5 @@ def read_vtex(data):
             return width, height, chunk
         position += stored
     raise ValueError('Icon texture has no mips')
+
 

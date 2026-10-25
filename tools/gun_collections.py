@@ -488,6 +488,8 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
     def material(donor, theme, detail=False, palette_source=None, pattern_source=None, effect_source=None):
         name = material_name(donor,theme,detail,palette_source,pattern_source,effect_source)
         if name not in materials:
+            if len(materials)%25==0:
+                print('Collection materials: processing %d; %s / %s.' % (len(materials)+1,donor,theme),flush=True)
             made_files = make_recolour(source, donor, kit_path(donor, kits[donor][1]), name, theme, preserve_details=detail,
                 palette_source=(palette_source,kits[palette_source][1]) if palette_source and palette_source in kits else None,
                 pattern_source=(pattern_source,kits[pattern_source][1]) if pattern_source and pattern_source in kits else None)
@@ -662,5 +664,4 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
     report['usable_finishes'] = len(rows)
     report['used_finishes'] = len({e['donor'] for es in lineup.values() for e in es if 'donor' in e})
     return new_kits, files, '\n'.join(lists), specs, entries_out, icon_map
-
 

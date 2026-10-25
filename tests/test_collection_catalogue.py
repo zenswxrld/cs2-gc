@@ -50,7 +50,7 @@ class Catalogue(unittest.TestCase):
             with self.subTest(icon=icon):
                 self.assertEqual(counts(entries),[1,2,3,4,6])
                 self.assertEqual(len({e['weapon'] for e in entries}),16)
-                self.assertTrue(1<=sum(e['mode']=='family' for e in entries)<=2)
+                self.assertTrue(1<=sum(e['mode']=='family' for e in entries)<=(3 if icon=='undertow' else 2))
                 self.assertTrue(all(e['all_collection_revision']==2 for e in entries))
                 self.assertTrue(all(e['mode'] in ('fixed','family') for e in entries))
                 self.assertTrue(all(len(e['themes'])>=3 for e in entries if e['mode']=='family'))
@@ -112,4 +112,3 @@ class Catalogue(unittest.TestCase):
                     outcomes.add(key)
 
 if __name__=='__main__':unittest.main()
-

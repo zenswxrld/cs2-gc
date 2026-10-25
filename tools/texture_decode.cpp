@@ -9,6 +9,7 @@
 #include <iostream>
 #include <iterator>
 #include <vector>
+#include <string>
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
@@ -37,10 +38,45 @@ static bool protectedArtwork(const std::array<float,3>& c,int mode) {
         c[1]>=.18f && c[1]<=.65f && c[2]>=.35f) return true;
     return mode==7 && (c[0]<160.f/360 || c[0]>265.f/360);
 }
+// Lossless block compression for full-resolution owned artwork textures.
+static std::vector<unsigned char> lz4(const std::vector<unsigned char>& in) {
+    std::vector<unsigned char> out;
+    std::array<int,65536> table;table.fill(-1);
+    auto length=[&](std::size_t n) {while(n>=255){out.push_back(255);n-=255;}out.push_back(static_cast<unsigned char>(n));};
+    auto hash=[&](std::size_t p) {std::uint32_t v=std::uint32_t(in[p])|(std::uint32_t(in[p+1])<<8)|(std::uint32_t(in[p+2])<<16)|(std::uint32_t(in[p+3])<<24);return (v*2654435761u)>>16;};
+    std::size_t anchor=0,p=0;
+    while(p+12<=in.size()) {
+        auto h=hash(p);int previous=table[h];table[h]=static_cast<int>(p);
+        if(previous<0 || p-std::size_t(previous)>65535 || !std::equal(in.begin()+previous,in.begin()+previous+4,in.begin()+p)) {++p;continue;}
+        std::size_t match=4,ref=std::size_t(previous);
+        while(p+match<in.size()-5 && in[ref+match]==in[p+match])++match;
+        auto literals=p-anchor,extra=match-4;
+        out.push_back(static_cast<unsigned char>((std::min<std::size_t>(15,literals)<<4)|std::min<std::size_t>(15,extra)));
+        if(literals>=15)length(literals-15);
+        out.insert(out.end(),in.begin()+anchor,in.begin()+p);
+        auto offset=p-ref;out.push_back(static_cast<unsigned char>(offset));out.push_back(static_cast<unsigned char>(offset>>8));
+        if(extra>=15)length(extra-15);
+        p+=match;anchor=p;
+    }
+    auto literals=in.size()-anchor;
+    out.push_back(static_cast<unsigned char>(std::min<std::size_t>(15,literals)<<4));
+    if(literals>=15)length(literals-15);
+    out.insert(out.end(),in.begin()+anchor,in.end());
+    return out;
+}
+
+
 int main(int argc,char**argv) {
 #ifdef _WIN32
     _setmode(_fileno(stdin),_O_BINARY);_setmode(_fileno(stdout),_O_BINARY);
 #endif
+    if(argc==2 && std::string(argv[1])=="--lz4") {
+        std::vector<unsigned char> input((std::istreambuf_iterator<char>(std::cin)),{});
+        if(input.size()>(1u<<27))return 3;
+        auto compressed=lz4(input);
+        std::cout.write(reinterpret_cast<const char*>(compressed.data()),static_cast<std::streamsize>(compressed.size()));
+        return std::cout?0:6;
+    }
     if(argc!=3 && argc!=6) return 2;
     int w=std::atoi(argv[1]),h=std::atoi(argv[2]);
     if(w<1||h<1||w>4096||h>4096) return 3;

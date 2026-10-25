@@ -193,6 +193,9 @@ endif()
 
 if(BUILD_TESTING AND Python3_FOUND)
     add_test(NAME cs2_collection_materials COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_collection_material.py -v)
+    add_test(NAME cs2_artwork_compression COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_artwork_compression.py -v)
+    set_tests_properties(cs2_artwork_compression PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
     set_tests_properties(cs2_collection_materials PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
 endif()

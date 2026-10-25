@@ -94,3 +94,5 @@ Automated material and packaging checks do not replace mounted client review. Li
 
 
 Client-reviewed repairs and the full alpha-mask audit are documented in [Client review](CLIENT-REVIEW.md).
+
+Artwork cache and startup measurements: [Preparation performance](PREPARATION-PERFORMANCE.md).

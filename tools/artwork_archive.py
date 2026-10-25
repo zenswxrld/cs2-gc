@@ -1,9 +1,29 @@
 """Stream owned collection assets into standard numbered VPK archives."""
-import hashlib,shutil,struct,tempfile,zlib
+import hashlib,json,shutil,struct,tempfile,zlib
 from pathlib import Path
 
 ARCHIVE_LIMIT=1<<30
 CHUNK=1<<20
+CACHE='cs2_gc_pack_cache.json'
+OWNER='cs2gc-stream-pack-cache-v1'
+
+def _stamp(path):
+    stat=path.stat();return [stat.st_size,stat.st_mtime_ns,stat.st_ino]
+
+def _outputs(folder):
+    return {p.name:_stamp(p) for p in owned_archives(folder)+[folder/'pak01_dir.vpk'] if p.is_file()}
+
+def _cached(folder,state):
+    try:
+        saved=json.loads((folder/CACHE).read_text(encoding='utf-8'))
+        if saved.get('owner')!=OWNER:return False
+        return saved.get('inputs')==state and saved.get('outputs')==_outputs(folder) and (folder/'pak01_dir.vpk').is_file()
+    except (OSError,ValueError,TypeError,AttributeError):return False
+
+def _remember(folder,state):
+    target=folder/CACHE;temporary=target.with_suffix('.json.tmp')
+    temporary.write_text(json.dumps({'owner':OWNER,'inputs':state,'outputs':_outputs(folder)},sort_keys=True),encoding='utf-8')
+    temporary.replace(target)
 
 def owned_archives(folder):
     return sorted(p for p in Path(folder).glob('pak01_*.vpk')
@@ -20,14 +40,17 @@ def _same(a,b):
 def pack(folder,extra=()):
     folder=Path(folder)
     if not folder.is_dir():return False
+    extra=tuple(extra);inputs=[];archives=set(owned_archives(folder))
+    for path in sorted(folder.rglob('*')):
+        if (not path.is_file() or path.name=='pak01_dir.vpk' or path in archives
+                or path.suffix in ('.json','.tmp') or path.name=='cs2_gc_schema_stamp.txt'):continue
+        inputs.append((path.relative_to(folder).as_posix(),path))
+    state={'format':1,'archive_limit':ARCHIVE_LIMIT,'files':[[name,_stamp(path)] for name,path in inputs],
+           'extra':sorted([[name,hashlib.sha256(data).hexdigest()] for name,data in extra])}
+    if _cached(folder,state):return False
     # Internal staging is outside the input walk and removed on any failure.
     with tempfile.TemporaryDirectory(prefix='cs2gc-pack-',dir=folder.parent) as stage:
-        stage=Path(stage);inputs=[]
-        archives=set(owned_archives(folder))
-        for path in sorted(folder.rglob('*')):
-            if (not path.is_file() or path.name=='pak01_dir.vpk' or path in archives
-                    or path.suffix in ('.json','.tmp') or path.name=='cs2_gc_schema_stamp.txt'):continue
-            inputs.append((path.relative_to(folder).as_posix(),path))
+        stage=Path(stage)
         for i,(name,data) in enumerate(extra):
             path=stage/('extra-'+str(i));path.write_bytes(data);inputs.append((name,path))
         if not inputs:return False
@@ -81,13 +104,16 @@ def pack(folder,extra=()):
         body=header+tree_data+checks+hashlib.md5(tree_data).digest()+hashlib.md5(checks).digest()
         directory=body+hashlib.md5(body).digest()
         target=folder/'pak01_dir.vpk'
-        if target.is_file() and target.read_bytes()==directory and all(_same(folder/p.name,p) for p in parts):return False
+        if target.is_file() and target.read_bytes()==directory and all(_same(folder/p.name,p) for p in parts):
+            _remember(folder,state);return False
         # Native directory is published last, after all referenced archive data.
         for part in parts:
-            temp=folder/(part.name+'.tmp');shutil.copyfile(part,temp);temp.replace(folder/part.name)
+            part.replace(folder/part.name)
         temp=folder/'pak01_dir.vpk.tmp';temp.write_bytes(directory);temp.replace(target)
         wanted={p.name for p in parts}
         for stale in owned_archives(folder):
             if stale.name not in wanted:stale.unlink()
+        _remember(folder,state)
         return True
+
 

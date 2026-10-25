@@ -41,10 +41,6 @@ def make(source,kit,path,new_name,theme):
     family_params=params
     pattern=params.get(binding_name)
     if not isinstance(pattern,str):return None
-    original=source.read(pattern+'_c') if pattern else None
-    if original is None:return None
-    try:_,_,_,width,height,payload=texture_payload(original)
-    except ValueError:return None
     decoder=Path(os.environ.get('CS2_GC_TEXTURE_DECODER',str(Path(__file__).with_name('cs2_gc_texture_decode.exe'))))
     if not decoder.is_file():decoder=Path(__file__).with_name('cs2_gc_texture_decode')
     if not decoder.is_file():return None
@@ -59,25 +55,36 @@ def make(source,kit,path,new_name,theme):
     else:
         hues,cap=f.GRADIENT_THEMES[theme];hue=hues[0]
     data,guid,root=found['compmat'];mdata,mguid,mroot=found['material']
-    owned_textures={};primary_stats=None
+    from artwork_cache import current
+    cache=current();inputs=[]
     for binding_name in bindings(kit,binding_name):
         pattern=params.get(binding_name)
         original=source.read(pattern+'_c') if isinstance(pattern,str) and pattern else None
         if original is None:return None
-        try:_,_,_,width,height,payload=texture_payload(original)
-        except ValueError:return None
-        child=subprocess.run([str(decoder),str(width),str(height),str(hue),str(cap),str(numeric_mode)],
-            input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
-            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-        if child.returncode==7:return None
-        if child.returncode:raise ValueError('Artwork decoder failed: '+str(child.returncode))
-        stats=json.loads(child.stderr)
-        if primary_stats is None:
-            if not stats['changed_pixels'] or not stats['palette']:return None
-            primary_stats=stats
-        # A neutral secondary ramp/overlay can stay stock. Only colour-bearing
-        # inputs are replaced, never roughness, normal, wear or metalness masks.
-        if not stats['changed_pixels']:continue
+        inputs.append((binding_name,original))
+    key=cache.key({'kit':kit,'theme':theme,'mode':numeric_mode,'hue':hue,'cap':cap},inputs) if cache else None
+    records=cache.load(key) if cache else None
+    if records and any(r['binding'] not in dict(inputs) for r in records):records=None
+    if records is None:
+        records=[]
+        for binding_name,original in inputs:
+            try:_,_,_,width,height,payload=texture_payload(original)
+            except ValueError:return None
+            child=subprocess.run([str(decoder),str(width),str(height),str(hue),str(cap),str(numeric_mode)],
+                input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            if child.returncode==7:return None
+            if child.returncode:raise ValueError('Artwork decoder failed: '+str(child.returncode))
+            stats=json.loads(child.stderr)
+            if not records and (not stats['changed_pixels'] or not stats['palette']):return None
+            # Keep a neutral secondary overlay/ramp, with its original masks.
+            if not stats['changed_pixels']:continue
+            content=owned_texture(original,child.stdout)
+            records.append({'binding':binding_name,'stats':stats,'file':cache.blob(content) if cache else content})
+        if cache:cache.save(key,records)
+    owned_textures={};primary_stats=records[0]['stats']
+    for record in records:
+        binding_name=record['binding']
         suffix='' if binding_name=='g_tPattern' else '_'+binding_name[3:].lower()
         texture='materials/cs2_gc/collection_artwork/'+kit+'_'+theme.lower()+suffix+'.vtex'
         changed=False
@@ -90,7 +97,7 @@ def make(source,kit,path,new_name,theme):
             key,value=item.get('m_name'),item.get('m_pValue')
             if key and key.value==binding_name and value:value.value=texture;changed=True
         if not changed:return None
-        owned_textures[texture+'_c']=owned_texture(original,child.stdout)
+        owned_textures[texture+'_c']=record['file']
     if kind=='foil_target':
         from collection_effects import set_scalar
         for key in ('g_flPearlescentScale','g_flIridescentStrength'):

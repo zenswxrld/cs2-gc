@@ -56,7 +56,7 @@ def build_archive(root, runtime_data, bot_files):
               (root/'docs/DOWNGRADE.md','README-DOWNGRADE.md'),
               (root/'docs/INSTALL.md','README-INSTALL.md'),
               (root/'docs/FEATURES.md','FEATURES.md')]
-    for name in ('INSTALL.md','DOWNGRADE.md','FEATURES.md','FEATURE-ROADMAP.md','ALL-COLLECTIONS.md','CLIENT-REVIEW.md'):
+    for name in ('INSTALL.md','DOWNGRADE.md','FEATURES.md','FEATURE-ROADMAP.md','ALL-COLLECTIONS.md','CLIENT-REVIEW.md','PREPARATION-PERFORMANCE.md'):
         files.append((root/'docs'/name,'docs/'+name))
     manifest = {'format':1,'commit':os.environ.get('GITHUB_SHA',''),
                 'supported_build':json.loads((root/'data/supported_build.json').read_text()),

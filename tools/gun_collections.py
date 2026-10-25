@@ -484,6 +484,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
         except ValueError: stored = {}
     rows = study(source, kits, kit_path, source_text, titles)
     new_kits, files, made, materials = [], {}, set(), {}
+    resource_sets={}
 
     def material(donor, theme, detail=False, palette_source=None, pattern_source=None, effect_source=None):
         name = material_name(donor,theme,detail,palette_source,pattern_source,effect_source)
@@ -499,7 +500,8 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
             materials[name] = None
             if made_files:
                 files[finishes.COMPMAT_DIR + name + '.vcompmat_c'], files[finishes.VMAT_DIR + name + '.vmat_c'] = made_files[:2]
-                if len(made_files)>4:files.update(made_files[4])
+                if len(made_files)>4:
+                    files.update(made_files[4]);resource_sets[name]=set(made_files[4])
                 materials[name] = finishes.COMPMAT_DIR + name + '.vcompmat'
                 if len(made_files)>5 and made_files[5]:report['gold_brick_wood']=made_files[5]
                 report.setdefault('colours', {})[name] = {'from': made_files[2], 'to': made_files[3],
@@ -512,9 +514,11 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
         return all(made_paths) if mode == 'fixed' else sum(map(bool, made_paths)) >= 3
 
     lineup = stored.get('lineup') if stored.get('version') == VERSION else None
-    if lineup is None or any(e.get('donor') not in rows for entries in lineup.values() for e in entries if 'donor' in e) \
-            or set(lineup) != set(icons):
-        lineup = plan(rows, guns, icons, families, works)
+    needs_seed=(lineup is None or any(e.get('donor') not in rows for entries in lineup.values() for e in entries if 'donor' in e)
+                or set(lineup)!=set(icons))
+    fresh_seed=(needs_seed and not stored and lineup_path is not None and
+                not any((lineup_path.parent/name).exists() for name in ('cs2_gc_finish_ids.json','cs2_gc_inventory.txt')))
+    if needs_seed:lineup={icon:[] for icon in icons} if fresh_seed else plan(rows,guns,icons,families,works)
     history = dict(stored.get('history') or {})
     # Keep the previous kits and their legacy material policy for owned items.
     for icon, entries in lineup.items():
@@ -546,6 +550,22 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
         if not palette:return []
         from collection_rebuild import recolour
         return recolour(palette,theme)
+    from artwork_cache import prewarm
+    from collection_catalogue_designs import LINEUPS
+    prewarm(source,kits,kit_path,[e for entries in list(lineup.values())+list(LINEUPS.values()) for e in entries]+list(history.values()))
+    if fresh_seed:
+        from collection_catalogue import apply as seed_catalogue
+        candidate=seed_catalogue(lineup,rows,detail_works,report)
+        if all(len(candidate.get(icon,()))==16 for icon in icons):
+            lineup=candidate;report['catalogue_seed']='validated authored matrix; skipped obsolete donor planners'
+        else:
+            lineup=plan(rows,guns,icons,families,works)
+            for icon,entries in lineup.items():
+                for entry in entries:
+                    if 'donor' in entry:
+                        from collection_policies import history_entry
+                        history_entry(history,kit_name(icon,entry),dict(entry,icon=icon))
+            report['catalogue_seed']='authored matrix unavailable; complete legacy fallback retained'
     from collection_similarity import Guard, audit as similarity_audit
     guard=Guard(rows,appearance_palette)
     from collection_rebuild import upgrade, audit, DESIGNS
@@ -653,10 +673,12 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
     # Planning tried more colours than the lineup uses; ship only the materials a skin points at.
     used_paths = {values['composite_material_path'] for _, _, values in new_kits}
     kept = {name for name, path in materials.items() if path in used_paths}
+    generated_resources=set().union(*resource_sets.values()) if resource_sets else set()
+    used_resources=set().union(*(resource_sets.get(name,set()) for name in kept)) if kept else set()
     files = {path: data for path, data in files.items()
-             if not path.startswith(tuple(folder+prefix for folder in (finishes.COMPMAT_DIR,finishes.VMAT_DIR)
+             if (path not in generated_resources or path in used_resources) and (not path.startswith(tuple(folder+prefix for folder in (finishes.COMPMAT_DIR,finishes.VMAT_DIR)
                                          for prefix in ('gc3m_','gc4m_')))
-             or path.rsplit('/', 1)[1].split('.')[0] in kept}
+             or path.rsplit('/', 1)[1].split('.')[0] in kept)}
     report['colours'] = {name: row for name, row in report.get('colours', {}).items() if name in kept}
     report['existing_material_repairs'] = sorted(repaired_existing - repair_fallbacks)
     report['existing_material_fallbacks'] = sorted(repair_fallbacks)

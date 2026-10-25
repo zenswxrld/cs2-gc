@@ -49,7 +49,7 @@ def pattern_from_source(source,path):
     except (ValueError,KeyError):
         return None
 
-def texture_payload(data):
+def texture_payload(data,decode_payload=True):
     size=struct.unpack_from('<I',data)[0]
     version,blocks=kv3.read_resource(data[:size]);header=dict(blocks)['DATA']
     v,flags,*_=struct.unpack_from('<HH4fHHHBBIII',header)
@@ -73,13 +73,14 @@ def texture_payload(data):
         block=data[position:position+stored];position+=stored
         if level==0:
             if len(block)!=stored:raise ValueError('Truncated recolour texture')
+            if not decode_payload:return version,blocks,flags,width,height,None
             if compression==1 and stored<raw:block=kv3.lz4_block_decompress(block,raw)
             if len(block)!=raw:raise ValueError('Wrong recolour texture payload size')
             return version,blocks,flags,width,height,block
     raise ValueError('Missing recolour texture mip')
 
 def owned_texture(data,rgba):
-    version,blocks,flags,width,height,_=texture_payload(data)
+    version,blocks,flags,width,height,_=texture_payload(data,decode_payload=False)
     if len(rgba)!=width*height*4:raise ValueError('Decoded texture length mismatch')
     pixels=bytearray(rgba)
     pixels[0::4],pixels[2::4]=rgba[2::4],rgba[0::4]
@@ -94,7 +95,8 @@ def owned_texture(data,rgba):
             stderr=subprocess.PIPE,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         if compressed.returncode==0 and len(compressed.stdout)<len(pixels):
             # Verify lossless output before using the native compressed mip format.
-            if kv3.lz4_block_decompress(compressed.stdout,len(pixels))!=pixels:
+            from native_codec import pipeline
+            if not pipeline() and kv3.lz4_block_decompress(compressed.stdout,len(pixels))!=pixels:
                 raise ValueError('Owned artwork lossless-compression mismatch')
             header+=struct.pack('<III',4,8,16)+struct.pack('<IIII',1,8,1,len(compressed.stdout))
             header=bytearray(header);struct.pack_into('<I',header,36,1)
@@ -193,4 +195,5 @@ def make(source,kit,new_name,theme,compmat,guid,root,specific,material,m_guid,m_
         report['_files']=texture_files
     return True,(finishes._with_block(compmat,'DATA',kv3.write_kv3(guid,root)),
         finishes._with_block(material,'DATA',kv3.write_kv3(m_guid,m_root)))
+
 

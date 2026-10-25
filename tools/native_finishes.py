@@ -652,6 +652,13 @@ def make_vtex(template, png, max_size=None):
 
 
 def prepare(proxy_directory, config, items_game_text):
+    from artwork_cache import activate
+    proxy=Path(proxy_directory).resolve()
+    with activate(proxy.parent.parent/'cs2_gc_artwork_cache'):
+        return _prepare(proxy_directory,config,items_game_text)
+
+
+def _prepare(proxy_directory, config, items_game_text):
     """Write the finish VPK folder and return items_game_text with the paint kits and case added.
 
     Called by native_tradeups while it builds the native items_game override."""
@@ -804,10 +811,8 @@ def prepare(proxy_directory, config, items_game_text):
     print('Finish resources: writing %d generated files.' % len(files),flush=True)
     for path, content in files.items():
         target = mod / path
-        if not target.exists() or target.read_bytes() != content:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            temporary = target.with_name(target.name + '.tmp')
-            temporary.write_bytes(content); temporary.replace(target)
+        from resource_files import publish
+        publish(target,content)
     for stale in [p for p in mod.rglob('*') if p.is_file() and p.suffix not in ('.vpk', '.json') and p not in wanted]:
         stale.unlink()
     # Knife+finish pairs the game never shipped have no pre-rendered inventory picture; give them the stock

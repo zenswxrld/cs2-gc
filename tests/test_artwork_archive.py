@@ -6,6 +6,22 @@ import artwork_archive as aa
 import native_resources,vpk_pack
 
 class ArtworkArchives(unittest.TestCase):
+    def test_pack_cache_skips_payload_work_and_invalidates_inputs_extras_or_archive_damage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'a.bin').write_bytes(b'original artwork')
+            self.assertTrue(aa.pack(root))
+            with patch.object(aa.hashlib,'sha256',side_effect=AssertionError('warm archive hashed payloads')):
+                self.assertFalse(aa.pack(root))
+            (root/'a.bin').write_bytes(b'updated artwork!')
+            self.assertTrue(aa.pack(root))
+            self.assertEqual(native_resources.vpk_file(root/'pak01_dir.vpk','a.bin'),b'updated artwork!')
+            self.assertTrue(aa.pack(root,[('extra.bin',b'new icon')]))
+            self.assertFalse(aa.pack(root,[('extra.bin',b'new icon')]))
+            (root/'pak01_000.vpk').write_bytes(b'damaged')
+            self.assertTrue(aa.pack(root,[('extra.bin',b'new icon')]))
+            self.assertEqual(native_resources.vpk_file(root/'pak01_dir.vpk','extra.bin'),b'new icon')
+            self.assertFalse(list(root.parent.glob('cs2gc-pack-*')))
+
     def test_small_archive_matches_the_existing_native_builder_exactly(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'scripts').mkdir()
@@ -40,4 +56,3 @@ class ArtworkArchives(unittest.TestCase):
                 self.assertTrue((root/'a.bin').is_file())
 
 if __name__=='__main__':unittest.main()
-

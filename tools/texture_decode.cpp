@@ -10,6 +10,10 @@
 #include <iterator>
 #include <vector>
 #include <string>
+#include <cstring>
+#ifndef CS2_GC_TEXTURE_PIPELINE_HASH
+#define CS2_GC_TEXTURE_PIPELINE_HASH "development"
+#endif
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
@@ -65,15 +69,66 @@ static std::vector<unsigned char> lz4(const std::vector<unsigned char>& in) {
     return out;
 }
 
+static bool readInput(std::vector<unsigned char>& data,std::size_t limit) {
+    std::array<char,65536> block;
+    while(std::cin) {
+        std::cin.read(block.data(),block.size());auto count=std::size_t(std::cin.gcount());
+        if(count>limit-data.size())return false;
+        data.insert(data.end(),block.data(),block.data()+count);
+    }
+    return std::cin.eof();
+}
+
+static bool unlz4(const std::vector<unsigned char>& in,std::size_t size,std::vector<unsigned char>& out) {
+    out.clear();out.reserve(size);std::size_t p=0;
+    auto length=[&](std::size_t& n) {
+        if(n!=15)return true;
+        unsigned extra;
+        do {if(p==in.size())return false;extra=in[p++];if(extra>size-n)return false;n+=extra;} while(extra==255);
+        return true;
+    };
+    while(p<in.size()) {
+        auto token=in[p++];std::size_t literals=token>>4;
+        if(literals>size||!length(literals)||literals>in.size()-p||literals>size-out.size())return false;
+        out.insert(out.end(),in.begin()+p,in.begin()+p+literals);p+=literals;
+        if(p==in.size())return out.size()==size;
+        if(in.size()-p<2)return false;
+        std::size_t offset=in[p]|(std::size_t(in[p+1])<<8);p+=2;
+        if(!offset||offset>out.size())return false;
+        std::size_t match=token&15;
+        if(match>size||!length(match)||size-out.size()<4||match>size-out.size()-4)return false;
+        match+=4;auto start=out.size();out.resize(start+match);
+        auto copied=std::min(match,offset);
+        std::memcpy(out.data()+start,out.data()+start-offset,copied);
+        while(copied<match) {
+            auto count=std::min(copied,match-copied);
+            std::memcpy(out.data()+start+copied,out.data()+start,count);copied+=count;
+        }
+    }
+    return out.size()==size;
+}
+
 
 int main(int argc,char**argv) {
 #ifdef _WIN32
     _setmode(_fileno(stdin),_O_BINARY);_setmode(_fileno(stdout),_O_BINARY);
 #endif
+    if(argc==2 && std::string(argv[1])=="--cache-version") {
+        std::cout<<"cs2gc-artwork-v2:"<<CS2_GC_TEXTURE_PIPELINE_HASH<<"\n";return 0;
+    }
+    if(argc==3 && std::string(argv[1])=="--unlz4") {
+        char* end=nullptr;auto size=std::strtoull(argv[2],&end,10);
+        if(!end||*end||size>(1u<<27))return 3;
+        std::vector<unsigned char> input,decoded;
+        if(!readInput(input,1u<<27)||!unlz4(input,std::size_t(size),decoded))return 4;
+        std::cout.write(reinterpret_cast<const char*>(decoded.data()),static_cast<std::streamsize>(decoded.size()));
+        return std::cout?0:6;
+    }
     if(argc==2 && std::string(argv[1])=="--lz4") {
-        std::vector<unsigned char> input((std::istreambuf_iterator<char>(std::cin)),{});
-        if(input.size()>(1u<<27))return 3;
+        std::vector<unsigned char> input,verified;
+        if(!readInput(input,1u<<27))return 3;
         auto compressed=lz4(input);
+        if(!unlz4(compressed,input.size(),verified)||verified!=input)return 6;
         std::cout.write(reinterpret_cast<const char*>(compressed.data()),static_cast<std::streamsize>(compressed.size()));
         return std::cout?0:6;
     }
@@ -81,8 +136,9 @@ int main(int argc,char**argv) {
     if(argc!=3 && argc!=6 && !auditOnly) return 2;
     int w=std::atoi(argv[1]),h=std::atoi(argv[2]);
     if(w<1||h<1||w>4096||h>4096) return 3;
-    std::vector<unsigned char> input((std::istreambuf_iterator<char>(std::cin)),{});
     std::size_t blocksX=(w+3)/4,blocksY=(h+3)/4;
+    std::vector<unsigned char> input;input.reserve(blocksX*blocksY*16);
+    if(!readInput(input,blocksX*blocksY*16))return 4;
     if(input.size()!=blocksX*blocksY*16) return 4;
     std::vector<unsigned char> pixels(std::size_t(w)*h*4);
     std::array<unsigned char,64> block{};

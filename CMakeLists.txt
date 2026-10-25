@@ -187,6 +187,11 @@ endif()
 
 # Small, dependency-free BC7 texture utility for the collection helper.
 add_executable(cs2_gc_texture_decode tools/texture_decode.cpp)
+file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/tools/texture_decode.cpp" CS2_GC_TEXTURE_SOURCE_HASH)
+file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/third_party/bcdec.h" CS2_GC_BCDEC_HASH)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS tools/texture_decode.cpp third_party/bcdec.h)
+target_compile_definitions(cs2_gc_texture_decode PRIVATE
+    CS2_GC_TEXTURE_PIPELINE_HASH="${CS2_GC_TEXTURE_SOURCE_HASH}-${CS2_GC_BCDEC_HASH}")
 if(MSVC)
     set_property(TARGET cs2_gc_texture_decode PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
@@ -213,6 +218,12 @@ endif()
 if(BUILD_TESTING AND Python3_FOUND)
     add_test(NAME cs2_collection_feedback COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_collection_feedback.py -v)
     set_tests_properties(cs2_collection_feedback PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
+endif()
+
+if(BUILD_TESTING AND Python3_FOUND)
+    add_test(NAME cs2_preparation_performance COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_preparation_performance.py -v)
+    set_tests_properties(cs2_preparation_performance PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
 endif()
 

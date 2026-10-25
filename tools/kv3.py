@@ -41,6 +41,10 @@ class Node:
 
 
 def lz4_block_decompress(data, size):
+    if size>=1<<18:
+        from native_codec import decompress
+        native=decompress(data,size)
+        if native is not None:return native
     out = bytearray()
     i = 0
     while i < len(data):
@@ -356,4 +360,5 @@ def write_resource(version, blocks):
     data = head + body
     struct.pack_into('<I', data, 0, len(data))
     return bytes(data)
+
 

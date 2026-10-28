@@ -4279,7 +4279,7 @@ void CustomSkinFamilies()
     Check(dropSchema && dropSchema->LoadSkinFamilies(R"("skin_families" { "family" { "colour" "1" } }
         "collection_drops" { "set_cs2gc_case_eclipse" "1" })"),"drop-only collection registers with colours");
     GameplayConfig config;config.match_case_percent=0;config.match_drop_count=3;
-    config.custom_collection_drop_percent=100;config.match_skin_min_rarity=3;
+    config.custom_collection_drop_percent=100;config.match_skin_min_rarity=3;config.custom_cases=1;
     auto rewards=RollMatchDrops(*dropSchema,random,config);
     Check(rewards && rewards->size()==3,"drop-only collections work without an official reward pool");
     for (const auto &item : *rewards)

@@ -31,26 +31,25 @@ Complete ZIP candidates are built by the [portable ZIP workflow](https://github.
 - Shows preparation failures and early game exit codes instead of silently closing.
 
 > [!IMPORTANT]
-> **The first launch is slow. Let it finish.** Before CS2 opens, the launcher builds every custom-collection skin
-> (thousands of recoloured textures) and packs them into the game. This happens once; later launches reuse the
-> cache and start in seconds to a minute. Progress is written to `game\bin\win64\cs2_gc_prepare.log`.
+> **The first launch takes a while. Let it finish.** Before CS2 opens, the launcher builds the knife and glove
+> recolours (and, if you turn them on, the custom gun collections) and packs them into the game. This happens once;
+> later launches reuse the cache and start in seconds to a minute. Progress is written to
+> `game\bin\win64\cs2_gc_prepare.log`. Closing the launcher mid-way is safe for your game and inventory, but the
+> next launch starts preparing again. A full rebuild also happens once after an update that changes how skins are made.
 >
-> | Drive the game is on | Rough first-launch time |
+> **Custom gun collections are off by default.** They add thousands of recoloured skins, which makes the first
+> launch much longer and needs a lot of free disk space. To turn them on, open **CS2 GC Settings\Edit Settings.cmd**,
+> change `# custom_cases = 0` to `custom_cases = 1`, save, and restart the launcher. The knife and glove cases
+> (Black Market and Gauntlet) stay on either way. Installs that already had the collections keep them on.
+>
+> | Drive the game is on | Rough first launch with custom collections on |
 > | --- | --- |
 > | NVMe SSD | 15–30 minutes |
 > | SATA SSD | 20–40 minutes |
-> | Hard drive (HDD) | 45–90+ minutes |
+> | Hard drive (HDD) | 45–90+ minutes (one measured run: about 73 minutes) |
 >
-> These are rough estimates; CPU speed matters too. A full rebuild also happens once after an update that changes
-> how skins are made. Closing the launcher mid-way is safe for your game and inventory, but the next launch starts
-> preparing again, so it is quickest to leave it running. Keep plenty of free space on that drive while it runs; once done, duplicate copies are removed and
-> only the packed skins remain.
->
-> **Short on time or disk space?** Before the first launch, create `game\bin\win64\cs2_gc_gameplay.cfg` (a plain
-> text file) containing the line `custom_cases = 0`, or set it later with **CS2 GC Settings\Edit Settings.cmd**. Only the
-> knife and glove recolours are built, and the Black Market and Gauntlet cases stay in the Armory; the custom gun
-> collections leave the Armory rotation, drops and trade-ups. It is meant for new installs: custom-collection skins
-> you already own will not display correctly while it is off, and setting it back to `1` brings them back.
+> These are rough estimates; CPU speed matters too. Keep plenty of free space on that drive while it runs; once done,
+> duplicate copies are removed and only the packed skins remain.
 
 ## Features
 
@@ -80,6 +79,8 @@ Status key: **confirmed** = checked by the user in the supported client; **imple
 | Armory passes renew themselves when full (`armory_pass_auto_renew`) | Implemented |
 
 ### Custom collections
+
+Off by default on new installs (`custom_cases = 1` turns them on; see the first-launch note above).
 
 | Feature | Status |
 | --- | --- |
@@ -130,7 +131,7 @@ More detail: [features and known issues](docs/FEATURES.md) and [roadmap](docs/FE
 | `armory_agent_price` | 25 | Agent collection tile price |
 | `armory_pass_auto_renew` | 1 | Full passes restart on their own |
 | `sell_max_return_percent` | 90 | Highest share of a purchase that selling can return |
-| `custom_cases` | 1 | 0 turns the custom gun collections off: no Armory tiles, drops or trade-ups, and their skins are not built. Knife and glove cases stay |
+| `custom_cases` | 0 | 1 turns the custom gun collections on: Armory tiles, drops and trade-ups, with a much longer first launch. Knife and glove cases have their own settings and stay on |
 | `custom_collection_tradeups` | 1 | Custom collections count in the Trade Up screen |
 | `care_packages_from_matches` | 0 | 1 also gives a package per match |
 

@@ -22,6 +22,19 @@ def create_settings(directory):
     with path.open('x',encoding='utf-8',newline='\r\n') as output:output.write('\n'.join(lines)+'\n')
     return path
 
+def keep_custom_collections(directory):
+    """custom_cases became 0 by default (user, 29 Oct: "lets make custom collections OFF by default"). An install
+    that has already built the collections keeps them on, so custom skins it owns keep rendering: custom_cases = 1
+    is written unless the file already sets it."""
+    directory=Path(directory);path=directory/'cs2_gc_gameplay.cfg'
+    if not (directory/'cs2_gc_gun_collections.json').is_file():return False
+    text=path.read_text(encoding='utf-8-sig') if path.exists() else ''
+    if re.search(r'(?m)^\s*custom_cases\s*=',text):return False
+    with path.open('a',encoding='utf-8',newline='\r\n') as output:
+        output.write(('' if not text or text.endswith('\n') else '\n')+
+                     '\n# Kept on: this install already had the custom collections (skins you own need them).\ncustom_cases = 1\n')
+    return True
+
 def ensure(directory):
     path=Path(directory)/'cs2_gc_gameplay.cfg'
     if not path.exists():

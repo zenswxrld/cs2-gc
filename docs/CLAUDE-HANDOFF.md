@@ -1312,3 +1312,12 @@ collection. Shade variants of other skins that appear in `cs2_gc_inventory.txt` 
 still defined so owned items render, but are left out of the rolled families. A family that would drop below three
 colours without shades keeps them. The kept shades are also sent through the parallel artwork preflight. Paint-kit
 names and IDs are unchanged. Not yet validated in the live client.
+
+### Custom collections off by default (29 Oct)
+User: "lets make custom collections OFF by default", "knives and gloves stay". `custom_cases` defaults to 0 in
+gameplay_config.py, gameplay_config.h and the example. `settings_editor.keep_custom_collections` (run by
+prepare_native before loading settings) writes `custom_cases = 1` into installs that already have
+`cs2_gc_gun_collections.json`, unless the file sets it, so existing owned custom skins keep rendering. The launcher
+also creates a missing cs2_gc_gameplay.cfg from the shipped reference with every line commented out, and
+**CS2 GC Settings\Edit Settings.cmd** opens it. The user's measured hard-drive first launch with collections on
+(BC7 conversion run): 4377 s.

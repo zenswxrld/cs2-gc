@@ -1,7 +1,7 @@
 {
   "version": "v1.4.6",
-  "asset": "CS2BotImprover_rules_unchanged.zip.zip",
-  "url": "https://github.com/ed0ard/CS2-Bot-Improver/releases/download/v1.4.6/CS2BotImprover_rules_unchanged.zip.zip",
+  "asset": "CS2BotImprover_rules_unchanged.zip",
+  "url": "https://github.com/ed0ard/CS2-Bot-Improver/releases/download/v1.4.6/CS2BotImprover_rules_unchanged.zip",
   "sha256": "90015707b93c61e6d7627a6fdcf34efdbcb8e4c13145d24bdcee07535f57e30e",
   "source_repo": "ed0ard/CS2-Bot-Improver",
   "source_commit": "55772a6a6a332e4f896223adbc7d2000749cfa1b",

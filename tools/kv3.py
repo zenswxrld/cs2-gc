@@ -41,6 +41,10 @@ class Node:
 
 
 def lz4_block_decompress(data, size):
+    if size>=1<<18:
+        from native_codec import decompress
+        native=decompress(data,size)
+        if native is not None:return native
     out = bytearray()
     i = 0
     while i < len(data):
@@ -62,7 +66,9 @@ def lz4_block_decompress(data, size):
         match += 4
         start = len(out) - offset
         if start < 0: raise ValueError('Invalid LZ4 back-reference')
-        for k in range(match): out.append(out[start + k])
+        if len(out)+match>size:raise ValueError('LZ4 output exceeds declared size')
+        if match<=offset:out+=out[start:start+match]
+        else:out+=(out[start:]*((match+offset-1)//offset))[:match]
     if len(out) != size: raise ValueError('LZ4 size mismatch: %d != %d' % (len(out), size))
     return bytes(out)
 
@@ -354,3 +360,5 @@ def write_resource(version, blocks):
     data = head + body
     struct.pack_into('<I', data, 0, len(data))
     return bytes(data)
+
+

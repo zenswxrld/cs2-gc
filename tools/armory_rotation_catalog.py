@@ -115,10 +115,10 @@ def catalogue(source, config):
 
     for name in ARMORY_COLLECTIONS: loot(name, 'collection', COLLECTION_PRICE)
     # Custom colour-family collections (native_skins.py), once the user has checked them with the test case.
-    if config.get('custom_cases', 1):  # the 12 custom gun collections (native_skins.custom_cases)
-        from native_skins import CASE_COLLECTIONS, DROP_ONLY_COLLECTIONS
+    if config.get('custom_cases', 1):  # every custom gun collection, including weekly-drop pools
+        from native_skins import CASE_COLLECTIONS
         for name, title in CASE_COLLECTIONS.items():
-            if name in lists and name not in DROP_ONLY_COLLECTIONS:
+            if name in lists:
                 loot(name, 'collection', COLLECTION_PRICE)
                 # Emblem drawn by make_collection_icons.py, packed as econ/set_icons/<name> by native_finishes.
                 goods['lootlist:' + name].update(callout=title, ui_set_image=name)

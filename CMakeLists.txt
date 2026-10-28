@@ -86,6 +86,8 @@ if(BUILD_TESTING)
         set_tests_properties(cs2_native_skins PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         set_tests_properties(cs2_native_finishes PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         set_tests_properties(cs2_native_gloves PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME cs2_collection_polish COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_collection_polish.py -v)
+        set_tests_properties(cs2_collection_polish PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_gun_collections COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_gun_collections.py -v)
         set_tests_properties(cs2_gun_collections PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_test(NAME cs2_missions COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_missions.py -v)
@@ -185,16 +187,48 @@ endif()
 
 # Small, dependency-free BC7 texture utility for the collection helper.
 add_executable(cs2_gc_texture_decode tools/texture_decode.cpp)
+file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/tools/texture_decode.cpp" CS2_GC_TEXTURE_SOURCE_HASH)
+file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/third_party/bcdec.h" CS2_GC_BCDEC_HASH)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS tools/texture_decode.cpp third_party/bcdec.h)
+target_compile_definitions(cs2_gc_texture_decode PRIVATE
+    CS2_GC_TEXTURE_PIPELINE_HASH="${CS2_GC_TEXTURE_SOURCE_HASH}-${CS2_GC_BCDEC_HASH}")
 if(MSVC)
     set_property(TARGET cs2_gc_texture_decode PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 if(BUILD_TESTING AND Python3_FOUND)
     add_test(NAME cs2_collection_materials COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_collection_material.py -v)
+    add_test(NAME cs2_artwork_compression COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_artwork_compression.py -v)
+    set_tests_properties(cs2_artwork_compression PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
     set_tests_properties(cs2_collection_materials PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
 endif()
 
 if(NOT MSVC)
     target_link_options(cs2_gc_texture_decode PRIVATE -static)
+endif()
+
+if(BUILD_TESTING AND Python3_FOUND)
+    add_test(NAME cs2_collection_catalogue COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_collection_catalogue.py -v)
+    add_test(NAME cs2_artwork_archives COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_artwork_archive.py -v)
+    set_tests_properties(cs2_collection_catalogue cs2_artwork_archives PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} ENVIRONMENT "PYTHONUTF8=1")
+endif()
+
+if(BUILD_TESTING AND Python3_FOUND)
+    add_test(NAME cs2_collection_feedback COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_collection_feedback.py -v)
+    set_tests_properties(cs2_collection_feedback PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
+endif()
+
+if(BUILD_TESTING AND Python3_FOUND)
+    add_test(NAME cs2_preparation_performance COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_preparation_performance.py -v)
+    set_tests_properties(cs2_preparation_performance PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
+endif()
+
+if(BUILD_TESTING AND Python3_FOUND)
+    add_test(NAME cs2_collection_colourways COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_collection_colourways.py -v)
+    set_tests_properties(cs2_collection_colourways PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        ENVIRONMENT "PYTHONUTF8=1;CS2_GC_TEXTURE_DECODER=$<TARGET_FILE:cs2_gc_texture_decode>")
 endif()

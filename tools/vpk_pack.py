@@ -84,20 +84,13 @@ def pack(folder, extra=()):
     proxy = folder.parent / 'bin' / 'win64'
     if (proxy / KILL_SWITCH).exists():
         removed = False
-        for path in (directory_path, archive_path):
+        from artwork_archive import owned_archives
+        for path in [directory_path]+owned_archives(folder):
             if path.exists():
                 path.unlink(); removed = True
         return removed
-    files = sorted(_files(folder) + list(extra))
-    if not files:
-        return False
-    directory, archive = build(files)
-    if (directory_path.exists() and archive_path.exists() and directory_path.read_bytes() == directory
-            and archive_path.read_bytes() == archive):
-        return False
-    _write(archive_path, archive)
-    _write(directory_path, directory)
-    return True
+    from artwork_archive import pack as stream_pack
+    return stream_pack(folder,extra)
 
 
 def status(proxy_directory):

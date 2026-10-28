@@ -1,6 +1,7 @@
 """Respect composite input overrides; preserve authored texture, masks, wear and effects."""
 import colorsys
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -48,7 +49,7 @@ def pattern_from_source(source,path):
     except (ValueError,KeyError):
         return None
 
-def texture_payload(data):
+def texture_payload(data,decode_payload=True):
     size=struct.unpack_from('<I',data)[0]
     version,blocks=kv3.read_resource(data[:size]);header=dict(blocks)['DATA']
     v,flags,*_=struct.unpack_from('<HH4fHHHBBIII',header)
@@ -72,18 +73,34 @@ def texture_payload(data):
         block=data[position:position+stored];position+=stored
         if level==0:
             if len(block)!=stored:raise ValueError('Truncated recolour texture')
+            if not decode_payload:return version,blocks,flags,width,height,None
             if compression==1 and stored<raw:block=kv3.lz4_block_decompress(block,raw)
             if len(block)!=raw:raise ValueError('Wrong recolour texture payload size')
             return version,blocks,flags,width,height,block
     raise ValueError('Missing recolour texture mip')
 
 def owned_texture(data,rgba):
-    version,blocks,flags,width,height,_=texture_payload(data)
+    version,blocks,flags,width,height,_=texture_payload(data,decode_payload=False)
     if len(rgba)!=width*height*4:raise ValueError('Decoded texture length mismatch')
     pixels=bytearray(rgba)
     pixels[0::4],pixels[2::4]=rgba[2::4],rgba[0::4]
     reflect=[sum(rgba[i::4])/(width*height*255) for i in range(4)]
     header=struct.pack('<HH4fHHHBBIII',1,flags,*reflect,width,height,1,28,1,0,8,0)
+    # The supported client already reads LZ4 mip blocks. Keep every pixel and
+    # all detail; compact generated BGRA textures rather than downsampling them.
+    decoder=Path(os.environ.get('CS2_GC_TEXTURE_DECODER',str(Path(__file__).with_name('cs2_gc_texture_decode.exe'))))
+    if not decoder.is_file():decoder=Path(__file__).with_name('cs2_gc_texture_decode')
+    if decoder.is_file():
+        compressed=subprocess.run([str(decoder),'--lz4'],input=bytes(pixels),stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        if compressed.returncode==0 and len(compressed.stdout)<len(pixels):
+            # Verify lossless output before using the native compressed mip format.
+            from native_codec import pipeline
+            if not pipeline() and kv3.lz4_block_decompress(compressed.stdout,len(pixels))!=pixels:
+                raise ValueError('Owned artwork lossless-compression mismatch')
+            header+=struct.pack('<III',4,8,16)+struct.pack('<IIII',1,8,1,len(compressed.stdout))
+            header=bytearray(header);struct.pack_into('<I',header,36,1)
+            pixels=compressed.stdout
     # Extra mip/metadata tables describe the original BC7 stream; replace DATA.
     return kv3.write_resource(version,[[name,header if name=='DATA' else value] for name,value in blocks])+pixels
 
@@ -178,3 +195,5 @@ def make(source,kit,new_name,theme,compmat,guid,root,specific,material,m_guid,m_
         report['_files']=texture_files
     return True,(finishes._with_block(compmat,'DATA',kv3.write_kv3(guid,root)),
         finishes._with_block(material,'DATA',kv3.write_kv3(m_guid,m_root)))
+
+

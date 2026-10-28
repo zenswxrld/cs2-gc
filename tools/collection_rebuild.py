@@ -76,17 +76,28 @@ DESIGNS.update({
            'Trenchline','Reef Shadow','Drowned Signal','Tidal Mark','Salt Deposit','Ocean Floor','Dark Shoal','Depth Gauge','Silt Line','Undertow')},
 })
 
+from remaining_collection_designs import designs as remaining_designs
+DESIGNS.update(remaining_designs())
+from collection_policies import apply_designs
+apply_designs(DESIGNS)
+
 def eligible(name,row,design,tier):
+    if name=='am_awp_glory':return False # keep historical Man-o'-war kits; stop selecting more
     allowed=design.get('allow')
     if allowed is None:return True
     if name not in allowed:return False
     if tier in ('ancient','legendary'):
+        if name in ('am_diamond_plate','am_ddpatdense_silver','am_ddpatdense_peacock','am_carbon_fiber',
+                    'am_oval_hex','am_tigers_brown','am_tigers_blue','hy_tiger','hy_p250_tiger'):
+            return False
+        if design.get('premium') and name not in design['premium']:return False
         return bool(row.get('effects')) or row.get('style') in (1,4,5)
     return True
 
 def feedback(lineup,rows,works,report):
     """Repair reviewed slots without reshuffling the approved chases."""
     current=lineup.get('phantom_blade',[])
+    if len(current)==16 and all(e.get('all_collection_revision') for e in current):return lineup
     if len(current)!=16 or not all(e.get('detail') for e in current):return lineup
     if all(e.get('feedback_revision')==1 for e in current):return lineup
     if 'cu_usp_printstream' not in rows or 'hy_geometric_steps_pearl' not in rows:return lineup
@@ -128,15 +139,15 @@ def donor_fit(name,row,design,tier):
     patterned=row.get('style') in (1,2,4,5)
     return motif*20 + premium*50 + patterned*3
 
-def upgrade(lineup,rows,guns,icons,families,works,report):
+def upgrade(lineup,rows,guns,icons,families,works,report,accept=None):
     import gun_collections as gc
     selected=[icon for icon in icons if icon in DESIGNS and
-              not all(e.get('detail')==DESIGNS[icon].get('revision',1) for e in lineup.get(icon,()))]
+              not all(e.get('detail')==DESIGNS[icon].get('revision',1) or e.get('all_collection_revision') for e in lineup.get(icon,()))]
     if not selected:return feedback(lineup,rows,works,report)
     reserved={e['donor'] for icon,entries in lineup.items() if icon not in selected
               for e in entries if 'donor' in e}
     planned=gc.plan(rows,guns,selected,families,works,seed='cs2gc-authored-detail-v1',
-                    designs=DESIGNS,reserved=reserved)
+                    designs=DESIGNS,reserved=reserved,accept=accept)
     result={icon:[dict(e) for e in entries] for icon,entries in lineup.items()}
     upgraded=[]
     for icon,entries in planned.items():
@@ -146,6 +157,27 @@ def upgrade(lineup,rows,guns,icons,families,works,report):
             continue # keep the complete previous pool, never sell a partial set
         result[icon]=entries
         upgraded.append(icon)
+    # Failed partial plans must not reserve donor appearances for later pools.
+    # Retry against only complete saved/accepted collections with a fresh guard.
+    retry=[]
+    for icon in selected:
+        if icon in upgraded:continue
+        retry_accept=accept
+        owner=getattr(accept,'__self__',None)
+        if owner is not None and hasattr(owner,'palette_for'):
+            from collection_similarity import Guard
+            fresh=Guard(rows,owner.palette_for)
+            fresh.reserve({name:entries for name,entries in result.items() if name!=icon})
+            retry_accept=fresh.allowed
+        reserved={e['donor'] for name,entries in result.items() if name!=icon for e in entries if 'donor' in e}
+        attempt=gc.plan(rows,guns,[icon],families,works,seed='cs2gc-authored-detail-retry-v1',
+                        designs=DESIGNS,reserved=reserved,accept=retry_accept)[icon]
+        counts=[sum(e['tier']==tier for e in attempt) for tier,_ in gc.TIER_COUNTS]
+        if counts==[count for _,count in gc.TIER_COUNTS]:
+            result[icon]=attempt;upgraded.append(icon);retry.append(icon)
+    if retry:
+        report['rebuild_retries']=retry
+        report['rebuild_unavailable']=[item for item in report.get('rebuild_unavailable',[]) if item['collection'] not in retry]
     report['rebuilt_collections']=upgraded
     return feedback(result,rows,works,report)
 

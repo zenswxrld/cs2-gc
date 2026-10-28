@@ -1,6 +1,9 @@
-// BC7 decoding uses the unmodified MIT-licensed bcdec header (see third_party/bcdec.h).
+// BC7 decoding uses the unmodified MIT-licensed bcdec header (see third_party/bcdec.h); BC7 encoding uses the
+// unmodified MIT-licensed bc7enc (third_party/bc7enc.cpp, compiled alongside this file).
 #define BCDEC_IMPLEMENTATION
 #include "../third_party/bcdec.h"
+#include "../third_party/bc7enc.h"
+#include <thread>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -122,6 +125,35 @@ int main(int argc,char**argv) {
         std::vector<unsigned char> input,decoded;
         if(!readInput(input,1u<<27)||!unlz4(input,std::size_t(size),decoded))return 4;
         std::cout.write(reinterpret_cast<const char*>(decoded.data()),static_cast<std::streamsize>(decoded.size()));
+        return std::cout?0:6;
+    }
+    if(argc==4 && std::string(argv[1])=="--bc7") {
+        // RGBA pixels (R first) -> BC7 blocks, the format CS2's own finishes use: 1 byte per pixel instead of 4.
+        int w=std::atoi(argv[2]),h=std::atoi(argv[3]);
+        if(w<1||h<1||w>4096||h>4096) return 3;
+        std::vector<unsigned char> input;
+        if(!readInput(input,std::size_t(w)*h*4)||input.size()!=std::size_t(w)*h*4) return 4;
+        const int blocksX=(w+3)/4,blocksY=(h+3)/4;
+        std::vector<unsigned char> output(std::size_t(blocksX)*blocksY*16);
+        bc7enc_compress_block_init();
+        bc7enc_compress_block_params params;bc7enc_compress_block_params_init(&params);
+        unsigned workers=std::max(1u,std::min(16u,std::thread::hardware_concurrency()));
+        auto encodeRows=[&](int first) {
+            unsigned char block[64];
+            for(int by=first;by<blocksY;by+=int(workers))
+                for(int bx=0;bx<blocksX;++bx) {
+                    for(int y=0;y<4;++y) for(int x=0;x<4;++x) {
+                        int sx=std::min(bx*4+x,w-1),sy=std::min(by*4+y,h-1);  // edge pixels pad partial blocks
+                        std::memcpy(block+(y*4+x)*4,input.data()+(std::size_t(sy)*w+sx)*4,4);
+                    }
+                    bc7enc_compress_block(output.data()+(std::size_t(by)*blocksX+bx)*16,block,&params);
+                }
+        };
+        std::vector<std::thread> threads;
+        for(unsigned i=1;i<workers;++i) threads.emplace_back(encodeRows,int(i));
+        encodeRows(0);
+        for(auto &thread:threads) thread.join();
+        std::cout.write(reinterpret_cast<const char*>(output.data()),static_cast<std::streamsize>(output.size()));
         return std::cout?0:6;
     }
     if(argc==2 && std::string(argv[1])=="--lz4") {

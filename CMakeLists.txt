@@ -214,12 +214,15 @@ endif()
 
 
 # Small, dependency-free BC7 texture utility for the collection helper.
-add_executable(cs2_gc_texture_decode tools/texture_decode.cpp)
+add_executable(cs2_gc_texture_decode tools/texture_decode.cpp third_party/bc7enc.cpp)
+find_package(Threads REQUIRED)
+target_link_libraries(cs2_gc_texture_decode PRIVATE Threads::Threads)
 file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/tools/texture_decode.cpp" CS2_GC_TEXTURE_SOURCE_HASH)
 file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/third_party/bcdec.h" CS2_GC_BCDEC_HASH)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS tools/texture_decode.cpp third_party/bcdec.h)
+file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/third_party/bc7enc.cpp" CS2_GC_BC7ENC_HASH)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS tools/texture_decode.cpp third_party/bcdec.h third_party/bc7enc.cpp)
 target_compile_definitions(cs2_gc_texture_decode PRIVATE
-    CS2_GC_TEXTURE_PIPELINE_HASH="${CS2_GC_TEXTURE_SOURCE_HASH}-${CS2_GC_BCDEC_HASH}")
+    CS2_GC_TEXTURE_PIPELINE_HASH="${CS2_GC_TEXTURE_SOURCE_HASH}-${CS2_GC_BCDEC_HASH}-${CS2_GC_BC7ENC_HASH}")
 if(MSVC)
     set_property(TARGET cs2_gc_texture_decode PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()

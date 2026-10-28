@@ -85,6 +85,17 @@ def owned_texture(data,rgba):
     pixels=bytearray(rgba)
     pixels[0::4],pixels[2::4]=rgba[2::4],rgba[0::4]
     reflect=[sum(rgba[i::4])/(width*height*255) for i in range(4)]
+    # User (28 Oct): BC7, the format of the finish being recoloured and of CS2's own skins: 1 byte per pixel instead
+    # of 4, so the generated packs are several times smaller and much quicker to write and pack.
+    decoder=Path(os.environ.get('CS2_GC_TEXTURE_DECODER',str(Path(__file__).with_name('cs2_gc_texture_decode.exe'))))
+    if not decoder.is_file():decoder=Path(__file__).with_name('cs2_gc_texture_decode')
+    source_format=struct.unpack_from('<HH4fHHHBBIII',dict((name,value) for name,value in blocks)['DATA'],0)[9]
+    if decoder.is_file():
+        encoded=subprocess.run([str(decoder),'--bc7',str(width),str(height)],input=bytes(rgba),stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        if encoded.returncode==0 and len(encoded.stdout)==((width+3)//4)*((height+3)//4)*16:
+            header=struct.pack('<HH4fHHHBBIII',1,flags,*reflect,width,height,1,source_format,1,0,8,0)
+            return kv3.write_resource(version,[[name,header if name=='DATA' else value] for name,value in blocks])+encoded.stdout
     header=struct.pack('<HH4fHHHBBIII',1,flags,*reflect,width,height,1,28,1,0,8,0)
     # The supported client already reads LZ4 mip blocks. Keep every pixel and
     # all detail; compact generated BGRA textures rather than downsampling them.

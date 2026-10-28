@@ -1296,3 +1296,10 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   artwork_archive's record proves the pack holds exactly them, then drops the cache's packed textures;
   ArtworkCache.restore copies one back from the archive (sha256-checked) when needed, and prune() removes textures
   a complete generation did not use. Steady state: about one copy (the pack) plus small cache records.
+
+### Generated textures stored as BC7 (28 Oct)
+User chose "BC7 like the game". `cs2_gc_texture_decode --bc7 W H` (bc7enc, MIT, `third_party/`) encodes the
+recoloured RGBA; `collection_material.owned_texture` writes it in the source texture's own format (20), 1 byte per
+pixel instead of 4 (BGRA+LZ4 stays as the fallback when the encoder is missing). The pipeline hash includes the
+encoder, so the first launch after updating regenerates every texture once; packs, cache and setup are ~4x smaller
+afterwards. Not yet validated in the live client.

@@ -30,7 +30,21 @@ Complete ZIP candidates are built by the [portable ZIP workflow](https://github.
 - Preserves existing inventory, settings, finish IDs and replay files during ZIP upgrades.
 - Shows preparation failures and early game exit codes instead of silently closing.
 
-The first preparation can take several minutes. Later unchanged launches use the cache.
+> [!IMPORTANT]
+> **The first launch is slow. Let it finish.** Before CS2 opens, the launcher builds every custom-collection skin
+> (thousands of recoloured textures) and packs them into the game. This happens once; later launches reuse the
+> cache and start in seconds to a minute. Progress is written to `game\bin\win64\cs2_gc_prepare.log`.
+>
+> | Drive the game is on | Rough first-launch time |
+> | --- | --- |
+> | NVMe SSD | 15–30 minutes |
+> | SATA SSD | 20–40 minutes |
+> | Hard drive (HDD) | 45–90+ minutes |
+>
+> These are rough estimates; CPU speed matters too. A full rebuild also happens once after an update that changes
+> how skins are made. Closing the launcher mid-way is safe for your game and inventory, but the next launch starts
+> preparing again, so it is quickest to leave it running. Keep plenty of free space on that drive while it runs; once done, duplicate copies are removed and
+> only the packed skins remain.
 
 ## Features
 

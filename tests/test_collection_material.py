@@ -150,8 +150,10 @@ class CompositeDetails(unittest.TestCase):
         self.assertEqual(recolored.stdout[3::4],decoded.stdout[3::4])
         self.assertEqual(json.loads(recolored.stderr)['changed_pixels'],16)
         rebuilt=cm.owned_texture(texture(),recolored.stdout)
-        w,h,bgra=finishes.read_vtex(rebuilt)
-        self.assertEqual((w,h),(4,8));self.assertEqual(bgra[:4],recolored.stdout[:4][2::-1]+b'\xff')
+        _,_,_,w,h,packed=cm.texture_payload(rebuilt)
+        self.assertEqual((w,h),(4,8));self.assertEqual(len(packed),2*16)
+        again=subprocess.run([path,str(w),str(h)],input=packed,capture_output=True,check=True).stdout
+        self.assertLessEqual(max(abs(a-b) for a,b in zip(again,recolored.stdout)),8)
 
     @unittest.skipUnless(os.environ.get('CS2_GC_TEXTURE_DECODER'),'decoder executable required')
     def test_artwork_rotation_preserves_neutrals_alpha_and_rejects_original_hue(self):

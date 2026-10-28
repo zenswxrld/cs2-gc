@@ -32,22 +32,88 @@ Complete ZIP candidates are built by the [portable ZIP workflow](https://github.
 
 The first preparation can take several minutes. Later unchanged launches use the cache.
 
-## Current status
+## Features
 
-| Area | Status |
+Status key: **confirmed** = checked by the user in the supported client; **implemented** = built and covered by automated offline tests, still waiting for an in-game check. Passing tests alone never proves the live client.
+
+### Inventory, loadouts and opening
+
+| Feature | Status |
 | --- | --- |
-| Local inventory, saved items/loadouts and case opening | User-tested in earlier builds |
-| Native Armory rotation, stars, selling, souvenirs and custom knife/glove cases | User-tested; individual economy and finish issues remain |
-| Profile XP, local Premier-style rating and bot-match rewards | Working baseline; mode-specific behaviour still needs coverage |
-| Care packages | Claims and case rewards user-confirmed after the favourite-message fix; packages default to profile level-ups |
-| Bot skins and Bot Improver | Already implemented: popular cosmetic loadouts, AI/aim/grenade/buying plugins and rating-based difficulty with Low/Medium/High presets; bundled version needs fresh-install confirmation |
-| Bot names, scoreboard labels and mission-to-bot-match launching | Working baseline; not every language/HUD location is verified |
-| Custom gun collections and colour families | Implemented; visual quality, distribution, duplicate and trade-up review ongoing |
-| Mission progress and tier rewards | Implemented; live validation still needed |
-| Complete ZIP and direct launcher | Implemented in the packaging branch; fresh-install/profile bootstrap and upgrade smoke tests required in the target client |
-| Career UI, achievements, bot chat/personality and nemesis systems | Future work |
+| Local inventory, loadouts and equipped items (knives, gloves, agents, stickers, charms) | Confirmed |
+| Case, capsule and souvenir opening, with free matching keys and the key picker skipped | Confirmed |
+| Native trade-ups, including mixed StatTrak and all-Souvenir contracts | Confirmed baseline |
+| Custom-collection trade-ups: custom skins are listed in the Trade Up screen under their collection, and the result is one of the next tier's colours | Confirmed |
+| Sell for stars from the item's right-click menu | Confirmed |
+| Multi-sell: **Sell multiple for stars...** opens CS2's own storage-unit picker; only sellable items are listed, the button shows the total, and a confirmation is required | Confirmed |
 
-See [feature details and known issues](docs/FEATURES.md) and [future plans](docs/FEATURE-ROADMAP.md). “Implemented” and passing automated tests do not establish live-client correctness.
+### Armory and stars
+
+| Feature | Status |
+| --- | --- |
+| Native Armory page with category tabs, pagination and a rotation timer, plus a **REFRESH ARMORY** button | Confirmed |
+| Rotating collections, charms, stickers, capsules, cases, souvenirs, terminals and limited items | Confirmed |
+| Collection tiles with their own emblems and 3D model previews | Confirmed |
+| Black Market Case (knives) and Gauntlet Case (gloves) with custom recolours | Confirmed |
+| Agent tile: rotating collections of Shattered Web, Broken Fang and Riptide agents with each operation's emblem, 25 stars | Implemented |
+| Star economy balanced so no buy, open or sell route returns more stars than it costs (`sell_max_return_percent`) | Implemented |
+| Armory passes renew themselves when full (`armory_pass_auto_renew`) | Implemented |
+
+### Custom collections
+
+| Feature | Status |
+| --- | --- |
+| 36 custom gun collections built from every gun finish, with themed palettes and detail-preserving recolours | Confirmed; visual review ongoing |
+| Colour families: one listed skin can roll several named colours | Confirmed |
+| Owned custom skins keep their IDs and keep rendering after regeneration | Confirmed |
+
+### Progression and rewards
+
+| Feature | Status |
+| --- | --- |
+| Profile XP and stars from bot matches in any mode: kills, headshots, MVPs and finishing the match | Confirmed |
+| Local Premier-style rating with placement matches | Confirmed baseline |
+| Care packages: on a level-up choose 3 of 4 rewards; claimed rewards stay labelled until the next package | Confirmed |
+| Missions served locally; the mission tile shows | Confirmed |
+| Mission progress, step XP and stars, and missions rotating with the Armory and REFRESH ARMORY | Implemented; progress did not count in the last test (diagnostics added) |
+
+### Bots
+
+| Feature | Status |
+| --- | --- |
+| Random player-style bot names and scoreboard labels without the BOT prefix | Confirmed |
+| Mission cards launch the matching bot mode and map | Confirmed |
+| Bot skins: popular gun skins, knives, gloves, sticker crafts and charms (BotRandomizer) | Implemented (bundled) |
+| Bot Improver plugins: aim, grenades and utility, movement, AI and buying | Implemented (bundled) |
+| Bot skill follows your local rating: Low preset below 10,000, Medium to 29,999, High from 30,000, plus stock difficulty easy/normal/hard/expert at 5k/10k/20k | Implemented |
+| Bot settings run from owned `gamemode_<mode>_server.cfg` files; stock mode configs, key binds and other addons are never replaced | Implemented |
+
+### Launcher and setup
+
+| Feature | Status |
+| --- | --- |
+| Complete drag-and-drop ZIP with a private Python runtime and root launcher | Implemented; fresh-install check pending |
+| Preparation cache for fast repeat launches | Confirmed |
+| Owned search paths in `gameinfo.gi`, backed up first, with other addons preserved | Confirmed |
+
+### Planned
+
+Career/statistics page, achievements, more missions, bot chat and personalities, wider language coverage, a game-folder cleanup tool and support for newer CS2 builds. These are plans, not included features.
+
+More detail: [features and known issues](docs/FEATURES.md) and [roadmap](docs/FEATURE-ROADMAP.md).
+
+### Useful settings (`cs2_gc_gameplay.cfg`)
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `armory_rotation_seconds` | 900 | How often the Armory (and missions) rotate |
+| `armory_agent_price` | 25 | Agent collection tile price |
+| `armory_pass_auto_renew` | 1 | Full passes restart on their own |
+| `sell_max_return_percent` | 90 | Highest share of a purchase that selling can return |
+| `custom_collection_tradeups` | 1 | Custom collections count in the Trade Up screen |
+| `care_packages_from_matches` | 0 | 1 also gives a package per match |
+
+The complete annotated list is in [examples/cs2_gc_gameplay.cfg](examples/cs2_gc_gameplay.cfg).
 
 ## Your saved files
 
@@ -82,4 +148,4 @@ The portable workflow also builds the Windows proxy, launcher, profile bootstrap
 
 ## Credits
 
-Original BSD license and upstream credits are retained. The package includes the project's license, the gold-pool data attribution, BCDEC's license the embedded Python runtime's own license, and the bundled bot components' notices and source snapshots. Game assets are read from the user's own CS2 installation.
+Original BSD license and upstream credits are retained. The package includes the project's license, the gold-pool data attribution, BCDEC's license, the embedded Python runtime's own license, and the bundled bot components' notices and source snapshots. Game assets are read from the user's own CS2 installation.

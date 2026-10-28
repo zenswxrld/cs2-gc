@@ -81,7 +81,14 @@ def add_store(tree,source):
             prices=[tuple(p) for p in dict(templates[st])['prices']]
             entries.append((name,[('item_link',name),('category_tags','Misc'),('prices',prices)]))
             existing.add(name);added+=1
-    sheet.add_banner_entries(tree,[idx for idx,_,_ in rows])
+    wanted=[idx for idx,_,_ in rows]
+    sheet.add_banner_entries(tree,wanted)
+    # User (29 Oct): music kits on the GENERAL tab, not TOOLS. StoreItems puts "coupon" tiles under GENERAL
+    # (#store_nav_coupon) and plain "single" tiles under TOOLS (#store_nav_store).
+    wanted=set(wanted)
+    for index,entry in sheet.section(tree,'store','store_banner_layout'):
+        if index in wanted and isinstance(entry,list):
+            entry[:]=[(k,'coupon' if k=='custom_format' and v=='single' else v) for k,v in entry]
     return added
 
 def prepare(directory,config):

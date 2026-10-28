@@ -25,8 +25,17 @@ def icon(index):
     def chunk(kind,data):return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data))
     return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',128,128,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(b''.join(pixels)))+chunk(b'IEND',b'')
 
-def patch(source):
-    if 'cs2gc_chicken_cosmetics_v1' in source:return source
+REDEEM='\n"operational_point_redeemable" { "item_name" "lootlist:%s" "points" "3" "local_rotation_slot" "collection" "ui_order" "2" }\n'%COLLECTION
+
+def patch(source,armory=False):
+    """Add the accessories (kept so owned ones work); sell them in the Armory only when armory is set.
+    User (29 Oct): "lets remove the chicken accecories for now from the armory as they still need work"."""
+    if 'cs2gc_chicken_cosmetics_v1' in source:
+        if not armory:return source.replace(REDEEM,'')
+        if REDEEM in source:return source
+        root=parse(source).one('items_game')
+        campaign=[n for sec in root.children if sec.key=='seasonaloperations' for n in sec.children or [] if n.key=='11'][0]
+        return source[:campaign.end-1]+REDEEM+source[campaign.end-1:]
     root=parse(source).one('items_game');items=[n for n in root.children if n.key=='items']
     used={n.key for block in items for n in block.children or []}
     if any(str(55000+i) in used for i in range(10)):raise ValueError('Reserved chicken accessory definition is occupied')
@@ -42,9 +51,8 @@ def patch(source):
     lists+='\n'.join('"%s_%s" { %s }'%(COLLECTION,t,' '.join(rows)) for t,rows in tiers.items())
     loot=[n for n in root.children if n.key=='client_loot_lists']
     if not items or not loot:raise ValueError('Expected item and loot-list sections')
-    redeem='\n"operational_point_redeemable" { "item_name" "lootlist:%s" "points" "3" "local_rotation_slot" "collection" "ui_order" "2" }\n'%COLLECTION
     edits=[(items[0].end-1,'\n// cs2gc_chicken_cosmetics_v1\n'+'\n'.join(item_rows)+'\n'),
-           (loot[0].end-1,'\n'+lists+'\n'),(campaign.end-1,redeem)]
+           (loot[0].end-1,'\n'+lists+'\n')]+([(campaign.end-1,REDEEM)] if armory else [])
     for at,text in sorted(edits,reverse=True):source=source[:at]+text+source[at:]
     return source
 
@@ -53,15 +61,19 @@ def prepare(directory,config):
     if not target.is_file():return 'unavailable: native schema override missing'
     source=read_text(target);manifest=json.loads(manifest_path.read_text())
     if manifest.get('owner')!='cs2-gc-native-mixed-v1' or digest(source)!=manifest.get('output_sha256'):raise ValueError('Native schema is not an unchanged owned override')
-    changed=patch(source)
-    if changed==source:return 'installed: Chicken Cosmetics collection, 10 native-model accessories'
+    armory=bool(config.get('armory_chicken_cosmetics',0))
+    changed=patch(source,armory)
+    catalogue=manifest.setdefault('armory_catalogue',{});listed=('lootlist:'+COLLECTION) in catalogue
+    where='in the Armory' if armory else 'not sold in the Armory'
+    if changed==source and listed==armory:return 'installed: Chicken Cosmetics, 10 native-model accessories, '+where
     from native_finishes import Source,make_vtex
     template=Source(vpk=game/'csgo/pak01_dir.vpk').read('panorama/images/econ/pets/chicken_egg_png.vtex_c')
     folder=mod/'panorama/images/econ/cs2gc_chicken';folder.mkdir(parents=True,exist_ok=True)
     for i,(key,_,_) in enumerate(ACCESSORIES):(folder/(key+'_png.vtex_c')).write_bytes(make_vtex(template,icon(i)))
-    manifest.setdefault('armory_catalogue',{})['lootlist:'+COLLECTION]='collection'
+    if armory:catalogue['lootlist:'+COLLECTION]='collection'
+    else:catalogue.pop('lootlist:'+COLLECTION,None)
     atomic_write(target,changed);manifest['output_sha256']=digest(changed);manifest['chicken_cosmetics']=1;atomic_write(manifest_path,json.dumps(manifest,indent=2)+'\n')
     original=read_text(proxy/'items_game.txt')
     atomic_write(mod/'cs2_gc_schema_stamp.txt','CS2_GC_NATIVE_V1 %d %d\n'%(zlib.crc32(original.encode()),zlib.crc32(changed.encode())))
     from vpk_pack import pack
-    pack(mod);return 'prepared: Chicken Cosmetics collection, 10 accessories; restart required'
+    pack(mod);return 'prepared: Chicken Cosmetics, 10 accessories, '+where+'; restart required'

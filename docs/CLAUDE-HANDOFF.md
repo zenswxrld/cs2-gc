@@ -1312,3 +1312,22 @@ collection. Shade variants of other skins that appear in `cs2_gc_inventory.txt` 
 still defined so owned items render, but are left out of the rolled families. A family that would drop below three
 colours without shades keeps them. The kept shades are also sent through the parallel artwork preflight. Paint-kit
 names and IDs are unchanged. Not yet validated in the live client.
+
+### Custom collections off by default (29 Oct)
+User: "lets make custom collections OFF by default", "knives and gloves stay". `custom_cases` defaults to 0 in
+gameplay_config.py, gameplay_config.h and the example. `settings_editor.keep_custom_collections` (run by
+prepare_native before loading settings) writes `custom_cases = 1` into installs that already have
+`cs2_gc_gun_collections.json`, unless the file sets it, so existing owned custom skins keep rendering. The launcher
+also creates a missing cs2_gc_gameplay.cfg from the shipped reference with every line commented out, and
+**CS2 GC Settings\Edit Settings.cmd** opens it. The user's measured hard-drive first launch with collections on
+(BC7 conversion run): 4377 s.
+
+### Store: chicken feed on TOOLS, music kits on GENERAL (29 Oct)
+User: pet food in the Store "as they die or pass out without it"; "move all the music kits from tools too general
+and put the chicken feed in tools". From the user's store_items.vts_c: banner rows with custom_format "coupon*" go
+to `coupon` (#store_nav_coupon = "GENERAL"), plain rows to `store` (#store_nav_store = "TOOLS"). music_store now
+writes "coupon" rows for the kits it adds; native_store adds the schema's own `chicken_feed` (looked up by name,
+4949 in the user's schema) with a "single" row. Buying it grants the item through the generic Store purchase path.
+Feeding is NOT implemented: the GC message the client sends when feed is used is unknown (record it before
+handling; do not invent an ID). The DLL still sends pet attribute 303 "pet food expiration date" = INT32_MAX.
+Not yet validated in the live client.

@@ -69,6 +69,37 @@ class ProgressSaves(unittest.TestCase):
             self.assertIn('mvp_stars = 5',text)
             self.assertEqual(settings_editor.ensure(proxy).read_text(),text)
 
+    def test_first_launch_lists_every_setting_commented_without_changing_any(self):
+        import gameplay_config,save_shortcuts,shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            proxy=Path(tmp)
+            self.assertFalse(settings_editor.create_settings(proxy).exists(),'nothing to copy without the reference')
+            shutil.copy(Path(__file__).resolve().parents[1]/'examples/cs2_gc_gameplay.cfg',proxy/settings_editor.REFERENCE)
+            path=settings_editor.create_settings(proxy)
+            text=path.read_text(encoding='utf-8')
+            self.assertIn('# custom_cases = 0',text)
+            self.assertEqual(gameplay_config.load(proxy),gameplay_config.load(Path(tmp)/'missing'))
+            path.write_text('custom_cases = 0\n',encoding='utf-8')
+            settings_editor.create_settings(proxy)
+            self.assertEqual(path.read_text(encoding='utf-8'),'custom_cases = 0\n')
+            self.assertIn('settings_editor.py" --all',save_shortcuts.files()['CS2 GC Settings/Edit Settings.cmd'].decode())
+
+    def test_installs_that_built_custom_collections_keep_them_on(self):
+        import gameplay_config
+        with tempfile.TemporaryDirectory() as tmp:
+            proxy=Path(tmp)
+            self.assertFalse(settings_editor.keep_custom_collections(proxy))
+            self.assertEqual(gameplay_config.load(proxy)['custom_cases'],0,'fresh installs: off by default')
+            (proxy/'cs2_gc_gun_collections.json').write_text('{}')
+            (proxy/'cs2_gc_gameplay.cfg').write_text('kill_stars = 9')
+            self.assertTrue(settings_editor.keep_custom_collections(proxy))
+            self.assertFalse(settings_editor.keep_custom_collections(proxy))
+            config=gameplay_config.load(proxy)
+            self.assertEqual((config['custom_cases'],config['kill_stars']),(1,9))
+            (proxy/'cs2_gc_gameplay.cfg').write_text('custom_cases = 0\n')
+            self.assertFalse(settings_editor.keep_custom_collections(proxy))
+            self.assertEqual(gameplay_config.load(proxy)['custom_cases'],0,'an explicit choice is kept')
+
     def test_restore_can_repair_a_broken_or_fresh_destination_and_preserves_old_bytes(self):
         with tempfile.TemporaryDirectory() as tmp:
             source,_=self.fixture(Path(tmp)/'source');folder=Path(tmp)/'saves';saved=saves.snapshot(source,folder)

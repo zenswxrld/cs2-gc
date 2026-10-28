@@ -72,6 +72,13 @@ def mount_finish_resources(directory, config):
 
 def prepare(directory, force_rebuild=False):
     started = time.perf_counter()
+    try:
+        from settings_editor import create_settings
+        from settings_editor import keep_custom_collections
+        create_settings(directory)  # all commented out: the parsed settings, and so the cache, are unchanged
+        if keep_custom_collections(directory): print('Settings: custom collections kept on for this install', flush=True)
+    except OSError as error:
+        print('Settings file not created: ' + str(error), flush=True)
     config = load(directory)
     cache = PreparationCache(directory, config)
     cached = not force_rebuild and cache.hit()

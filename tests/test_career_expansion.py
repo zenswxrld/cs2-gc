@@ -26,6 +26,8 @@ class Expansion(unittest.TestCase):
         self.assertEqual(music_store.add_store(tree,changed),0)
         entries=dict(sheet.section(tree,'store','entries'))
         self.assertEqual(dict(dict(entries[offers[('two',True)][1]])['prices'])['AUD'],1135)
+        layout=dict(sheet.section(tree,'store','store_banner_layout'))
+        self.assertTrue(layout and all(dict(row)['custom_format']=='coupon' for row in layout.values()),'GENERAL tab')
 
     def test_shades_keep_detail_neutrals_and_alpha_without_flattening(self):
         original=[[.1,.4,.6,.25],[.2,.2,.2,.9],[.03,.03,.03,0]]
@@ -61,12 +63,18 @@ class Expansion(unittest.TestCase):
 
     def test_accessories_extend_existing_sections_without_replacing_stock(self):
         original='"items_game" { "items" { "42" { "name" "stock" } } "client_loot_lists" { "stock" { "stock" "1" } } "seasonaloperations" { "11" { } } }'
-        changed=chicken_cosmetics.patch(original)
+        changed=chicken_cosmetics.patch(original,armory=True)
         root=parse(changed).one('items_game')
         self.assertEqual(root.one('items').one('42').text('name'),'stock')
         self.assertEqual(len(root.one('items').children),11)
-        self.assertEqual(chicken_cosmetics.patch(changed),changed)
+        self.assertEqual(chicken_cosmetics.patch(changed,armory=True),changed)
         self.assertEqual(root.one('seasonaloperations').one('11').one('operational_point_redeemable').text('points'),'3')
+        # Off by default: the accessories stay defined (owned ones keep working) but leave the Armory.
+        hidden=chicken_cosmetics.patch(changed)
+        self.assertEqual(len(parse(hidden).one('items_game').one('items').children),11)
+        self.assertNotIn('operational_point_redeemable',hidden)
+        self.assertEqual(chicken_cosmetics.patch(original),hidden)
+        self.assertEqual(chicken_cosmetics.patch(hidden,armory=True),changed)
         with self.assertRaises(ValueError):chicken_cosmetics.patch(original.replace('"42"','"55000"'))
 
     def test_owned_pins_follow_prefabs_and_ignore_unowned_or_non_collectibles(self):

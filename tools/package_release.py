@@ -105,6 +105,9 @@ def build_archive(root, runtime_data, bot_files):
                 add(BIN+'cs2_gc_python/'+info.filename,runtime.read(info))
         add(BIN+'cs2_gc_python/python312._pth',b'python312.zip\n.\n..\n')
         add('licenses/BCDEC-LICENSE.txt',(root/'third_party/bcdec.h').read_text().split('/* LICENSE:')[1].encode())
+        add('licenses/BC7ENC-LICENSE.txt',(root/'third_party/BC7ENC-NOTICE.md').read_bytes())
+        # The annotated settings reference; the launcher copies it, commented out, to a missing cs2_gc_gameplay.cfg.
+        add(BIN+'cs2_gc_gameplay_reference.cfg',(root/'examples/cs2_gc_gameplay.cfg').read_bytes())
         # User settings are deliberately not archive entries. Runtime defaults are
         # built into gameplay_config.py and the proxy, so upgrades preserve settings.
         archive.writestr(BIN+'cs2_gc_release.json',json.dumps(manifest,indent=2))

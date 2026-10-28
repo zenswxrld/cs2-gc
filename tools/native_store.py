@@ -10,6 +10,9 @@ import zlib
 import price_sheet as sheet
 
 
+PET_FOOD = 'chicken_feed'
+
+
 def terminal_names(source):
     sections = sheet.items_game.collect(sheet.items_game.parse(source))
     found = []
@@ -39,6 +42,12 @@ def patch(body, source, terminals_enabled=True):
     from music_store import add_store
     added += add_store(tree, source)
     sections = sheet.items_game.collect(sheet.items_game.parse(source))
+    # Pet food (user, 29 Oct): pets pass out without it, so the schema's own chicken_feed is sold like any Store item.
+    feed = [str(index) for index, node in sections.get('items', {}).items()
+            if isinstance(node, list) and sheet.items_game.as_dict(node).get('name') == PET_FOOD]
+    if feed:
+        added += sheet.add_entries(tree, [PET_FOOD], template)
+        sheet.add_banner_entries(tree, feed[:1])
     cases = sheet.find_case_items(sections)
     case_names = {row[0] for row in cases}
     case_ids = {row[2] for row in cases}

@@ -60,6 +60,16 @@ class ArmoryRotation(unittest.TestCase):
         self.assertTrue(DROP_ONLY_COLLECTIONS)
         self.assertTrue(all('lootlist:'+name in goods for name in DROP_ONLY_COLLECTIONS))
 
+    def test_custom_collections_off_keeps_the_knife_and_glove_cases(self):
+        from native_skins import CASE_COLLECTIONS
+        lists=' '.join('"'+name+'" { "[paint]weapon_test" "1" }' for name in CASE_COLLECTIONS)
+        crates='"90" { "name" "crate_cs2gc_black_market" } "91" { "name" "crate_cs2gc_gauntlet" }'
+        source=SCHEMA.replace('"client_loot_lists" {','"client_loot_lists" { '+lists).replace(' "items" {',' "items" { '+crates,1)
+        goods=catalog.catalogue(source,gameplay_config.parse('custom_cases = 0\n'))
+        self.assertFalse([name for name in goods if name.startswith('lootlist:set_cs2gc_')])
+        self.assertEqual(goods['crate_cs2gc_black_market']['local_rotation_slot'],'limited')
+        self.assertEqual(goods['crate_cs2gc_gauntlet']['local_rotation_slot'],'limited')
+
     @unittest.skipUnless(shutil.which('node'),'Node required for custom title fixture')
     def test_phantom_blade_title_overrides_stale_underscore_callout_and_suffix(self):
         import native_skins

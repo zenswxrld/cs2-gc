@@ -45,6 +45,11 @@ Complete ZIP candidates are built by the [portable ZIP workflow](https://github.
 > how skins are made. Closing the launcher mid-way is safe for your game and inventory, but the next launch starts
 > preparing again, so it is quickest to leave it running. Keep plenty of free space on that drive while it runs; once done, duplicate copies are removed and
 > only the packed skins remain.
+>
+> **Short on time or disk space?** Set `custom_cases = 0` in `cs2_gc_gameplay.cfg` before the first launch. Only the
+> knife and glove recolours are built, and the Black Market and Gauntlet cases stay in the Armory; the custom gun
+> collections leave the Armory rotation, drops and trade-ups. It is meant for new installs: custom-collection skins
+> you already own will not display correctly while it is off, and setting it back to `1` brings them back.
 
 ## Features
 
@@ -124,6 +129,7 @@ More detail: [features and known issues](docs/FEATURES.md) and [roadmap](docs/FE
 | `armory_agent_price` | 25 | Agent collection tile price |
 | `armory_pass_auto_renew` | 1 | Full passes restart on their own |
 | `sell_max_return_percent` | 90 | Highest share of a purchase that selling can return |
+| `custom_cases` | 1 | 0 turns the custom gun collections off: no Armory tiles, drops or trade-ups, and their skins are not built. Knife and glove cases stay |
 | `custom_collection_tradeups` | 1 | Custom collections count in the Trade Up screen |
 | `care_packages_from_matches` | 0 | 1 also gives a package per match |
 

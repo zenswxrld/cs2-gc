@@ -1,6 +1,6 @@
 """Content-addressed local artwork cache. No downloaded or shipped game assets."""
 from contextlib import contextmanager
-import hashlib,json,os,tempfile
+import hashlib,json,os,tempfile,time
 from pathlib import Path
 from native_codec import pipeline
 
@@ -79,7 +79,10 @@ class ArtworkCache:
             with path.open('rb') as source:
                 for block in iter(lambda:source.read(1<<20),b''):check.update(block)
             if check.hexdigest()!=digest:return False
-            self.checked[str(path)]=stamp;return True
+            # Windows updates modification times coarsely (~15 ms): a same-size rewrite right after a check can keep
+            # the same stamp, so only files that have been unchanged for a while may skip the next hash.
+            if time.time_ns()-stat.st_mtime_ns>2_000_000_000:self.checked[str(path)]=stamp
+            return True
         except OSError:return False
 
     def blob(self,data):

@@ -46,7 +46,8 @@ Complete ZIP candidates are built by the [portable ZIP workflow](https://github.
 > preparing again, so it is quickest to leave it running. Keep plenty of free space on that drive while it runs; once done, duplicate copies are removed and
 > only the packed skins remain.
 >
-> **Short on time or disk space?** Set `custom_cases = 0` in `cs2_gc_gameplay.cfg` before the first launch. Only the
+> **Short on time or disk space?** Before the first launch, add the line `custom_cases = 0` to
+> `game\bin\win64\cs2_gc_gameplay.cfg` (a plain text file; create it if it is not there yet). Only the
 > knife and glove recolours are built, and the Black Market and Gauntlet cases stay in the Armory; the custom gun
 > collections leave the Armory rotation, drops and trade-ups. It is meant for new installs: custom-collection skins
 > you already own will not display correctly while it is off, and setting it back to `1` brings them back.
@@ -133,7 +134,7 @@ More detail: [features and known issues](docs/FEATURES.md) and [roadmap](docs/FE
 | `custom_collection_tradeups` | 1 | Custom collections count in the Trade Up screen |
 | `care_packages_from_matches` | 0 | 1 also gives a package per match |
 
-The complete annotated list is in [examples/cs2_gc_gameplay.cfg](examples/cs2_gc_gameplay.cfg).
+The file is `game\bin\win64\cs2_gc_gameplay.cfg`. It does not exist until you create it (any setting left out uses its default); **CS2 GC Settings\Edit Rewards.cmd** in the game folder creates it and opens it in Notepad. Restart the launcher after editing. The complete annotated list is in [examples/cs2_gc_gameplay.cfg](examples/cs2_gc_gameplay.cfg).
 
 ## Your saved files
 

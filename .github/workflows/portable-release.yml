@@ -31,6 +31,9 @@ jobs:
       - name: Run core and helper checks
         shell: msys2 {0}
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Report failing tests as annotations
+        if: failure()
+        run: python -c "import pathlib,re;t=pathlib.Path('build/Testing/Temporary/LastTest.log').read_text(errors='replace');f=pathlib.Path('build/Testing/Temporary/LastTestsFailed.log');print('::error::failed tests: '+(f.read_text().replace(chr(10),' ') if f.exists() else '?'));hits=[l.strip()[:300] for l in t.splitlines() if re.search(r'FAIL|Error|Traceback|assert|Exception',l)];[print('::error::'+h) for h in hits[:9]]"
       - name: Package complete ZIP and smoke-test bundled runtime
         run: python tools/package_release.py
       - uses: actions/upload-artifact@v4

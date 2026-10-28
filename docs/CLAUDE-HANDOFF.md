@@ -1303,3 +1303,12 @@ recoloured RGBA; `collection_material.owned_texture` writes it in the source tex
 pixel instead of 4 (BGRA+LZ4 stays as the fallback when the encoder is missing). The pipeline hash includes the
 encoder, so the first launch after updating regenerates every texture once; packs, cache and setup are ~4x smaller
 afterwards. Not yet validated in the live client.
+
+### Fewer colour shades (29 Oct)
+User: keep every colour variant for the knife and glove cases, and shades only for "Top skin in each collection, plus
+one of the two second-tier skins"; "Everything else: one colour each, no shade versions". `gun_collections.build`
+now builds Light/Muted/Deep/Vivid only for the ancient entry and one legendary entry (a family first) of each
+collection. Shade variants of other skins that appear in `cs2_gc_inventory.txt` (via `cs2_gc_finish_ids.json`) are
+still defined so owned items render, but are left out of the rolled families. A family that would drop below three
+colours without shades keeps them. The kept shades are also sent through the parallel artwork preflight. Paint-kit
+names and IDs are unchanged. Not yet validated in the live client.

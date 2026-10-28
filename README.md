@@ -42,8 +42,8 @@ Complete ZIP candidates are built by the [portable ZIP workflow](https://github.
 > | Hard drive (HDD) | 45–90+ minutes |
 >
 > These are rough estimates; CPU speed matters too. A full rebuild also happens once after an update that changes
-> how skins are made. Closing the launcher mid-way is safe: textures already made are kept and the next launch
-> continues. Keep plenty of free space on that drive while it runs; once done, duplicate copies are removed and
+> how skins are made. Closing the launcher mid-way is safe for your game and inventory, but the next launch starts
+> preparing again, so it is quickest to leave it running. Keep plenty of free space on that drive while it runs; once done, duplicate copies are removed and
 > only the packed skins remain.
 
 ## Features

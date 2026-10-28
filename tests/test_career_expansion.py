@@ -26,6 +26,8 @@ class Expansion(unittest.TestCase):
         self.assertEqual(music_store.add_store(tree,changed),0)
         entries=dict(sheet.section(tree,'store','entries'))
         self.assertEqual(dict(dict(entries[offers[('two',True)][1]])['prices'])['AUD'],1135)
+        layout=dict(sheet.section(tree,'store','store_banner_layout'))
+        self.assertTrue(layout and all(dict(row)['custom_format']=='coupon' for row in layout.values()),'GENERAL tab')
 
     def test_shades_keep_detail_neutrals_and_alpha_without_flattening(self):
         original=[[.1,.4,.6,.25],[.2,.2,.2,.9],[.03,.03,.03,0]]

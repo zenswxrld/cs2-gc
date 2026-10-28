@@ -267,6 +267,17 @@ console.log('native badge fixture passed');
         self.assertIn('Name Tag',dict(price_sheet.section(changed,'store','entries')))
         self.assertEqual(native_store.patch(result,source,terminals_enabled=False),(result,0))
 
+    def test_store_sells_the_schemas_chicken_feed_on_the_tools_tab(self):
+        from test_price_sheet import ITEMS_GAME
+        source=ITEMS_GAME.replace('"items"\n    {','"items"\n    { "4949" { "name" "chicken_feed" "item_class" "chicken_feed" }',1)
+        self.assertNotEqual(source,ITEMS_GAME)
+        original=fixture_sheet.build_message(fixture_sheet.encode_kv(copy.deepcopy(SHEET)))
+        result,_=native_store.patch(original,source,terminals_enabled=False)
+        changed=price_sheet.decode_kv(price_sheet.decompress(price_sheet.read_message(result)[2]))
+        self.assertEqual(dict(dict(price_sheet.section(changed,'store','entries'))['chicken_feed'])['item_link'],'chicken_feed')
+        self.assertEqual(dict(dict(price_sheet.section(changed,'store','store_banner_layout'))['4949'])['custom_format'],'single')
+        self.assertEqual(native_store.patch(result,source,terminals_enabled=False),(result,0))
+
     def test_store_removes_all_key_tools_and_their_banner_rows(self):
         from test_price_sheet import ITEMS_GAME
         source=ITEMS_GAME.replace('"prefabs"\n    {', '"prefabs"\n    { "key_alias" { "prefab" "weapon_case_key" }').replace(

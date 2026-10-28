@@ -11,6 +11,7 @@ END = '''            _MakeNavButton(element);
 INSERT = '''    // Local GC Armory rotation: generated settings must match cs2_gc_gameplay.cfg.
     const m_localRotation = __SETTINGS__;
     function _LocalSetCollectionIcon(image, name) {
+        if (String(name)==='cs2gc_chicken_cosmetics') { image.SetImage('file://{images}/econ/cs2gc_chicken/helmet.png'); return; }
         if (String(name).startsWith('set_cs2gc_')) {
             image.SetImage('file://{images}/econ/set_icons/' + name + '.png');
             return;
@@ -320,6 +321,7 @@ PREPARE = '''        // Resolve each tile from its own native row, without inher
                 entry.on_item_activate = _OpenFullScreenInspectItem;
             }
             entry.local_terminal = slot === 'terminal';
+            if(entry.item_name==='lootlist:cs2gc_chicken_cosmetics')entry.lootlist_item_type='sticker';
             entry.local_souvenir = slot === 'souvenir';
             entry.local_direct_case = entry.item_name === 'crate_cs2gc_black_market' || entry.item_name === 'crate_cs2gc_gauntlet';
             if (slot === 'agent') {
@@ -364,7 +366,8 @@ COLLECTION_TILE_MODEL = '''    function _LocalCollectionTileModel(elTile, ShopEn
         const camera = 'camera_weapon_' + (cameraData !== undefined ? cameraData.camera : '0');
         const single = elTile.FindChildInLayoutFile('id-xpshop-tile-single-image');
         const carousel = elTile.FindChildInLayoutFile('id-xpshop-tile-carousel');
-        const holder = $.CreatePanel('Panel', single.GetParent(), 'cs2gc-collection-model');
+        const holder = $.CreatePanel('Panel', elTile, 'cs2gc-collection-model');
+        holder.style.ignoreParentFlow=true;holder.style.position='0px 0px 0px';
         holder.style.width = '100%'; holder.style.height = '72%';
         holder.style.verticalAlign = 'center'; holder.style.horizontalAlign = 'center';
         holder.style.marginTop = '16px'; holder.hittest = false; holder.hittestchildren = false;
@@ -475,6 +478,7 @@ def patch(source, config, categories=None, agents=None, previews=None):
     from native_skins import CASE_COLLECTIONS
     collection_names = {'lootlist:' + name: title for name, title in CASE_COLLECTIONS.items()
                         if (categories or {}).get('lootlist:' + name) == 'collection'}
+    if (categories or {}).get('lootlist:cs2gc_chicken_cosmetics')=='collection':collection_names['lootlist:cs2gc_chicken_cosmetics']='Chicken Cosmetics'
     settings = {'enabled': bool(config['armory_rotation_enabled']),
                 'seconds': config['armory_rotation_seconds'], 'slots': config['armory_rotation_slots'],
                 'categories': categories or {}, 'agents': agents or [], 'previews': previews or {},

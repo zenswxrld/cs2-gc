@@ -63,8 +63,10 @@ class Rewards:
             self.state['matches'] = int(match_cursor.read_text().strip()) if match_cursor.exists() else 0
         if type(self.state['matches']) is not int or not 0 <= self.state['matches'] <= MAX_TOTAL:
             raise ValueError('Invalid completed-match counter')
+        from reward_cursors import reconcile
+        reconcile(self.directory,self.state)
         from mission_tracker import MissionTracker
-        self.missions = MissionTracker(self.directory, self.state)
+        self.missions = MissionTracker(self.directory, self.state,defer_publish=True)
         self.state.setdefault('premier', premier_rating.initial(self.config))
         premier = self.state['premier']
         if not isinstance(premier, dict) or any(type(premier.get(key)) is not int or premier[key] < 0
@@ -87,6 +89,8 @@ class Rewards:
         self.save()
 
     def save(self):
+        from career_achievements import award
+        award(self.state,bool(self.config['stars_enabled']))
         # Commit deduplication and cumulative XP together before publishing the cursor.
         atomic_text(self.path, json.dumps(self.state, separators=(',', ':')) + '\n')
         atomic_text(self.directory / 'cs2_gc_rewards.txt', str(self.state['total']) + '\n')
@@ -95,6 +99,7 @@ class Rewards:
             rank = self.state['premier']
             atomic_text(self.directory / 'cs2_gc_premier.txt',
                         f"{rank['rating']} {rank['wins']} {self.config['premier_placement_wins']}\n")
+        self.missions.publish()
 
     def accept(self, packet):
         if not isinstance(packet, dict):
@@ -110,11 +115,24 @@ class Rewards:
         provider, player, game_map = (packet.get(k) or {} for k in ('provider', 'player', 'map'))
         if not all(isinstance(v, dict) for v in (provider, player, game_map)):
             return False
+        if provider.get('appid')==730 and isinstance(provider.get('steamid'),str) and provider['steamid'].isdigit():
+            self.state['local_player']=provider['steamid']
+        # A dead local player can be watching a bot when the match ends. Count the
+        # authenticated local match result using the last local team/stats, never the bot's scoreboard.
+        previous=self.state.get('last')
+        if (provider.get('appid')==730 and provider.get('steamid') and player.get('steamid')!=provider['steamid']
+                and game_map.get('phase')=='gameover' and previous and previous.get('player')==provider['steamid']
+                and previous.get('map')==game_map.get('name') and previous.get('mode')==game_map.get('mode')
+                and previous.get('team') in ('T','CT')):
+            player={'steamid':provider['steamid'],'team':previous['team'],'activity':'playing',
+                    'match_stats':{'kills':previous['kills'],'mvps':previous['mvps']},
+                    'state':{'round_killhs':previous['headshots']}}
         # Spectating a bot must not turn the bot's kills into the local player's rewards.
         if (provider.get('appid') != 730 or not provider.get('steamid')
                 or player.get('steamid') != provider['steamid']
                 or player.get('team') not in ('T', 'CT')
                 or (player.get('activity') != 'playing' and game_map.get('phase') != 'gameover')):
+            if provider.get('appid')==730 and provider.get('steamid'):self.missions.keep_alive(game_map)
             return True
         stats, state = player.get('match_stats') or {}, player.get('state') or {}
         if not isinstance(stats, dict) or not isinstance(state, dict):
@@ -124,23 +142,48 @@ class Rewards:
         timestamp = integer(provider.get('timestamp'))
         last = self.state.get('last')
         current = {'player': provider['steamid'], 'map': game_map.get('name'),
+                   'mode':game_map.get('mode'),'team':player.get('team'),
                    'round': integer(game_map.get('round')), 'phase': game_map.get('phase'),
                    'kills': stats['kills'], 'mvps': stats['mvps'],
                    'headshots': integer(state.get('round_killhs')), 'timestamp': timestamp,
                    'finished': False}
+        bomb=packet.get('bomb') or {}
+        current['bomb']={k:bomb.get(k) for k in ('state','player')} if isinstance(bomb,dict) else {}
         if last and timestamp < last['timestamp']:
             return True
+        before_bonus=self.state.get('mission_stars',0)
         earned = self.missions.observe(provider, player, game_map, stats)
+        if not self.config['stars_enabled']:self.state['mission_stars']=before_bonus
+        stars=0
         same = (last and current['player'] == last['player'] and current['map'] == last['map']
+                and current['mode']==last.get('mode')
                 and current['round'] >= last['round'] and current['kills'] >= last['kills']
                 and current['mvps'] >= last['mvps'])
         if same and current['phase'] in ('live', 'gameover') and last['phase'] == 'live':
             earned += (current['kills'] - last['kills']) * self.config['kill_xp']
             earned += (current['mvps'] - last['mvps']) * self.config['mvp_xp']
+            stars += (current['kills']-last['kills'])*self.config['kill_stars']
+            stars += (current['mvps']-last['mvps'])*self.config['mvp_stars']
             old_hs = last['headshots'] if current['round'] == last['round'] else 0
-            earned += max(0, current['headshots'] - old_hs) * self.config['headshot_xp']
+            new_hs=max(0,current['headshots']-old_hs)
+            if current['round']!=last['round']:new_hs=min(new_hs,current['kills']-last['kills'])
+            earned += new_hs * self.config['headshot_xp']
+            stars += new_hs*self.config['headshot_stars']
+            from local_stats import record
+            record(self.state,kills=current['kills']-last['kills'],headshots=new_hs,mvps=current['mvps']-last['mvps'])
+            # Objective rewards require a witnessed local player's completed action, never a global bomb event.
+            if current['round']==last['round']:
+                before_bomb=last.get('bomb') or {}
+                for action,before,after in (('plant','planting','planted'),('defuse','defusing','defused')):
+                    marker=action+'_paid'
+                    current[marker]=last.get(marker,False)
+                    if (not current[marker] and before_bomb.get('state')==before and current['bomb'].get('state')==after
+                            and before_bomb.get('player')==provider['steamid']):
+                        current[marker]=True;earned+=self.config[action+'_xp'];stars+=self.config[action+'_stars']
+                        record(self.state,**{('plants' if action=='plant' else 'defuses'):1})
             if current['phase'] == 'gameover' and not last.get('finished'):
                 earned += self.config['match_complete_xp']
+                stars += self.config['match_complete_stars']
                 self.state['matches'] = min(MAX_TOTAL, self.state['matches'] + 1)
                 result = premier_rating.outcome(game_map, player.get('team'))
                 if result and self.config['premier_enabled']:
@@ -151,6 +194,10 @@ class Rewards:
         # First snapshot/reconnect/restart only establishes a baseline, never pays old scoreboard stats.
         self.state['last'] = current
         self.state['total'] = min(MAX_TOTAL, self.state['total'] + earned)
+        if self.config['stars_enabled']:
+            # The existing monotonic bonus-star channel carries mission and gameplay awards together.
+            self.state['mission_stars']=min(MAX_TOTAL,self.state.get('mission_stars',0)+stars)
+            self.state['gameplay_stars_earned']=self.state.get('gameplay_stars_earned',0)+stars
         self.save()
         if earned:
             print(f"Earned {earned} XP; total {self.state['total']}; completed matches {self.state['matches']}.", flush=True)
@@ -174,6 +221,7 @@ def config_text(token, port):
         "player_state" "1"
         "player_match_stats" "1"
         "player_weapons" "1"
+        "bomb" "1"
     }}
 }}
 '''
@@ -273,8 +321,8 @@ def run_with_parent(args, parent):
             def write_difficulty():
                 difficulty = premier_rating.bot_difficulty(rewards.state['premier'])
                 if difficulty == last_difficulty[0]: return
-                atomic_text(difficulty_path, '// Local Premier bot difficulty; execute before spawning bots.\n'
-                            + f'bot_difficulty {difficulty}\nbot_prefix ""\n')
+                from fair_bot_policy import server_config
+                atomic_text(difficulty_path,server_config(rewards.state['premier']['rating']))
                 last_difficulty[0] = difficulty
             write_difficulty()
             print('Local Premier bot config prepared. In the local server console: exec cs2_gc_premier_bots', flush=True)
@@ -283,7 +331,10 @@ def run_with_parent(args, parent):
         if console: print('Debug console controls enabled; cs2_gc_debug.exe loads the launch flags and command CFG automatically.', flush=True)
         care = CarePackageBridge(args.proxy_dir, args.cfg_dir, args.parent_pid) if args.cfg_dir and args.parent_pid and rewards.config['care_packages_enabled'] else None
         next_status = [time.monotonic() + 30]
+        from combat_events import CombatEvents
+        combat=CombatEvents(rewards,args.parent_pid)
         def after_request():
+            combat.poll()
             if console: console.poll()
             if care: care.poll()
             if args.cfg_dir and rewards.config['premier_enabled']:

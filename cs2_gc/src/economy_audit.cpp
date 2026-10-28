@@ -249,6 +249,10 @@ std::vector<EconomyPath> AuditEconomy(const Schema &schema, const GameplayConfig
             auto tiers = schema.LootTiers(name);
             std::erase_if(tiers, [](const auto &tier) { return tier.rarity == 0; });
             std::stable_sort(tiers.begin(), tiers.end(), [](const auto &a, const auto &b) { return a.rarity < b.rarity; });
+            const auto weights = CollectionTierWeights(tiers.size());
+            collection.milSpec=weights[0]; collection.restricted=weights[1];
+            collection.classified=weights[2]; collection.covert=weights[3];
+            collection.fifthTier=weights[4]; collection.sixthTier=weights[5];
             std::uint64_t total = 0, topWeight = 0;
             std::uint32_t highest = 0;
             std::vector<LootItem> top;

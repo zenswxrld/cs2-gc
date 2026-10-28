@@ -35,8 +35,12 @@ def apply(lineup,rows,works,report):
         # from the preflight baseline. Never silently replace a later revision.
         for entry in current:
             if entry.get('popular_chase_revision') or entry.get('signature_finish') or entry.get('pattern_source') or entry.get('palette_source'):
-                comparable=lambda e:{k:v for k,v in e.items() if k not in ('all_collection_revision','client_review_revision')}
-                if not any(comparable(e)==comparable(entry) for e in proposed):
+                def comparable(e, palette_update=False):
+                    ignored={'all_collection_revision','client_review_revision','palette_revision'}
+                    if palette_update:ignored.add('themes')
+                    return {k:v for k,v in e.items() if k not in ignored}
+                if not any(comparable(e,e.get('palette_revision',0)>entry.get('palette_revision',0))==
+                           comparable(entry,e.get('palette_revision',0)>entry.get('palette_revision',0)) for e in proposed):
                     reason=entry.get('label','approved finish')+': retain newer approved entry';break
         if reason:
             unavailable.append({'collection':icon,'reason':reason});continue

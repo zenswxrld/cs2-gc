@@ -94,4 +94,53 @@ def patch(source):
 def prepare(directory, config):
     return install_override(directory, enabled=bool(config['offline_mission_launch']), folder='cs2_gc_missions',
         comment='cs2_gc local bot mission launch', owner='cs2-gc-mission-launch-v1',
-        asset='panorama/scripts/mission_tile.vts_c', patch=patch)
+        asset='panorama/scripts/mission_tile.vts_c', patch=lambda source:patch_progress(patch(source)))
+
+def patch_progress(source):
+    """Use the live account SO progress instead of the listen server's empty quest snapshot."""
+    start='        let missionData = undefined;'
+    end='        $.GetContextPanel().Data().m_oMissionData = missionData;'
+    if source.count(start)!=1 or source.count(end)!=1:raise ValueError('Installed mission progress contract changed')
+    a,b=source.index(start),source.index(end)
+    source=source[:a]+'''        // cs2_gc: SO account progress is authoritative in local bot matches.
+        let missionData = MissionsAPI.GetRecurringMission(true);
+        if (!missionData) missionData = MissionsAPI.GetRecurringMission(false);
+        if (missionData) {
+            m_localLastMission = missionData;
+            m_localLastMissionAt = Date.now();
+        } else if (m_localLastMission && Date.now() - m_localLastMissionAt <= 15000) {
+            missionData = m_localLastMission;
+        }
+        if (missionData) {
+            missionData = Object.assign({}, missionData, {progress_this_match: 0});
+            $.GetContextPanel().RemoveClass('hide-non-prime');
+        }
+'''+source[b:]
+    # Native gates describe official-server connectivity, not local SO data.
+    # A missing schema is still handled by the original hidden/retry branch.
+    source=source.replace('''        if (MyPersonaAPI.GetElevatedState() != "elevated")
+            return;''','''        // cs2_gc: an available local mission does not require online Prime state.''',1)
+    source=source.replace('''            if (!MyPersonaAPI.IsConnectedToGC()) {
+                $.GetContextPanel().AddClass('hidden');
+                return;
+            }''','''            // cs2_gc: validated local mission data remains visible during GC reconnects.''',1)
+    gate="            if (!GameStateAPI.GetActiveQuestID()) {"
+    if source.count(gate)!=1:raise ValueError('Installed mission HUD visibility contract changed')
+    source=source.replace(gate,'''            const localMap = GameStateAPI.GetMapBSPName();
+            const localGroup = (GameTypesAPI.GetConfig().mapgroups || {})[missionData.mapgroup];
+            const localMatch = missionData.map === localMap ||
+                (localGroup && localGroup.maps && Object.prototype.hasOwnProperty.call(localGroup.maps, localMap));
+            if (!GameStateAPI.GetActiveQuestID() && !localMatch) {''',1)
+    init='    function Init(srcText) {\n'
+    if source.count(init)!=1:raise ValueError('Installed mission initialization contract changed')
+    return source.replace(init,'''    let m_localProgressRefresh = null;
+    let m_localLastMission = null;
+    let m_localLastMissionAt = 0;
+    function Init(srcText) {
+        if (m_localProgressRefresh === null) {
+            m_localProgressRefresh = $.Schedule(1, () => {
+                m_localProgressRefresh = null;
+                Init('local account progress');
+            });
+        }
+''',1)

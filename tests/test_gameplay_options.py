@@ -28,12 +28,12 @@ class GameplayOptions(unittest.TestCase):
         keys = list(config.WEAPON_KEYS[1:]) + ['sell_knife_glove'] + list(config.STICKER_KEYS) + list(config.CHARM_KEYS) + \
             ['sell_agent_percent', 'sell_container_percent']
         defaults = config.balance(dict(config.DEFAULTS))
-        self.assertEqual([defaults[k] for k in keys], [1, 1, 1, 3, 7, 15, 22, 0, 0, 0, 5, 0, 3, 9, 25, 50, 30])
+        self.assertEqual([defaults[k] for k in keys], [1, 1, 2, 4, 12, 24, 35, 0, 0, 0, 5, 1, 3, 9, 25, 50, 30])
         generous = config.parse('pity_soft_at = 2\narmory_pity_soft_at = 2\nsell_consumer = 2\nsell_industrial = 5\n'
                                 'sell_mil_spec = 10\nsell_restricted = 15\nsell_classified = 25\nsell_covert = 50\n'
                                 'sell_knife_glove = 150\nsell_sticker_percent = 90\nsell_music_kit = 90\n'
                                 'sell_container_percent = 90\nsell_agent_percent = 85\n')
-        self.assertEqual([generous[k] for k in keys], [1, 1, 1, 2, 4, 9, 18, 0, 0, 0, 4, 0, 2, 9, 25, 85, 90])
+        self.assertEqual([generous[k] for k in keys], [1, 1, 2, 3, 6, 13, 25, 0, 0, 0, 5, 1, 3, 9, 25, 85, 90])
         self.assertEqual(config.balance(dict(generous)), generous)  # idempotent
         self.assertEqual(config.load(Path(tempfile.mkdtemp())), defaults)
         # Weapon routes priced by the model never return more than the configured share, even at the best wear.

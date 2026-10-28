@@ -38,10 +38,12 @@ DEFAULTS = {
     'premier_bot_spread': 1200,
 
     'rewards_auto_start': 1,
-    'xp_enabled': 1, 'stars_enabled': 1, 'armory_xp_per_star': 400, 'armory_pass_auto_renew': 1,
+    'xp_enabled': 1, 'profile_xp_percent': 125, 'stars_enabled': 1, 'armory_xp_per_star': 400, 'armory_pass_auto_renew': 1,
     'kill_xp': 5, 'headshot_xp': 3, 'mvp_xp': 25, 'match_complete_xp': 600,
+    'plant_xp': 25, 'defuse_xp': 25,
+    'kill_stars': 2, 'headshot_stars': 2, 'mvp_stars': 5, 'plant_stars': 5, 'defuse_stars': 5, 'match_complete_stars': 50,
     'match_drops_enabled': 1, 'match_drop_count': 3, 'match_case_percent': 50, 'match_skin_min_rarity': 3,
-    'mixed_stattrak_tradeups': 1, 'souvenir_tradeups': 1, 'pity_enabled': 1, 'pity_soft_at': 10, 'pity_hard_at': 100,
+    'mixed_stattrak_tradeups': 1, 'souvenir_tradeups': 1, 'pity_enabled': 1, 'pity_soft_at': 70, 'pity_hard_at': 100,
     'case_gold_per_10000': 26, 'terminal_top_per_10000': 64,
     'terminals_enabled': 1, 'terminal_default_offers': 5, 'terminal_lifetime_days': 7,
     'terminal_helper_enabled': 1,
@@ -53,8 +55,8 @@ DEFAULTS = {
     'level_drops_enabled': 1, 'level_drop_count': 3,
     'skip_container_confirmation': 1,
     'hide_rent_button': 1,
-    'armory_pity_enabled': 1, 'armory_pity_soft_at': 10, 'armory_pity_hard_at': 100,
-    'armory_top_per_10000': 64,
+    'armory_pity_enabled': 1, 'armory_pity_soft_at': 70, 'armory_pity_hard_at': 100,
+    'armory_top_per_10000': 50,
     'premier_win_rating': 300, 'premier_loss_rating': 100, 'premier_max_rating': 35000,
     'premier_bonus_wins': 0,
 }
@@ -64,8 +66,9 @@ LIMITS.update({key:(0,1000000) for key in DEFAULTS if key.startswith('sell_charm
 LIMITS.update(sell_sticker_percent=(0, 100), sell_max_return_percent=(1, 95))
 LIMITS.update({key:(0,1000) for key in DEFAULTS if key.startswith('sell_wear_') and key!='sell_wear_enabled'})
 LIMITS.update({key: (0, 1000000) for key in ('kill_xp', 'headshot_xp', 'mvp_xp', 'match_complete_xp')})
+LIMITS.update({key:(0,1000000) for key in ('plant_xp','defuse_xp','kill_stars','headshot_stars','mvp_stars','plant_stars','defuse_stars','match_complete_stars')})
 LIMITS.update({'viewmodel_range_percent': (100, 1000), 'viewmodel_fov_min': (1, 179), 'viewmodel_fov_max': (1, 179), 'armory_case_price': (1, 1000000), 'black_market_price': (1, 1000000), 'glove_finishes': (0, 1), 'custom_skins_test': (0, 1), 'custom_collections': (0, 1), 'custom_cases': (0, 1), 'custom_collection_tradeups': (0, 1), 'free_case_keys': (0, 1), 'armory_collection_slots': (0, 6), 'armory_charm_slots': (0, 6), 'armory_sticker_slots': (0, 6), 'armory_case_slots': (0, 6), 'armory_capsule_slots': (0, 6), 'armory_limited_slots': (0, 6), 'armory_agent_slots': (0, 6), 'armory_agent_price': (0, 1000000), 'match_weekly_pool_only': (0, 1), 'item_sales_enabled': (0, 1), 'sell_consumer': (0, 1000000), 'sell_industrial': (0, 1000000), 'sell_mil_spec': (0, 1000000), 'sell_restricted': (0, 1000000), 'sell_classified': (0, 1000000), 'sell_covert': (0, 1000000), 'sell_knife_glove': (0, 1000000), 'sell_sticker_percent': (0, 100), 'sell_music_kit': (0, 1000000), 'sell_container_percent': (0, 100), 'sell_agent_percent': (0, 100), 'premier_rating_variation': (0, 10000), 'premier_bot_spread': (0, 10000)})
-LIMITS.update(reward_rare_case_per_10000=(0, 10000), armory_souvenir_slots=(0, 6), armory_souvenir_price=(1, 1000000), armory_terminal_slots=(0, 6), armory_terminal_price=(1, 1000000), end_match_duration=(6, 60), match_end_delay=(25, 120), armory_pity_soft_at=(2, 99), armory_pity_hard_at=(3, 100), armory_top_per_10000=(0, 10000), level_drop_count=(1, 20), armory_howl_star_price=(1, 1000000), premier_placement_wins=(1, 100), premier_start_rating=(0, 99999), premier_win_rating=(0, 10000),
+LIMITS.update(profile_xp_percent=(50,500), reward_rare_case_per_10000=(0, 10000), armory_souvenir_slots=(0, 6), armory_souvenir_price=(1, 1000000), armory_terminal_slots=(0, 6), armory_terminal_price=(1, 1000000), end_match_duration=(6, 60), match_end_delay=(25, 120), armory_pity_soft_at=(2, 99), armory_pity_hard_at=(3, 100), armory_top_per_10000=(0, 10000), level_drop_count=(1, 20), armory_howl_star_price=(1, 1000000), premier_placement_wins=(1, 100), premier_start_rating=(0, 99999), premier_win_rating=(0, 10000),
               premier_loss_rating=(0, 10000), premier_max_rating=(1, 99999), premier_bonus_wins=(0, 100), armory_rotation_seconds=(10, 86400), armory_rotation_slots=(1, 60), armory_xp_per_star=(1, 100000), match_drop_count=(1, 20), match_case_percent=(0, 100),
               match_skin_min_rarity=(3, 6), pity_soft_at=(2, 99), pity_hard_at=(3, 100),
               case_gold_per_10000=(0, 10000), terminal_top_per_10000=(0, 10000),
@@ -107,12 +110,17 @@ COLLECTION_PRICE, CHARM_PRICE, STICKER_PRICE = 4, 3, 1  # catalogue tiles; never
 CASE_WEIGHTS = (7992, 1598, 320, 64)
 COLLECTION_WEIGHTS = (7992, 1598, 320, 64, 13, 3)
 
+def collection_weights(count):
+    if count == 5:return (6400,2500,750,300,50)
+    if count == 6:return (4500,3000,1400,750,300,50)
+    return COLLECTION_WEIGHTS[:count]
+
 
 def pity_chance(misses, base, soft_at, hard_at, enabled):
     base = min(base, 10000)
     if not enabled or misses + 1 < soft_at: return base
     if misses + 1 >= hard_at: return 10000
-    return base + (10000 - base) * (misses + 2 - soft_at) // (hard_at - soft_at + 1)
+    return base + (10000 - base) * (misses + 2 - soft_at)**2 // (hard_at - soft_at + 1)**2
 
 
 def pity_rate(base, soft_at, hard_at, enabled):
@@ -130,6 +138,7 @@ def _share(value, percent):
 
 
 def _window(values, weights, pity, hit):
+    if pity:weights=collection_weights(len(values))
     lower, total = 0.0, 0.0
     for rank in range(len(values) - 1 if pity else len(values)):
         lower += float(weights[rank]) * float(values[rank])
@@ -140,8 +149,9 @@ def _window(values, weights, pity, hit):
 
 def _armory_hit(count, c):
     if count < 2: return 1.0
-    total = sum(COLLECTION_WEIGHTS[:count])
-    base = max(c['armory_top_per_10000'], COLLECTION_WEIGHTS[count - 1] * 10000 // total)
+    weights=collection_weights(count)
+    total = sum(weights)
+    base = max(c['armory_top_per_10000'], weights[count - 1] * 10000 // total)
     return pity_rate(base, c['armory_pity_soft_at'], c['armory_pity_hard_at'], c['armory_pity_enabled'])
 
 

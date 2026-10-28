@@ -50,6 +50,8 @@ GRADIENT_THEMES = {
     'Vapor': ((300, 190, 330, 170), 0.60), 'Frost': ((200, 190, 220, 180), 0.35), 'Royal': ((280, 45, 260, 50), 0.70),
     'Toxin': ((100, 70, 280, 130), 0.80), 'Coral': ((10, 340, 190, 20), 0.70), 'Rainbow': ((0, 60, 180, 280), 0.80),
 }
+from colour_families import register as _register_colour_shades
+_register_colour_shades(THEMES,DUO_THEMES,GRADIENT_THEMES)
 FADE_BASES = ('aa_fade', 'aa_fade_grassland', 'aa_fade_metallic', 'am_marble_fade', 'am_doppler_phase1', 'am_doppler_phase2',
               'am_doppler_phase3', 'am_doppler_phase4', 'am_gamma_doppler_phase1', 'am_gamma_doppler_phase2',
               'am_gamma_doppler_phase3', 'am_gamma_doppler_phase4', 'am_ruby_marbleized', 'am_sapphire_marbleized',
@@ -336,6 +338,9 @@ def make_finish(source, kit, kit_path, new_name, theme, report=None, weapon_pale
             if report is not None:
                 report.setdefault('excluded',[]).append({'donor':kit,'theme':theme,'tier':weapon_palette,'reason':'near-original colourway'})
             return None
+    else:
+        from colour_families import tone
+        new_colors=tone(new_colors,theme,current)
     if report is not None:
         report_key = kit + ':' + weapon_palette if weapon_palette else kit
         entry = report.setdefault(report_key, {'source_compmat': kit_path, 'source_material': specific.value,
@@ -446,7 +451,7 @@ def plan(source_text, gold_pools_text, titles, finish_source, known_ids=None, re
         files[COMPMAT_DIR + name + '.vcompmat_c'] = vcompmat
         files[VMAT_DIR + name + '.vmat_c'] = vmat
         base_title = KNIFE_BASES.get(base) or titles.get(base) or EXTRA_TITLES.get(base) or base.split('_', 1)[-1].replace('_', ' ').title()
-        title = '%s %s' % (base_title, theme)
+        title = '%s %s' % (base_title, theme.replace('_',' '))
         values = {k: v for k, v in kits[base][1].items() if k not in ('name', 'description_string', 'description_tag',
                                                                        'composite_material_path') and isinstance(v, str)}
         if name in known_ids:
@@ -506,6 +511,7 @@ def patch_items_game(source_text, entries, case, case_price=None, extra_cases=()
     used_ids = set(sections.get('items', {}))
     series = max([int(k) for k in sections.get('revolving_loot_lists', {}) if k.isdigit()] + [0])
     for kit_id, _, _, _ in entries:
+        if not 0<int(kit_id)<=65535:raise ValueError('Native paint-kit ID space exhausted; existing identities were not reassigned')
         if kit_id in sections.get('paint_kits', {}): raise ValueError('Paint kit id %s is taken' % kit_id)
     # Names are written as plain text: overriding the game's language file broke every other string (17k).
     kit_text = '\n'.join(_block(kit_id, [('name', name), ('description_string', title), ('description_tag', title)] +
@@ -714,6 +720,7 @@ def _prepare(proxy_directory, config, items_game_text):
                 files['panorama/images/econ/weapon_cases/' + name + '_png.vtex_c'] = \
                     make_vtex(template, native_gloves.ICON.read_bytes(),max_size=512)
     entries += glove_entries
+    if any(not 0<int(kit_id)<=65535 for kit_id,_,_,_ in entries):raise ValueError('Native paint-kit ID space exhausted; no finish mapping was saved')
     known.update({name: int(kit_id) for kit_id, name, _, _ in entries})
     atomic_write(ids_path, json.dumps(known, indent=1, sort_keys=True) + '\n')
     if template is not None and ICON.is_file():
@@ -780,6 +787,7 @@ def _prepare(proxy_directory, config, items_game_text):
                 if name in known: kit_id = str(known[name])
                 else: kit_id = str(next_id); next_id += 1
                 entries.append((kit_id, name, title, values))
+            if any(not 0<int(kit_id)<=65535 for kit_id,_,_,_ in entries):raise ValueError('Native paint-kit ID space exhausted; no collection mapping was saved')
             known.update({name: int(kit_id) for kit_id, name, _, _ in entries})
             atomic_write(ids_path, json.dumps(known, indent=1, sort_keys=True) + '\n')
             drop_collections = native_skins.DROP_ONLY_COLLECTIONS.intersection(icons)

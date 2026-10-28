@@ -351,7 +351,7 @@ class NativeFinishes(unittest.TestCase):
             self.assertEqual(source.read(finishes.ICON_DIR + 'weapon_bayonet_rk_aa_fade_crimson_light_png.vtex_c'), b'RARE-ICON')
             self.assertEqual(source.read(finishes.ICON_DIR + 'weapon_knife_karambit_am_aqua_flecks_heavy_png.vtex_c'), b'RARE-ICON')
             self.assertFalse(source.exists(finishes.ICON_DIR + 'weapon_knife_karambit_aa_fade_light_png.vtex_c'))
-            self.assertLess((mod / 'pak01_000.vpk').stat().st_size, 400000)
+            self.assertLess((mod / 'pak01_000.vpk').stat().st_size, 800000) # more shade materials; fallback image remains shared
             self.assertFalse(list(mod.glob('panorama/images/econ/default_generated/*')))  # never written loose
             sample = json.loads((proxy / finishes.REEL_FILE).read_text())[finishes.CASE_NAME]
             self.assertTrue(sample and all(pair[0] in (500, 507) for pair in sample))

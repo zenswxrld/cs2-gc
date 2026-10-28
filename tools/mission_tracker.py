@@ -17,14 +17,56 @@ import time
 
 PROGRESS_FILE = 'cs2_gc_mission_progress.txt'
 CURRENT_FILE = 'cs2_gc_mission_current.txt'  # "variant period", written by the DLL each rotation
+SESSION_FILE = 'cs2_gc_mission_session.txt'
 
 
 class MissionTracker:
-    def __init__(self, directory, state, now=time.time):
+    def __init__(self, directory, state, now=time.time,defer_publish=False):
         self.directory, self.state, self.now = Path(directory), state, now
         self.state.setdefault('missions', {})
         self.last = None
         self.reason = None
+        self.defer_publish=defer_publish
+
+    def suspend(self,clear=False):
+        (self.directory/SESSION_FILE).unlink(missing_ok=True)
+        if clear:self.state.pop('mission_session',None)
+
+    def keep_alive(self,game_map):
+        session=self.state.get('mission_session')
+        name=str(game_map.get('name') or '').replace('\\','/').rsplit('/',1)[-1]
+        if session and session['map']==name and session['mode']==game_map.get('mode') and game_map.get('phase') in ('warmup','live'):
+            from native_tradeups import atomic_write
+            atomic_write(self.directory/SESSION_FILE,'%d %d %d\n'%(session['index'],session['period'],int(self.now())))
+        else:self.suspend(clear=not name or game_map.get('phase')=='gameover')
+
+    def session_plan(self,game_map,stats,player):
+        """Keep one compatible mission for the full match; a short lease also pins the GC/UI schema."""
+        name=str(game_map.get('name') or '').replace('\\','/').rsplit('/',1)[-1]
+        mode,phase=game_map.get('mode'),game_map.get('phase')
+        session=self.state.get('mission_session')
+        score=(game_map.get('team_ct') or {}).get('score',0)+(game_map.get('team_t') or {}).get('score',0)
+        kills=stats.get('kills',0)
+        if session and (session['map']!=name or session['mode']!=mode or kills<session['kills'] or score<session['score']):
+            session=None;self.state.pop('mission_session',None);self.last=None
+        key,mission=self.plan()
+        if session:
+            try:
+                variants=json.loads((self.directory/'cs2_gc_missions.json').read_text(encoding='utf-8'))['variants']
+                mission=variants[session['index']];key='%d:%d'%(session['period'],session['index'])
+            except (OSError,ValueError,KeyError,IndexError):session=None
+        if not session and mission and mission.get('kind') and mission.get('mode')==mode and (not mission.get('maps') or name in mission['maps']) and phase in ('warmup','live'):
+            period,index=(int(x) for x in key.split(':'))
+            session={'period':period,'index':index,'map':name,'mode':mode,'kills':kills,'score':score}
+        if session:
+            session.update(kills=kills,score=score)
+            self.state['mission_session']=session
+            if phase in ('warmup','live'):
+                from native_tradeups import atomic_write
+                atomic_write(self.directory/SESSION_FILE,'%d %d %d\n'%(session['index'],session['period'],int(self.now())))
+            else:self.suspend(clear=True)
+        else:self.suspend(clear=True)
+        return key,mission
 
     def plan(self):
         """(progress key, mission) of the current Armory rotation, from the DLL's cs2_gc_mission_current.txt."""
@@ -38,7 +80,7 @@ class MissionTracker:
 
     def observe(self, provider, player, game_map, stats):
         """XP earned by mission tiers for this packet (0 when nothing changed)."""
-        period, mission = self.plan()
+        period, mission = self.session_plan(game_map,stats,player)
         if mission is None or not mission.get('kind'):
             self.explain('no countable mission (the DLL has not written %s yet)' % CURRENT_FILE if mission is None
                          else 'mission %s is not a kill/round/match mission' % mission.get('mission'))
@@ -64,7 +106,7 @@ class MissionTracker:
         if mission['kind'] == 'kill' and current['kills'] > last['kills'] and active != mission.get('weapon'):
             self.explain('kill not counted: mission weapon %s, active weapon %s%s' % (
                 mission.get('weapon'), active, '' if weapons else ' (no weapon data: restart CS2 once so it reads the new game-state config)'))
-        if mission['kind'] == 'kill' and active == mission.get('weapon'):
+        if mission['kind'] == 'kill' and active == mission.get('weapon') and current['phase'] in ('live','gameover'):
             gained = current['kills'] - last['kills']
         elif mission['kind'] == 'round' and current['phase'] in ('live', 'gameover'):
             gained = current['own'] - last['own']
@@ -83,11 +125,13 @@ class MissionTracker:
         before = self.state['missions'].get(key, 0)
         after = min(goals[-1], before + gained)
         self.state['missions'][key] = after
+        if before < goals[-1] <= after:
+            self.state['missions_completed']=self.state.get('missions_completed',0)+1
         xp = sum(reward for goal, reward in zip(goals, rewards) if before < goal <= after)
         # User: missions also pay stars, 1 per 100 XP of each step reached (rounded up).
         stars = sum(-(-reward // 100) for goal, reward in zip(goals, rewards) if before < goal <= after)
         self.state['mission_stars'] = self.state.get('mission_stars', 0) + stars
-        self.publish()
+        if not self.defer_publish:self.publish()
         print('Mission %s: %d/%d%s' % (mission.get('mission'), after, goals[-1],
                                        ' (+%d XP, +%d stars)' % (xp, stars) if xp else ''), flush=True)
         return xp

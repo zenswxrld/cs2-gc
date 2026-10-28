@@ -101,13 +101,18 @@ class Tracking(unittest.TestCase):
         self.assertEqual(tracker.observe(*packet(kills=21)), 0)
         self.assertEqual(tracker.state['mission_stars'], 6)  # 1 star per 100 XP of each step reached
 
-    def test_a_new_armory_rotation_starts_a_new_mission(self):
+    def test_armory_rotation_waits_until_the_active_match_finishes(self):
         folder, tracker = self.tracker({'mission': 11003, 'kind': 'kill', 'weapon': 'weapon_awp', 'mode': 'deathmatch',
                                         'maps': [], 'points': [2, 4], 'xp': [200, 200]})
         tracker.observe(*packet(kills=0)); tracker.observe(*packet(kills=1))
         (folder / 'cs2_gc_mission_current.txt').write_text('0 %d\n' % (BASE + 900))  # rotated to a kind-less mission
-        self.assertEqual(tracker.observe(*packet(kills=5)), 0)
-        self.assertEqual(tracker.state['missions'], {KEY: 1})
+        self.assertEqual(tracker.observe(*packet(kills=2)), 200)
+        self.assertEqual(tracker.state['missions'], {KEY: 2})
+        self.assertTrue((folder/'cs2_gc_mission_session.txt').read_text().startswith('1 %d '%BASE))
+        tracker.observe(*packet(kills=2,phase='gameover'))
+        self.assertFalse((folder/'cs2_gc_mission_session.txt').exists())
+        self.assertEqual(tracker.observe(*packet(kills=0)),0)
+        self.assertNotIn('mission_session',tracker.state)
 
     def test_rounds_and_matches(self):
         _, rounds = self.tracker({'mission': 11004, 'kind': 'round', 'mode': 'competitive', 'maps': ['de_vertigo'],

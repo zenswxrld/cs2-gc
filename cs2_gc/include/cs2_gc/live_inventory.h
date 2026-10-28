@@ -36,6 +36,10 @@ public:
     bool ApplyConsoleStars(std::uint64_t cumulative) { return m_inventory.ApplyConsoleStars(cumulative); }
     bool ApplyMissionStars(std::uint64_t cumulative) { return m_inventory.ApplyMissionStars(cumulative); }
     void SetArmoryPity(const std::string &collection, std::uint32_t misses) { m_inventory.SetArmoryPity(collection, misses); }
+    void RecordOpening(const InventoryItem &item, std::uint32_t source, std::uint64_t timestamp = 0)
+    { m_inventory.RecordOpening(item, source, timestamp); }
+    std::vector<InventoryItem> AdvancePets(std::uint64_t completed,const RandomSource &random){return m_inventory.AdvancePets(completed,random);}
+    bool EquipPet(std::uint64_t gameId,std::uint32_t accessory);
     std::optional<std::vector<InventoryItem>> GrantMatchRewards(const Schema &schema, std::uint64_t completed,
                                                                const RandomSource &random)
     {
@@ -67,6 +71,7 @@ public:
     std::optional<std::vector<InventoryItem>> ClaimCarePackage(std::uint32_t generation, const std::vector<std::uint64_t> &ids)
     { return m_inventory.ClaimCarePackage(generation,ids); }
     bool ApplyEarnedXp(std::uint64_t cumulativeXp) { return m_inventory.ApplyEarnedXp(cumulativeXp); }
+    std::vector<InventoryItem> GrantCareerCollectibles(const Schema &schema) {return m_inventory.GrantCareerCollectibles(schema);}
     std::optional<std::vector<InventoryItem>> GrantLevelRewards(const Schema &schema, const RandomSource &random)
     {
         if (m_inventory.LevelRewardTotal() >= m_inventory.Progress().level - 1) return std::nullopt;
@@ -83,9 +88,14 @@ public:
         if (config.care_packages_enabled)
         {
             if (!m_inventory.QueueCarePackage(*drops)) return std::nullopt;
-            m_inventory.MarkLevelRewarded(); return std::vector<InventoryItem>{};
+            std::vector<InventoryItem> direct;
+            if(schema.ItemName(4948)=="chicken_egg")
+                if(auto egg=m_inventory.GrantTestEggOnce(random))direct.push_back(*egg);
+            m_inventory.MarkLevelRewarded(); return direct;
         }
         for (auto &item : *drops) item = AddItem(item);
+        if(schema.ItemName(4948)=="chicken_egg")
+            if(auto egg=m_inventory.GrantTestEggOnce(random))drops->push_back(*egg);
         m_inventory.MarkLevelRewarded();
         return drops;
     }

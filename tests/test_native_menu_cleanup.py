@@ -17,9 +17,11 @@ class MenuCleanup(unittest.TestCase):
         source="var MainMenu={}; function outer(){\n    function _OnShowMainMenu() {}\nMainMenu.show=_OnShowMainMenu;} outer();"
         script="""const assert=require('assert');let mission={visible:true},promo={visible:true,style:{}};
 const left={FindChildTraverse:id=>id==='id-mainmenu-rush-tile-panel'?promo:mission};
-const $={GetContextPanel:()=>({FindChildInLayoutFile:id=>left})};
+const caption={text:'NEWS'};const statsNav={FindChildrenWithClassTraverse:()=>[caption]};
+const $={GetContextPanel:()=>({FindChildInLayoutFile:id=>id==='MainMenuNavBarNews'?statsNav:left})};
 """+native_mainmenu.patch(source)+"""
 MainMenu.show();assert.equal(promo.visible,false);assert.equal(promo.style.visibility,'collapse');assert.equal(mission.visible,true);
+assert.equal(caption.text,'STATS');
 """
         self.run_js(script)
 
@@ -63,3 +65,18 @@ inventory=true;check();assert.equal(opened,1);
 
     def test_changed_mainmenu_fails_closed(self):
         with self.assertRaises(ValueError):native_mainmenu.patch('changed')
+
+    def test_permanent_pet_clears_stale_food_warning_only_for_owned_pet(self):
+        source='''    function _ShowFoodHint(elPanel, petItemId) {
+            nativeChecks++;
+            elPanel.SetHasClass('low-food', true);
+        }'''
+        script="const assert=require('assert');let nativeChecks=0;const classes={};const panel={SetHasClass:(k,v)=>classes[k]=v};\n"
+        script+=native_mainmenu.patch_pet_food(source,['1000000001535'])
+        script+="""
+_ShowFoodHint(panel,'1000000001535');assert.equal(nativeChecks,0);
+assert.equal(classes['low-food'],false);assert.equal(classes['needs-food'],false);
+_ShowFoodHint(panel,'1000000009999');assert.equal(nativeChecks,1);assert.equal(classes['low-food'],true);
+"""
+        self.run_js(script)
+        with self.assertRaises(ValueError):native_mainmenu.patch_pet_food('changed',[])

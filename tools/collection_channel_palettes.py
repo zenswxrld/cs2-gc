@@ -1,6 +1,15 @@
 """Reviewed four-channel palettes; retain the original pattern, mask and wear bindings."""
 
 def channels(kit,theme):
+    from colour_families import split,tone
+    base,shade=split(theme)
+    if shade:
+        palette=channels(kit,base)
+        return tone(palette,theme) if palette else None
+    if kit=='soe_pink_cranes' and theme=='Amber':
+        # Charcoal and bronze backing, warm shell trim; the cranes themselves
+        # are in a separate overlay and must receive the same colour treatment.
+        return [[.055,.050,.045,1],[.44,.16,.065,1],[.10,.055,.045,1],[.84,.76,.60,1]]
     if kit=='soe_tropical' and theme=='Rose':
         # Dark navy hardware, rose petals and pale shell highlights. Change the
         # authored colour channels rather than covering its floral artwork.

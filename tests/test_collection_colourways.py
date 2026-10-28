@@ -10,6 +10,34 @@ from gun_collections import kit_name,TIER_COUNTS
 
 class ColourwayReview(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('CS2_GC_TEXTURE_DECODER'),'native decoder required')
+    def test_shades_change_painted_ink_but_keep_neutral_pixels_and_mask_alpha(self):
+        from test_collection_material import bc7_solid
+        payload=bc7_solid(244,10,10,0)+bc7_solid(128,128,128,80)
+        results=[]
+        for shade in range(1,5):
+            child=subprocess.run([os.environ['CS2_GC_TEXTURE_DECODER'],'8','4','338','.8','10','38',str(shade)],input=payload,capture_output=True)
+            self.assertEqual(child.returncode,0,child.stderr)
+            pixels=child.stdout;self.assertEqual(len(pixels),128)
+            self.assertEqual(pixels[3],0)
+            self.assertEqual(pixels[16:20],bytes([128,128,128,80]))
+            results.append(colorsys.rgb_to_hsv(*(v/255 for v in pixels[:3])))
+        self.assertGreater(results[0][2],results[2][2])
+        self.assertGreater(results[3][1],results[0][1])
+
+    def test_feedback_repairs_include_overlay_backing_and_two_separate_ink_roles(self):
+        from collection_art_sources import SOURCES
+        from collection_channel_palettes import channels
+        for collection,donor,theme in (('halcyon','cu_p2000_fire_elemental','Rose'),('solstice','soe_pink_cranes','Amber'),('outrider','cu_usp_black_lotus','Ember')):
+            entry=next(e for e in LINEUPS[collection] if e['donor']==donor)
+            self.assertIn(theme,entry['themes'])
+            main,accent,saturation=recipe(donor,theme)
+            self.assertNotEqual(main,accent,'do not flatten multicolour artwork')
+            self.assertGreater(saturation,.5)
+        self.assertEqual(SOURCES['soe_pink_cranes'],'overlay')
+        backing=channels('soe_pink_cranes','Amber')
+        self.assertIsNotNone(backing)
+        self.assertLess(max(backing[0][:3]),.1,'exposed plastic stays charcoal, not mustard')
+    @unittest.skipUnless(os.environ.get('CS2_GC_TEXTURE_DECODER'),'native decoder required')
     def test_two_ink_mapping_keeps_neutral_trim_value_and_material_alpha(self):
         from test_collection_material import bc7_solid
         tool=os.environ['CS2_GC_TEXTURE_DECODER']

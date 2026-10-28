@@ -136,6 +136,7 @@ public:
     std::uint32_t SouvenirMapSticker(std::uint32_t crateDefinition) const;
     std::vector<SkinRef> MatchRewardSkins(bool weeklyOnly = true) const;
     std::vector<std::uint32_t> AgentDefinitions() const;
+    std::vector<std::uint32_t> CollectibleDefinitions(std::uint32_t tier) const;
     bool ProducesStatTrak(std::uint32_t definition) const;
     std::string ItemName(std::uint32_t definition) const;
 

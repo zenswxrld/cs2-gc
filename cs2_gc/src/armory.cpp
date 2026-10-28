@@ -152,8 +152,10 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
         auto tiers = m_schema.LootTiers(name);
         std::erase_if(tiers, [](const auto &tier) { return tier.rarity == 0; });
         std::stable_sort(tiers.begin(), tiers.end(), [](const auto &a, const auto &b) { return a.rarity < b.rarity; });
-        const std::uint32_t weights[] = {collectionOdds.milSpec, collectionOdds.restricted, collectionOdds.classified,
-                                        collectionOdds.covert, collectionOdds.fifthTier, collectionOdds.sixthTier};
+        const auto weights = CollectionTierWeights(tiers.size());
+        collectionOdds.milSpec=weights[0]; collectionOdds.restricted=weights[1];
+        collectionOdds.classified=weights[2]; collectionOdds.covert=weights[3];
+        collectionOdds.fifthTier=weights[4]; collectionOdds.sixthTier=weights[5];
         std::uint64_t total = 0, topWeight = 0;
         std::uint32_t highest = 0;
         std::vector<LootItem> top;
@@ -240,6 +242,9 @@ Armory::Result Armory::Redeem(const RedeemRequest &request, LiveInventory &inven
     result.item = inventory.AddItem(*item);
     if (rolledCollection)
         inventory.SetArmoryPity(*rolledCollection, topReward ? 0u : std::min(inventory.Items().ArmoryPity(*rolledCollection) + 1, 99u));
+    if (rolledCollection || goods->itemName == "crate_cs2gc_black_market" || goods->itemName == "crate_cs2gc_gauntlet" ||
+        goods->rotationSlot == "agent" || (goods->rotationSlot == "capsule" && !m_schema.FindCrate(item->defIndex)))
+        inventory.RecordOpening(result.item, 1, unixSeconds.value_or(0));
     return result;
 }
 }

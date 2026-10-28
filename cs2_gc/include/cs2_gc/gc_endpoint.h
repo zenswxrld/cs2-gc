@@ -99,7 +99,8 @@ public:
     void SetMissions(std::vector<std::uint8_t> pool, std::vector<MissionProgress> progress);
     // The mission of the current Armory rotation (cycle = now / armory_rotation_seconds + Refresh offset). Returns
     // {variant, period} when it changed (the new schema is pushed once the game has asked for missions).
-    std::optional<std::pair<std::uint32_t, std::uint32_t>> MissionTick(std::uint64_t unixSeconds);
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> MissionTick(std::uint64_t unixSeconds,
+        std::optional<std::pair<std::uint32_t, std::uint32_t>> pinned = std::nullopt);
     // Stars for reached mission steps (the helper's cumulative "stars N" line).
     bool ApplyMissionStars(std::uint64_t cumulativeStars, const std::function<void()> &afterChange);
     // A care-package claim the patched page printed to console.log (build 31): generation + the three choice tokens.
@@ -108,6 +109,8 @@ public:
     bool ApplyConsoleControl(std::uint64_t cumulativeStars, std::uint32_t rotationOffset,
                              const std::function<void()> &afterChange);
     bool ApplyMatchRewards(std::uint64_t completed, const std::function<void()> &afterChange);
+    bool EquipPet(std::uint64_t id,std::uint32_t accessory,const std::function<void()> &afterChange);
+    std::string PetSnapshot();
     bool ApplyLevelRewards(const std::function<void()> &afterChange);
     // Local helper fallback when the native terminal checkout sends no purchase request.
     bool AcceptLocalTerminal(std::uint64_t gameId, const std::function<void()> &afterChange);
@@ -156,6 +159,7 @@ private:
     std::optional<std::uint64_t> m_missionCycle;
     std::optional<std::pair<std::uint32_t, std::uint32_t>> m_missionUnreported; // for the rewards helper
     std::uint32_t m_missionOffset{};
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> m_missionPinned, m_missionActive;
     bool m_missionsRequested{};
     std::optional<std::pair<std::uint32_t, std::uint32_t>> MissionTickLocked(std::uint64_t unixSeconds);
     std::optional<std::vector<MissionProgress>> m_missionProgress;

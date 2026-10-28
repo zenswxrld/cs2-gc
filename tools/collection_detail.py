@@ -28,7 +28,8 @@ def recolour_details(colors, theme, themes, duos, gradients):
         # One shared hue rotation retains the original pattern's relationships.
         # Never flatten highlights/shadows or raise muted ink to neon saturation.
         result[i] = [*colorsys.hsv_to_rgb((h+offset)%1, (min(.45,saturation) if neutral_accent else min(s,saturation)), v), colors[i][3]]
-    return result
+    from colour_families import tone
+    return tone(result,theme,colors)
 
 
 def rolled_name(title, theme):

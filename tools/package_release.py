@@ -37,6 +37,18 @@ def expected_exports(root):
                   if line.startswith('    '))
 
 
+def career_payload(root):
+    """Only our compiled plugin and hashes; server API/runtime binaries stay in the bot bundle."""
+    folder=Path(root)/'build/career'
+    if not (folder/'bundle.json').exists():return {}
+    spec=json.loads((folder/'bundle.json').read_text())
+    binary=(folder/'CS2GCCareerBridge.dll').read_bytes()
+    if hashlib.sha256(binary).hexdigest()!=spec['sha256']:
+        raise ValueError('Career plugin payload checksum mismatch')
+    prefix=BIN+'cs2_gc_payload/career/'
+    return {prefix+'CS2GCCareerBridge.dll':binary,prefix+'bundle.json':(json.dumps(spec,indent=2)+'\n').encode()}
+
+
 def build_archive(root, runtime_data, bot_files):
     root = Path(root)
     build = root/'build/Release'
@@ -70,7 +82,8 @@ def build_archive(root, runtime_data, bot_files):
                 raise ValueError('Duplicate release path: '+name)
             seen.add(name)
             archive.writestr(name,data)
-            manifest['files'][name] = hashlib.sha256(data).hexdigest()
+            if name.startswith(BIN) or name=='Launch CS2 GC.exe':
+                manifest['files'][name] = hashlib.sha256(data).hexdigest()
         for path,name in files:
             data = path.read_bytes()
             if name in ('README-INSTALL.md','FEATURES.md'):
@@ -78,6 +91,9 @@ def build_archive(root, runtime_data, bot_files):
             add(name,data)
         for name,data in bot_files.items():
             add(name,data)
+        for name,data in career_payload(root).items():add(name,data)
+        from save_shortcuts import files as save_files
+        for name,data in save_files().items():add(name,data)
         with zipfile.ZipFile(io.BytesIO(runtime_data)) as runtime:
             for info in runtime.infolist():
                 if info.is_dir():
@@ -135,7 +151,7 @@ with tempfile.TemporaryDirectory(prefix='cs2gc-bot-smoke-') as temp:
     (game/'csgo').mkdir()
     (game/'csgo/gameinfo.gi').write_text('"GameInfo" {}')
     shutil.copytree(Path.cwd()/'cs2_gc_payload/bots',proxy/'cs2_gc_payload/bots')
-    with patch.object(bot_skins,'_get',side_effect=AssertionError('Runtime download forbidden')), patch.object(bot_skins,'_mount'), patch.object(bot_skins,'recurate'):
+    with patch.object(bot_skins,'_get',side_effect=AssertionError('Runtime download forbidden')), patch.object(bot_skins,'_mount'), patch.object(bot_skins,'recurate'), patch('fair_bot_policy.require_game_closed'):
         assert bundled_bots.ensure(proxy)
         assert (game/bot_skins.PLUGIN_DIR/'BotRandomizer.dll').is_file()
         assert all((proxy/'cs2_gc_bot_presets'/tier/'botprofile.db').is_file() for tier in bot_skins.PRESET_TIERS)

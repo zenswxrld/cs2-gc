@@ -3,14 +3,14 @@ from copy import deepcopy
 # Shortlist combines tracked player use and completed-sale activity, not a claim
 # that a single universal popularity ranking exists. Sources documented alongside.
 CHASES={
- 'rampart':('gs_ak47_bloodsport','weapon_ak47','Oath Circuit','family',('Cobalt','Teal','Ash')),
+ 'rampart':('gs_ak47_bloodsport','weapon_ak47','Oath Circuit','family',('Crimson','Amber','Cobalt')),
  'warden':('gs_ak47_supercharged','weapon_ak47','Cold Ignition','family',('Cobalt','Teal','Ash')),
  'ashfall':('cu_ak47_rubber','weapon_ak47','Molten Guardian','family',('Crimson','Amber','Teal')),
- 'nebula':('cu_m4a1_hyper_beast','weapon_m4a1_silencer','Voidborn','family',('Emerald','Violet','Magenta')),
+ 'nebula':('cu_m4a1_hyper_beast','weapon_m4a1_silencer','Voidborn','family',('Violet','Magenta','Ember')),
  'nightwatch':('cu_m4a1s_printstream','weapon_m4a1_silencer','Blackout Print','fixed',('Inverse',)),
  'redoubt':('cu_m4a4_neo_noir','weapon_m4a1','Gilded Sentinel','fixed',('Amber',)),
- 'monsoon':('cu_m4a1s_cyrex','weapon_m4a1_silencer','Storm Circuit','family',('Emerald','Teal','Ash')),
- 'talisman':('gs_ak47_empress','weapon_ak47','Jade Sovereign','family',('Emerald','Teal','Amber')),
+ 'monsoon':('cu_m4a1s_cyrex','weapon_m4a1_silencer','Storm Circuit','family',('Emerald','Teal','Violet')),
+ 'talisman':('gs_ak47_empress','weapon_ak47','Jade Sovereign','family',('Emerald','Violet','Amber')),
  'zephyr':('cu_m4a4_temukau','weapon_m4a1','Jade Slipstream','fixed',('Emerald',)),
  'mosaic':('ak_porcelain','weapon_ak47','Prismatic Heirloom','family',('Magenta','Violet','Amber')),
 }

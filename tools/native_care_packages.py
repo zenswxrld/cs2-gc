@@ -32,6 +32,22 @@ PREVIEW = """        // cs2_gc: display native catalogue previews, never synthet
         const choiceToken = itemId;
         if (localChoice && itemId !== '-') itemId = _LocalCareFauxId(itemId);
 """
+MODEL = '''    function _LocalCareModel(tile,itemId,token) {
+        if (Math.floor((Number(token)-3000000000000)%68719476736/65536)%65536<30000 || !ItemInfo.IsWeapon(itemId)) return;
+        try {
+            const image=tile.FindChildInLayoutFile('id-itemtile-store-image-main');
+            if(!image)return;
+            const holder=$.CreatePanel('Panel',tile,'cs2gc-care-model');
+            holder.style.ignoreParentFlow=true;holder.style.position='0px 0px 0px';holder.style.width='100%';holder.style.height='64%';holder.hittest=false;holder.hittestchildren=false;
+            const model=$.CreatePanel('MapItemPreviewPanel',holder,'',{
+                'require-composition-layer':'true','transparent-background':true,'disable-depth-of-field':true,
+                camera:'camera_weapon_0',player:'false',map:'ui/xpshop_item',initial_entity:'item',active_item_idx:0,
+                mouse_rotate:'false',auto_recenter:true,hide_while_waiting_for_composite_materials:'false'});
+            model.style.width='100%';model.style.height='100%';model.hittest=false;model.hittestchildren=false;
+            model.SetActiveItem(0);model.SetItemItemId(itemId,'');model.SetRenderInterval(10);image.visible=false;
+        } catch(error) {$.Msg('[CS2GC Preview] care model: '+String(error));}
+    }
+'''
 CLAIM = '''        // cs2_gc: a package grants exactly three picks, never one/two or all four.
         if (_LocalCarePackage() && _GetSelectedItems().length !== 3) { _PulseItems(); return; }
 '''
@@ -84,13 +100,14 @@ def patch(source):
     activate = '        if (!InventoryAPI.IsFauxItemID(itemId)) {'
     if any(source.count(anchor) != 1 for anchor in (preview,data,activate)):
         raise ValueError('Installed care-package tile contract changed; no patch written')
-    source=source.replace(preview,preview+'\n'+PREVIEW,1)
+    source=source.replace(preview,MODEL+preview+'\n'+PREVIEW,1)
     source=source.replace(data,'        elGhostItem.Data().itemid = localChoice ? choiceToken : itemId;',1)
     init = '        ItemTileStore.Init(elGhostItem, oItemData);'
     if source.count(init) != 1: raise ValueError('Installed reward-tile initializer changed')
     # Native SetClaimed marks every faux preview as claimed. Pending choices lose that look; in a claimed package only
     # the rewards actually taken keep it (user: keep the claimed items labelled until the next drop).
     source=source.replace(init,init+"\n        if (localChoice) { elGhostItem.SetHasClass('item-claimed', _LocalCareClaimed(choiceToken)); elGhostItem.SetHasClass('item-claimslot-expired', false); }",1)
+    source=source.replace(init,init+"\n        if(localChoice)_LocalCareModel(elGhostItem,itemId,choiceToken);",1)
 
     source=source.replace(activate,'        if (_LocalCarePackage() || !InventoryAPI.IsFauxItemID(itemId)) {',1)
     submit = '        StoreAPI.StoreRedeemFreeRewards(szItemList);'

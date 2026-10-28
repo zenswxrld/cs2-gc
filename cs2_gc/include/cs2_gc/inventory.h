@@ -9,9 +9,12 @@
 #include <string_view>
 #include <vector>
 #include <map>
+#include <array>
+#include <functional>
 
 namespace cs2_gc
 {
+class Schema;
 // A sticker applied to a weapon slot (0-4), as the game's apply screen placed it.
 struct AppliedSticker
 {
@@ -67,6 +70,7 @@ struct InventoryItem
     std::uint32_t tournamentEvent{}, tournamentTeam0{}, tournamentTeam1{}, tournamentPlayer{};
     bool statTrakFromContract{}; // preserve intentional local mixed-contract variants across startup repair
     bool noStarSale{}; // free Store grants and derivatives cannot mint stars; terminal offers exempt
+    std::uint32_t petSeed{},petBreed{},petStage{},petAge{},petHatchAt{},petAccessory{};
 };
 
 struct CarePackage
@@ -84,6 +88,20 @@ struct LoadoutSlot
     std::uint32_t classId{}, slotId{};
     std::uint64_t itemId{};
     std::uint32_t itemDefinition{};
+};
+
+// Bounded factual history, persisted atomically with the item it records.
+struct OpeningRecord
+{
+    std::uint64_t sequence{}, timestamp{};
+    std::uint32_t source{}; // 0: container opening, 1: random Armory redemption
+    InventoryItem item;
+};
+struct OpeningStats
+{
+    std::uint64_t total{}, containers{}, armory{}, statTrak{};
+    std::array<std::uint64_t, 9> rarities{}; // index 8 reserved for unusual golds
+    std::vector<OpeningRecord> recent, best;
 };
 
 // Local inventory and loadout, persisted together.
@@ -129,6 +147,14 @@ public:
         return found == m_armoryPity.end() ? 0 : found->second;
     }
     void SetArmoryPity(const std::string &collection, std::uint32_t failures) { m_armoryPity[collection] = failures; }
+    void RecordOpening(const InventoryItem &item, std::uint32_t source, std::uint64_t timestamp = 0);
+    const OpeningStats &Openings() const { return m_openings; }
+    std::vector<InventoryItem> AdvancePets(std::uint64_t completed,const std::function<std::uint64_t()> &random);
+    InventoryItem AddPetEgg(const std::function<std::uint64_t()> &random);
+    std::vector<InventoryItem> GrantCareerCollectibles(const Schema &schema);
+    std::optional<InventoryItem> GrantTestEggOnce(const std::function<std::uint64_t()> &random);
+    bool EquipPet(std::uint64_t id,std::uint32_t accessory);
+    std::string PetSnapshot() const;
 
     const std::vector<CarePackage> &CarePackages() const { return m_carePackages; }
     const std::optional<ClaimedCarePackage> &LastClaimedCarePackage() const { return m_lastClaimedCare; }
@@ -162,6 +188,10 @@ private:
     std::uint32_t m_casePity{};
     std::map<std::uint32_t, std::uint32_t> m_terminalPity;
     std::map<std::string, std::uint32_t> m_armoryPity;
+    OpeningStats m_openings;
+    std::uint64_t m_petMatchCursor{},m_activePet{};
+    std::uint32_t m_petTestGranted{};
+    std::uint32_t m_careerCollectibleMask{};
     std::vector<CarePackage> m_carePackages;
     std::uint32_t m_lastCareGeneration{};
     std::optional<ClaimedCarePackage> m_lastClaimedCare;

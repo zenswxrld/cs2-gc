@@ -116,7 +116,9 @@ def skill_preset(proxy_directory):
         state = {}
     tier = premier_rating.bot_preset({'rating': int(state.get('rating', 0))})
     path = proxy / PRESETS / tier / 'botprofile.db'
-    return (tier, path.read_bytes()) if path.is_file() else None
+    if not path.is_file():return None
+    from fair_bot_policy import humanize_profile
+    return tier,humanize_profile(path.read_text(encoding='utf-8-sig'),int(state.get('rating',0))).encode('utf-8')
 
 
 def prepare(proxy_directory, config, reshuffle=False):

@@ -1,5 +1,6 @@
 """Reviewed native artwork sources. Keep source shaders, trim, masks, alpha and wear."""
-SOURCES = {'ak47_explosive': 'hue',
+SOURCES = {'soe_pink_cranes': 'overlay',
+ 'ak47_explosive': 'hue',
  'ak47_t_bus': 'hue',
  'ak_porcelain': 'blue_ink',
  'aq_deagle_case_hardened_2': 'spoon_target',
@@ -415,4 +416,3 @@ SOURCES = {'ak47_explosive': 'hue',
  'xm1014_freight': 'hue',
  'xm1014_irezumi': 'hue',
  'xm1014_mockingbird': 'hue'}
-

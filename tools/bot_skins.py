@@ -362,6 +362,8 @@ def install(proxy):
 
 def uninstall(proxy):
     game = _games(proxy)
+    from fair_bot_policy import restore
+    restore(proxy)
     (proxy / 'cs2_gc_bot_plugins_disabled').touch()
     _mount(game, False)
     _remove_improver(proxy, game)

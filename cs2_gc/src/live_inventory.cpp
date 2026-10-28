@@ -6,6 +6,8 @@
 
 namespace cs2_gc
 {
+bool LiveInventory::EquipPet(std::uint64_t gameId,std::uint32_t accessory)
+{return m_inventory.EquipPet(gameId>CustomItemIdBase?gameId-CustomItemIdBase:gameId,accessory);}
 LiveInventory::LiveInventory(Inventory inventory)
     : m_inventory(std::move(inventory))
 {
@@ -420,6 +422,8 @@ std::optional<std::vector<std::vector<std::uint8_t>>> LiveInventory::Adjust(cons
     for (const EquipSlotChange &change : request.slots)
     {
         const std::uint32_t definition = change.itemId ? *DefinitionOf(change.itemId) : 0;
+        if(definition==4681&&change.itemId>CustomItemIdBase)
+            m_inventory.EquipPet(change.itemId-CustomItemIdBase,UINT32_MAX);
         LoadoutSlot *slot = nullptr;
         for (LoadoutSlot &candidate : m_inventory.Loadout())
             if (candidate.classId == change.classId && candidate.slotId == change.slotId)
@@ -429,6 +433,7 @@ std::optional<std::vector<std::vector<std::uint8_t>>> LiveInventory::Adjust(cons
             m_inventory.Loadout().push_back({change.classId, change.slotId, 0, 0});
             slot = &m_inventory.Loadout().back();
         }
+        if(!definition&&slot->itemDefinition==4681)m_inventory.EquipPet(0,UINT32_MAX);
         slot->itemId = change.itemId;
         slot->itemDefinition = definition;
         changed.push_back(EncodeEquipSlot(accountId, change.classId, change.slotId, change.itemId, definition));

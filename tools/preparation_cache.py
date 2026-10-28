@@ -15,9 +15,10 @@ FILENAME = 'cs2_gc_prepare_cache.json'
 # the DLL/launcher, re-runs only those steps instead of regenerating every collection material (user, build 30:
 # "still takes a while with each change"). Everything else feeds the schema/material stage.
 LIGHT_HELPERS = frozenset(name + '.py' for name in (
+    'native_gloves','glove_refresh','fair_bot_policy','progress_saves','reward_cursors','save_shortcuts','settings_editor','native_stats','local_stats','career_achievements','combat_events','career_page','career_browser','career_extras','unboxing_stats','collectible_rewards','native_local_play','native_profile_pins','companions','chicken_cosmetics',
     'rotate_armory', 'native_scoreboard', 'native_store', 'skip_container_confirm', 'native_item_sales', 'native_multi_sell', 'bot_skins',
     'native_endmatch', 'native_offer_numbers', 'skip_key_select', 'native_endmatch_stock', 'native_care_packages',
-    'native_mainmenu', 'native_mission_launch', 'native_knife_reel', 'native_bot_names', 'prepare_native',
+    'native_mainmenu', 'native_mission_launch', 'native_knife_reel', 'native_bot_names', 'prepare_native', 'music_store',
     'preparation_cache', 'vpk_signatures', 'gsi_rewards', 'console_controls', 'grant_test_items',
     'grant_custom_cases', 'mixed_tradeup', 'terminal_purchase', 'study_skins', 'extract_vpk_asset',
     'extract_finish_materials', 'extract_gc_protocol', 'inspect_cs2', 'make_collection_icons',
@@ -49,12 +50,13 @@ class PreparationCache:
         self.path = self.proxy / FILENAME
         self.reason = 'no complete preparation cache'
 
-    def inputs(self, heavy=False):
+    def inputs(self, heavy=False, legacy_gloves=False):
         required = [self.proxy / 'items_game.txt', self.game / 'csgo/pak01_dir.vpk']
         if not all(p.is_file() for p in required):
             return None
         files = set(required)
         files.update(p for p in self.helpers.glob('*.py') if not (heavy and p.name in LIGHT_HELPERS))
+        if legacy_gloves:files.add(self.helpers/'native_gloves.py')
         for folder in ('collection_icons', 'weapon_patterns'):
             files.update(p for p in (self.helpers / folder).rglob('*') if p.is_file())
         files.update(self.helpers.glob('*.png'))
@@ -67,6 +69,10 @@ class PreparationCache:
                    'archives': {str(p): stamp(p) for p in sorted((self.game / 'csgo').glob('pak*.vpk'))},
                    'binaries': {} if heavy else {str(p): stamp(p) for p in
                        (self.proxy / 'steam_api64.dll', self.proxy / 'cs2_gc_debug.exe') if p.is_file()}}
+        if legacy_gloves:
+            # Upgrade the verified prior release's heavy cache without rebuilding
+            # weapon textures merely because glove generation is now independent.
+            payload['files'][str(self.helpers/'native_gloves.py')]='c9377c95da448f104a44e90a9c9ac473e0976bae302260fa1905037ffa48b417'
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode('utf-8')).hexdigest()
 
     def outputs(self):
@@ -110,8 +116,9 @@ class PreparationCache:
         try:
             cached = json.loads(self.path.read_text(encoding='utf-8'))
             current = self.inputs(heavy=True)
-            if not isinstance(cached, dict) or current is None or cached.get('heavy') != current:
+            if not isinstance(cached, dict) or current is None:
                 return False
+            if cached.get('heavy')!=current and cached.get('heavy')!=self.inputs(heavy=True,legacy_gloves=True):return False
             return cached.get('outputs') == self.outputs()
         except (OSError, ValueError, TypeError):
             return False

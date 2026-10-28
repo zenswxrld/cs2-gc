@@ -86,6 +86,25 @@ def dead_hand_files():
 
 
 class NativeGloves(unittest.TestCase):
+    def test_declared_spot_masks_contrast_only_on_the_two_jaguar_gloves(self):
+        files=glove_files()
+        material=files['gloves/paints/sporty_purple.vmat_c']
+        version,blocks=kv3.read_resource(material)
+        guid,root=kv3.read_kv3(dict(blocks)['DATA'])
+        root.get('m_vectorParams').value.append(vector('g_vPatternPaletteIndices',[5,1,1,7]))
+        material=finishes._with_block(material,'DATA',kv3.write_kv3(guid,root))
+        for base in ('slick_jaguar_white','slick_jaguar_yellow','sporty_purple'):
+            files['gloves/paints/'+base+'.vcompmat_c']=compmat('gloves/paints/sporty_purple.vmat')
+        files['gloves/paints/sporty_purple.vmat_c']=material
+        class Source:
+            def read(self,path):return files.get(path)
+        for base in ('slick_jaguar_white','slick_jaguar_yellow','sporty_purple'):
+            result=gloves.make_glove_finish(Source(),'gloves/paints/'+base+'.vcompmat','fixture','Cobalt',panels='black')
+            _,new_blocks=kv3.read_resource(result[1]);_,new_root=kv3.read_kv3(dict(new_blocks)['DATA'])
+            spot=[v.value for v in gloves._tints(new_root)['g_vColorTint5'].value]
+            if base!='sporty_purple':self.assertGreater(min(spot[:3]),.7)
+            else:self.assertLess(max(spot[:3]),.3)
+
     def setUp(self):
         # The Dead Hand recolour rules stay tested even though the user turned the feature off.
         self.dead_hand = gloves.DEAD_HAND_RECOLOURS
@@ -127,6 +146,43 @@ class NativeGloves(unittest.TestCase):
             result=gloves.recolor_accents(colors,'Ember',panels=panels,protect_dark_neutrals=True)
             self.assertEqual(result[4:6],colors[4:6])
         self.assertGreater(gloves.recolor_accents(colors,'Ember',panels='white',protect_dark_neutrals=True)[1][0],.8)
+
+    def test_neutral_leather_gets_visible_colour_without_losing_dark_marks(self):
+        colors=[[.69,.65,.635,0],[.659,.655,.655,0],[.47,.388,.306,0],[.725,.71,.71,0],
+                [.216,.216,.216,0],[.235,.212,.212,0],[.49,.467,.431,0],[.769,.757,.737,0]]
+        azure=gloves.recolor_neutral_panels(colors,'Azure')
+        sunset=gloves.recolor_neutral_panels(colors,'Sunset')
+        midnight=gloves.recolor_neutral_panels(colors,'Midnight')
+        for palette in (azure,sunset,midnight):
+            self.assertEqual(palette[4:6],colors[4:6])
+            self.assertEqual([c[3] for c in palette],[c[3] for c in colors])
+            self.assertGreater(colorsys.rgb_to_hsv(*palette[1][:3])[1],.4)
+        self.assertGreater(max(azure[1][:3]),.65)
+        self.assertLess(max(midnight[1][:3]),.45)
+        self.assertLess(max(midnight[1][:3]),max(midnight[7][:3]))
+        self.assertGreater(max(abs(a-b) for a,b in zip(azure[1],sunset[1])),.25)
+
+    def test_midnight_is_navy_sunset_is_muted_copper_and_pink_is_pastel(self):
+        colors=[[.22,.20,.196,0],[.66,.647,.627,0],[.47,.47,.47,0],[.212,.212,.212,0],
+                [.776,.667,.467,0],[.192,.192,.212,0],[.353,.353,.353,0],[.608,.608,.608,0]]
+        navy=gloves.recolor_neutral_panels(colors,'Midnight')
+        sunset=gloves.recolor_neutral_panels(colors,'Sunset')
+        pink=gloves.recolor_neutral_panels(colors,'Rose')
+        for index in (1,2,6,7):
+            h,s,v=colorsys.rgb_to_hsv(*navy[index][:3]);self.assertAlmostEqual(h*360,224);self.assertLess(v,.3)
+            h,s,v=colorsys.rgb_to_hsv(*sunset[index][:3]);self.assertAlmostEqual(h*360,23);self.assertLessEqual(s,.43)
+            self.assertLessEqual(colorsys.rgb_to_hsv(*pink[index][:3])[1],.29)
+
+    def test_snow_leopard_has_white_base_coloured_dark_and_inverted_pairs(self):
+        colors=[[.69,.65,.635,0],[.659,.655,.655,0],[.47,.388,.306,0],[.725,.71,.71,0],
+                [.216,.216,.216,0],[.235,.212,.212,0],[.49,.467,.431,0],[.769,.757,.737,0]]
+        dark=gloves.snow_leopard_palette(colors,'Midnight','dark')
+        inverted=gloves.snow_leopard_palette(colors,'Midnight','inverted')
+        for index in (0,1,2,3,6,7):self.assertEqual(dark[index],colors[index])
+        for index in (4,5):
+            self.assertAlmostEqual(colorsys.rgb_to_hsv(*dark[index][:3])[0]*360,224)
+            self.assertGreater(min(inverted[index][:3]),.7)
+        self.assertLess(max(inverted[1][:3]),.3)
 
     def test_schema_composite_paths_are_inspected_and_only_known_tint_format_is_recoloured(self):
         path='gloves/paints/volatile_02/fixture.vcompmat'
@@ -170,13 +226,13 @@ class NativeGloves(unittest.TestCase):
         self.assertAlmostEqual(colorsys.rgb_to_hsv(*result[0][:3])[1],colorsys.rgb_to_hsv(*colors[0][:3])[1])
 
     def test_no_accent_themes_leave_pool_but_keep_owned_variant_definitions(self):
-        schema=SCHEMA_GLOVES.replace('sporty_purple','sporty_jaguar')
+        schema=SCHEMA_GLOVES.replace('sporty_purple','sporty_fixture_neutral')
         files=glove_files()
-        files['gloves/paints/sporty_jaguar.vcompmat_c']=files['gloves/paints/sporty_purple.vcompmat_c']
+        files['gloves/paints/sporty_fixture_neutral.vcompmat_c']=files['gloves/paints/sporty_purple.vcompmat_c']
         source=finishes.Source(folder=None);source.read=files.get;source.exists=lambda path:path in files
         _,entries,case,_=gloves.plan(schema,GOLD_GLOVES,{},source,{},[])
         known={name:int(kit) for kit,name,_,_ in entries}
-        self.assertTrue(any('[rg_sporty_jaguar_' in item for item in case))
+        self.assertTrue(any('[rg_sporty_fixture_neutral_' in item for item in case))
         material_path='gloves/paints/sporty_purple.vmat_c'
         _,blocks=kv3.read_resource(files[material_path]);guid,root=kv3.read_kv3(dict(blocks)['DATA'])
         for vector in gloves._tints(root).values():
@@ -184,11 +240,11 @@ class NativeGloves(unittest.TestCase):
         files[material_path]=kv3.write_resource(0,[['DATA',kv3.write_kv3(guid,root)]])
         report={}
         _,retained,no_drops,_=gloves.plan(schema,GOLD_GLOVES,{},source,known,[],report=report)
-        self.assertFalse(any('[rg_sporty_jaguar_' in item for item in no_drops))
+        self.assertFalse(any('[rg_sporty_fixture_neutral_' in item for item in no_drops))
         self.assertEqual({name:int(kit) for kit,name,_,_ in retained},known)
-        self.assertEqual(report['gloves/paints/sporty_jaguar.vcompmat']['accent_channels'],[])
+        self.assertEqual(report['gloves/paints/sporty_fixture_neutral.vcompmat']['accent_channels'],[])
         _,new,_,_=gloves.plan(schema,GOLD_GLOVES,{},source,{},[])
-        self.assertFalse(any(name.startswith('rg_sporty_jaguar_') for _,name,_,_ in new))
+        self.assertFalse(any(name.startswith('rg_sporty_fixture_neutral_') for _,name,_,_ in new))
 
     def test_dead_hand_recolours_change_only_accent_colour_vectors_and_stay_out_of_the_terminal(self):
         schema = SCHEMA_GLOVES.replace('"5030" {', '"5031" { "name" "slick_gloves" "prefab" "hands_paintable" }\n\t\t"5030" {').replace(
@@ -354,8 +410,8 @@ class NativeGloves(unittest.TestCase):
             self.assertIn('[ug_glove_specialist_dragon_red]specialist_gloves', contents)
             all_recolours = [k for k in contents if k.startswith('[rg_sporty_purple_')]
             recolours = [k for k in all_recolours if '_panels_' not in k]
-            self.assertEqual(len(recolours), gloves.THEMES_PER_GLOVE)
-            self.assertEqual(len(all_recolours), gloves.THEMES_PER_GLOVE * 4)
+            self.assertEqual(len(recolours), gloves.THEMES_PER_GLOVE * 5)
+            self.assertEqual(len(all_recolours), gloves.THEMES_PER_GLOVE * 8)
             for style in ('white','black','inverted'):
                 self.assertEqual(sum('_panels_' + style in k for k in all_recolours), gloves.THEMES_PER_GLOVE)
             self.assertTrue(all(k.endswith(']sporty_gloves') for k in recolours))  # patterns stay on their glove

@@ -58,6 +58,9 @@ def make(source,kit,path,new_name,theme):
         hues,cap=f.GRADIENT_THEMES[theme];hue=hues[0]
     from collection_colourways import recipe
     paired=recipe(kit,theme)
+    from colour_families import split,SHADES
+    base_theme,shade=split(theme)
+    shade_code=SHADES.index(shade)+1 if shade else 0
     if paired:hue,accent,cap=paired;numeric_mode=10
     data,guid,root=found['compmat'];mdata,mguid,mroot=found['material']
     from artwork_cache import current
@@ -68,7 +71,7 @@ def make(source,kit,path,new_name,theme):
         if original is None:return None
         inputs.append((binding_name,original))
     key=cache.key({'kit':kit,'theme':theme,'mode':numeric_mode,'hue':hue,'cap':cap,
-                   'paired':paired},inputs) if cache else None
+                   'paired':paired,'shade':shade_code},inputs) if cache else None
     records=cache.load(key) if cache else None
     if records and any(r['binding'] not in dict(inputs) for r in records):records=None
     if records is None:
@@ -77,7 +80,8 @@ def make(source,kit,path,new_name,theme):
             try:_,_,_,width,height,payload=texture_payload(original)
             except ValueError:return None
             command=[str(decoder),str(width),str(height),str(hue),str(cap),str(numeric_mode)]
-            if paired:command.append(str(accent))
+            if shade_code:command.extend([str(accent) if paired else '0',str(shade_code)])
+            elif paired:command.append(str(accent))
             child=subprocess.run(command,
                 input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                 creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))

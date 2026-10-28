@@ -239,8 +239,8 @@ std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text)
         std::uint32_t number = 0;
         if (!Number(value, number)) return std::nullopt;
         std::uint32_t *target = nullptr, minimum = 0, maximum = 1;
-#define BOOL_OPTION(name) if (key == #name) target = &config.name; else
-#define NUMBER_OPTION(name, low, high) if (key == #name) { target = &config.name; minimum = low; maximum = high; } else
+#define BOOL_OPTION(name) if (key == #name) { target = &config.name; }
+#define NUMBER_OPTION(name, low, high) if (key == #name) { target = &config.name; minimum = low; maximum = high; }
         NUMBER_OPTION(armory_collection_slots, 0, 6)
         NUMBER_OPTION(armory_charm_slots, 0, 6)
         NUMBER_OPTION(free_case_keys, 0, 1) NUMBER_OPTION(skip_key_selection, 0, 1)
@@ -301,14 +301,18 @@ std::optional<GameplayConfig> ParseGameplayConfig(std::string_view text)
         NUMBER_OPTION(premier_max_rating, 1, 99999) NUMBER_OPTION(premier_bonus_wins, 0, 100)
         NUMBER_OPTION(armory_rotation_seconds, 10, 86400) NUMBER_OPTION(armory_rotation_slots, 1, 60)
         NUMBER_OPTION(armory_xp_per_star, 1, 100000) BOOL_OPTION(armory_pass_auto_renew)
-        NUMBER_OPTION(kill_xp, 0, 1000000) NUMBER_OPTION(headshot_xp, 0, 1000000)
+        NUMBER_OPTION(profile_xp_percent, 50, 500) NUMBER_OPTION(kill_xp, 0, 1000000) NUMBER_OPTION(headshot_xp, 0, 1000000)
         NUMBER_OPTION(mvp_xp, 0, 1000000) NUMBER_OPTION(match_complete_xp, 0, 1000000)
+        NUMBER_OPTION(plant_xp, 0, 1000000) NUMBER_OPTION(defuse_xp, 0, 1000000)
+        NUMBER_OPTION(kill_stars, 0, 1000000) NUMBER_OPTION(headshot_stars, 0, 1000000)
+        NUMBER_OPTION(mvp_stars, 0, 1000000) NUMBER_OPTION(plant_stars, 0, 1000000)
+        NUMBER_OPTION(defuse_stars, 0, 1000000) NUMBER_OPTION(match_complete_stars, 0, 1000000)
         NUMBER_OPTION(match_drop_count, 1, 20) NUMBER_OPTION(match_case_percent, 0, 100)
         NUMBER_OPTION(match_skin_min_rarity, 3, 6)
         NUMBER_OPTION(pity_soft_at, 2, 99) NUMBER_OPTION(pity_hard_at, 3, 100)
         NUMBER_OPTION(case_gold_per_10000, 0, 10000) NUMBER_OPTION(terminal_top_per_10000, 0, 10000)
         NUMBER_OPTION(terminal_default_offers, 1, 100) NUMBER_OPTION(terminal_lifetime_days, 1, 365)
-        return std::nullopt;
+        if (!target) return std::nullopt;
 #undef BOOL_OPTION
 #undef NUMBER_OPTION
         if (number < minimum || number > maximum) return std::nullopt;

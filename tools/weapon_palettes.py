@@ -55,7 +55,8 @@ def recolour(colors, theme, tier, themes, duos, gradients, tone=2):
         value=min(.96,max(.14,old_v))
         if tone>=2 and value>.72:value=.72+(value-.72)*.28
         output[i]=[*colorsys.hsv_to_rgb(hue,sat,value),colors[i][3]]
-    return output
+    from colour_families import tone
+    return tone(output,theme,colors)
 
 
 def invert_panels(original, changed, tone=2):

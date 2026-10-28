@@ -141,9 +141,9 @@ class Presets(unittest.TestCase):
     def test_skill_preset_follows_the_local_rating_and_names_still_apply(self):
         import native_bot_names, premier_rating
         self.assertEqual([premier_rating.bot_preset({'rating': r}) for r in (0, 9999, 10000, 29999, 30000, 45000)],
-                         ['Low', 'Low', 'Medium', 'Medium', 'High', 'High'])
+                         ['Low', 'Low', 'Low', 'Medium', 'High', 'High'])
         self.assertEqual([premier_rating.bot_difficulty({'rating': r}) for r in (0, 5000, 10000, 20000, 30000)],
-                         [0, 1, 2, 3, 3])
+                         [0, 0, 1, 1, 3])
         with tempfile.TemporaryDirectory() as root:
             proxy = Path(root)
             self.assertIsNone(native_bot_names.skill_preset(proxy))

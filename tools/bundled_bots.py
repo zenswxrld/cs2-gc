@@ -31,6 +31,7 @@ def bundle_names(data):
 
 def ensure(proxy):
     proxy = Path(proxy)
+    from fair_bot_policy import owned_exists,apply as fair_bots
     if (proxy/'cs2_gc_bot_plugins_disabled').exists():
         print('Bot plugins disabled by your saved preference.',flush=True)
         return False
@@ -45,8 +46,9 @@ def ensure(proxy):
                       and ':' not in p and '\\' not in p for p in installed)
     matching = previous.get('botimprover',[None])[0] == metadata['version']
     ready = not previous.get('bundle_sha256') or previous.get('setup_complete') is True
-    if ready and matching and installed and valid_paths and all((game/'csgo'/p).is_file() for p in installed):
+    if ready and matching and installed and valid_paths and all(owned_exists(proxy,p) for p in installed):
         if all((proxy/'cs2_gc_bot_presets'/tier/'botprofile.db').is_file() for tier in bots.PRESET_TIERS):
+            fair_bots(proxy)
             bots._mount(game,True,proxy)
             return False
     owned = {p.split('/')[1] for p in installed if valid_paths and p.startswith('addons/') and p.count('/')>=2}
@@ -67,6 +69,10 @@ def ensure(proxy):
     for mode in ('normal','ffa'):
         resource('cfg/my_bot_%s_config_rules_unchanged.cfg'%mode)
     print('Installing bundled bot skins and Bot Improver '+metadata['version']+'...',flush=True)
+    # A repair reinstalls the whole payload. Put held owned plugins back first so
+    # the installer can replace them rather than creating active/held duplicates.
+    from fair_bot_policy import restore
+    restore(proxy)
     written = bots._install_improver(proxy,game,data,owned,resource_reader=resource)
     bots._core_config(game)
     # Keep the ownership record even if catalogue curation is interrupted.
@@ -79,4 +85,5 @@ def ensure(proxy):
     bots._mount(game,True,proxy)
     record['setup_complete'] = True
     atomic_bytes(manifest,(json.dumps(record,indent=1)+'\n').encode())
+    fair_bots(proxy)
     return True

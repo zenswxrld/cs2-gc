@@ -1,0 +1,17 @@
+# Saves, missions, rewards and music update
+
+Close CS2 and let its rewards helper exit. Extract the update into the folder containing `Launch CS2 GC.exe`, replacing its included mod files, then use that launcher. No inventory, rank, configuration, original Steam DLL or Valve assets are archive entries.
+
+The launcher creates `CS2 GC Saves` and `CS2 GC Settings` if they are missing. **Back Up Progress** saves the inventory/loadout, profile XP, Premier rank, mission progress, cumulative reward counters, finish IDs and collection history together in a dated ZIP. **Restore Progress** checks every file and checksum, keeps a Before-Restore snapshot, clears old live match sessions and asks the destination launcher to regenerate its native resources. Copy the whole save ZIP between game copies; never transfer just the inventory or copy old DLLs with it. Backups are private local profile data. Keep a backup made by the original version before testing an older save format.
+
+**Edit Rewards** opens `game/bin/win64/cs2_gc_gameplay.cfg`, creates it when missing, and adds missing reward controls. Existing values are not overwritten. Restart the game/helper after editing. Defaults now pay 2 stars per kill, 2 extra for a headshot, 5 per MVP, 5 per completed plant/defuse, and 50 per completed match. XP-derived pass stars are additional. Objective awards require a witnessed, completed action by the authenticated local player; joining a planted bomb or watching a bot never pays. If the client does not supply the bomb/actor data, no objective reward is invented.
+
+Inventory paid cursors are authoritative when a helper save is older. The helper starts future earnings above those cursors and retains earlier mismatched totals in `reward_sync_review` inside its state. Ambiguous historical totals are not automatically credited a second time. This fixes future payment; it is not a claim that every previously missed reward has been recovered.
+
+The mission helper pins a compatible mission during a match and refreshes a short lease. The coordinator holds that same schema through Armory rotation/refresh, releasing it when the match ends or the helper stops. The local HUD/pause card uses account progress instead of an empty native server quest snapshot. Account SO updates refresh the mission schema cache without changing its period. Client presentation still needs live validation.
+
+Three targeted artwork repairs preserve finish IDs, rarity, artwork, alpha/masks and value detail: Halcyon P2000 Rose Stillwater Fire Elemental (rose/champagne), Solstice Five-SeveN Amber Suncrest Fraise Crane (amber/ember overlay and charcoal backing), and Outrider USP-S Ember Frontier Black Lotus (ember/champagne artwork).
+
+Native keyless music boxes send UseItem (1025). The coordinator routes owned schema-confirmed keyless containers to the same atomic opening path as OpenCrate (2534). The existing kit music-ID attribute, StatTrak flag, persistence and equip handling remain intact. Every installed music-box definition was opened in a disposable native test inventory; in-client opening/playback remains a separate check.
+
+Bot aim/smoke enhancements remain held outside the loader. The owned NadeSystem is enabled with `bot_nades less`, using its supported situational checks and lower per-bot limits. Native grenade throwing stays off to avoid stacking two utility systems. The pinned grenade plugin documents this mode in [its README](https://github.com/ed0ard/CS2-Bot-NadeSystem/blob/009ce03005af68ba68dae62967bddc8e92ad172c/README.md).

@@ -142,6 +142,8 @@ def ensure_profile(directory, client_version, runner=subprocess.run):
 
 
 def run(directory):
+    from fair_bot_policy import require_game_closed
+    require_game_closed()
     directory = Path(directory).resolve()
     root = directory.parents[2]
     manifest_path = directory/'cs2_gc_release.json'
@@ -151,6 +153,8 @@ def run(directory):
     print('CS2 GC: checking the game version and complete ZIP...',flush=True)
     verify_build(root,manifest['supported_build'])
     verify_package(root,manifest)
+    from save_shortcuts import install as install_save_shortcuts
+    install_save_shortcuts(root)
     print('Preserving the original Steam library and installing the local GC...',flush=True)
     install_proxy(directory)
     app_id = directory/'steam_appid.txt'

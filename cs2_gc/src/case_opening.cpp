@@ -77,8 +77,18 @@ std::uint32_t PityChance(std::uint32_t previousMisses, std::uint32_t baseChance,
         return base;
     if (previousMisses + 1 >= config.pity_hard_at)
         return 10000;
-    return base + (10000 - base) * (previousMisses + 2 - config.pity_soft_at) /
-        (config.pity_hard_at - config.pity_soft_at + 1);
+    const std::uint64_t step = previousMisses + 2 - config.pity_soft_at;
+    const std::uint64_t span = config.pity_hard_at - config.pity_soft_at + 1;
+    return base + static_cast<std::uint32_t>((10000 - base) * step * step / (span * span));
+}
+
+std::array<std::uint32_t, 6> CollectionTierWeights(std::size_t tiers)
+{
+    // Five- and six-tier pools previously gave pink a smaller base chance than
+    // the guaranteed red's long-run rate. Preserve a meaningful pink tier.
+    if (tiers == 5) return {6400, 2500, 750, 300, 50, 0};
+    if (tiers == 6) return {4500, 3000, 1400, 750, 300, 50};
+    return {7992, 1598, 320, 64, 13, 3};
 }
 
 double PityRate(std::uint32_t baseChance, const GameplayConfig &pity)
@@ -283,6 +293,7 @@ OpenResult OpenCase(Inventory &inventory, const Schema &schema, std::uint64_t cr
     if (!keyless && !inventory.Gameplay().free_case_keys)
         inventory.Remove(keyId);
     item.id = inventory.Add(item);
+    inventory.RecordOpening(item, 0);
     result.item = item;
     return result;
 }

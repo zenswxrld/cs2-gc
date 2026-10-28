@@ -122,6 +122,14 @@ std::vector<std::uint8_t> BuildEconItem(const InventoryItem &item, std::uint32_t
     out.Varint(7, item.expiration ? 14 : item.souvenir ? QualityTournament : item.unusual ? 3 : item.statTrak ? QualityStrange : QualityUnique);
     // Attribute ids verified against the installed items_game.txt.
     if (item.noStarSale) AddIntegerAttribute(out, 2, 1); // cannot trade: free local Store grant
+    if(item.petSeed)
+    {
+        AddIntegerAttribute(out,268,item.petStage);
+        AddIntegerAttribute(out,296,item.petStage==0?1:item.petStage==1?2:item.petBreed);
+        AddIntegerAttribute(out,313,item.petSeed);
+        AddIntegerAttribute(out,303,2147483647); // permanent local companion; no hunger/expiry removal
+        AddIntegerAttribute(out,304,2147483647); // growth is advanced by completed local matches
+    }
     if (item.tournamentEvent) AddIntegerAttribute(out, 137, item.tournamentEvent);
     if (item.tournamentTeam0) AddIntegerAttribute(out, 139, item.tournamentTeam0);
     if (item.tournamentTeam1) AddIntegerAttribute(out, 140, item.tournamentTeam1);

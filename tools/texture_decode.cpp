@@ -133,7 +133,7 @@ int main(int argc,char**argv) {
         return std::cout?0:6;
     }
     bool auditOnly=argc==4 && std::string(argv[3])=="--audit";
-    if(argc!=3 && argc!=6 && argc!=7 && !auditOnly) return 2;
+    if(argc!=3 && argc!=6 && argc!=7 && argc!=8 && !auditOnly) return 2;
     int w=std::atoi(argv[1]),h=std::atoi(argv[2]);
     if(w<1||h<1||w>4096||h>4096) return 3;
     std::size_t blocksX=(w+3)/4,blocksY=(h+3)/4;
@@ -163,10 +163,12 @@ int main(int argc,char**argv) {
     std::size_t changed=0,eligible=0;
     std::array<std::size_t,4096> histogram{};
     std::array<std::array<unsigned char,4>,4096> samples{};
-    if(argc==6 || argc==7) {
+    if(argc==6 || argc==7 || argc==8) {
         float target=std::strtof(argv[3],nullptr)/360,cap=std::strtof(argv[4],nullptr);
         int mode=std::atoi(argv[5]);
-        if(mode<0||mode>10 || (mode==10)!=(argc==7)) return 5;
+        if(mode<0||mode>10 || (mode==10&&argc==6) || (mode!=10&&argc==7)) return 5;
+        int shade=argc==8?std::atoi(argv[7]):0;
+        if(shade<0||shade>4)return 5;
         float accent=mode==10?std::strtof(argv[6],nullptr)/360:0;
         if(!std::isfinite(accent))return 5;
         // Paint alpha carries finish masks, not opacity. These opt-in modes
@@ -186,7 +188,7 @@ int main(int argc,char**argv) {
             }
             anchor=float(std::max_element(hues.begin(),hues.end())-hues.begin())/360;
             float delta=std::abs(target-anchor);delta-=std::floor(delta);
-            if(!coordinated && mode!=10 && std::min(delta,1-delta)<25.f/360) return 7;
+            if(!shade && !coordinated && mode!=10 && std::min(delta,1-delta)<25.f/360) return 7;
         }
         if(!std::isfinite(target)||!std::isfinite(cap)||cap<0||cap>1) return 5;
         for(std::size_t p=0;p<pixels.size();p+=4) {
@@ -218,7 +220,13 @@ int main(int argc,char**argv) {
                 float arc=accent-target;arc-=std::floor(arc+.5f);
                 hue=target+arc*blend+std::clamp(delta,-.08f,.08f)*.35f;
             }
-            auto v=rgb(hue,std::min(c[1],cap),c[2]);
+            float saturation=std::min(c[1],cap),value=c[2];
+            if(shade==1){saturation*=.48f;value=value+.25f*value*(1-value);}
+            else if(shade==2){saturation*=.60f;value*=.85f;}
+            else if(shade==3){saturation=std::min(.86f,saturation*1.05f);value*=.50f;}
+            else if(shade==4){saturation=std::min(.94f,std::max(.80f,saturation+.24f));}
+            if(cap<.15f){saturation=std::min(cap,saturation);if(shade==4)value=value+.10f*value*(1-value);}
+            auto v=rgb(hue,saturation,value);
             if(inverse) v={1-pixels[p]/255.f,1-pixels[p+1]/255.f,1-pixels[p+2]/255.f};
             bool differs=false;
             for(int channel=0;channel<3;++channel) {

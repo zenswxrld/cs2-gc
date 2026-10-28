@@ -32,6 +32,7 @@ constexpr std::uint64_t MissionTypeId = 16; // CSOAccountRecurringMission in the
 constexpr std::uint64_t CareEventBase = 4200000000000000ull;
 // Pseudo event ids of Armory refreshes: base + the page's rotation offset.
 constexpr std::uint64_t RotationEventBase = 4300000000000000ull;
+constexpr std::uint64_t PetEventBase = 4400000000000000ull;
 }
 // Maps one submitted id to an unused offer slot. Accepts the local choice token, or the client-side
 // faux id that Panorama derives for the displayed tile with GetFauxItemIDFromDefAndPaintIndex:
@@ -193,9 +194,13 @@ std::vector<std::vector<std::uint8_t>> LocalGameCoordinator::EncodedMissionProgr
     return objects;
 }
 
-std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::MissionTick(std::uint64_t unixSeconds)
+std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::MissionTick(std::uint64_t unixSeconds,
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> pinned)
 {
     std::lock_guard lock(m_mutex);
+    if (pinned && pinned->first >= m_missionPool.size()) pinned.reset();
+    if (m_missionPinned && !pinned) m_missionCycle.reset();
+    m_missionPinned = pinned;
     MissionTickLocked(unixSeconds);
     // A change made by a Refresh (inside the 9200 handler) is reported here too, so the helper follows it.
     return std::exchange(m_missionUnreported, std::nullopt);
@@ -206,12 +211,15 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::Mis
     if (m_missionPool.empty()) return std::nullopt;
     const std::uint64_t interval = m_live ? std::max(10u, m_live->Items().Gameplay().armory_rotation_seconds) : 900u;
     const auto cycle = unixSeconds / interval + m_missionOffset;
-    if (m_missionCycle == cycle) return std::nullopt;
+    if (m_missionPinned ? m_missionActive == m_missionPinned : m_missionCycle == cycle) return std::nullopt;
     m_missionCycle = cycle;
-    const auto variant = static_cast<std::uint32_t>(cycle % m_missionPool.size());
-    // Each Refresh gets its own period (the window start + offset seconds): the game keys missions by period and
-    // would keep showing the old mission for a schema with the same period.
-    const auto period = static_cast<std::uint32_t>(unixSeconds / interval * interval + m_missionOffset % interval);
+    const auto variant = m_missionPinned ? m_missionPinned->first : static_cast<std::uint32_t>(cycle % m_missionPool.size());
+    // Keep a distinct period for Refresh, but never advertise a future start:
+    // the native client can hide a mission whose period has not begun yet.
+    const auto windowStart = unixSeconds / interval * interval;
+    const auto offset = std::min<std::uint64_t>(windowStart, m_missionOffset % interval);
+    const auto period = m_missionPinned ? m_missionPinned->second : static_cast<std::uint32_t>(windowStart - offset);
+    m_missionActive = std::pair{variant,period};
     PbWriter list; list.Varint(1, period); list.Bytes(2, m_missionPool[variant]);
     PbWriter schema; schema.Message(1, list);
     m_missionSchema = schema.bytes();
@@ -241,11 +249,13 @@ void LocalGameCoordinator::SetMissions(std::vector<std::uint8_t> pool, std::vect
     const auto before = m_missionProgress;
     m_missionProgress = std::move(progress);
     if (!before) return; // first load: the welcome carries it
+    bool changed = false;
     for (const auto &entry : *m_missionProgress)
     {
         const auto old = std::find_if(before->begin(), before->end(), [&](const auto &item) {
             return item.mission == entry.mission && item.period == entry.period; });
         if (old != before->end() && old->progress == entry.progress) continue;
+        changed = true;
         PbWriter object;
         object.Varint(1, static_cast<std::uint32_t>(m_config.owner.id & 0xFFFFFFFFull));
         object.Varint(2, entry.mission); object.Varint(3, entry.period); object.Varint(4, entry.progress);
@@ -254,6 +264,9 @@ void LocalGameCoordinator::SetMissions(std::vector<std::uint8_t> pool, std::vect
         Reply(old == before->end() ? gc_msg::ESOMsg::k_ESOMsg_Create : gc_msg::ESOMsg::k_ESOMsg_Update,
               EncodeSoSingleObject(update));
     }
+    // Refresh the native MissionsAPI cache after the SO progress update, without changing its period.
+    if (changed && m_missionsRequested && !m_missionSchema.empty())
+        Reply(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema, m_missionSchema);
 }
 
 void LocalGameCoordinator::ReplyLocalPremier(std::int32_t change)
@@ -549,6 +562,22 @@ void LocalGameCoordinator::EnableArmory(std::shared_ptr<Armory> armory, std::sha
                [inventory, afterGrant](const FrameView &frame, LocalGameCoordinator &gc) {
                    const auto itemId = DecodeUseItemRequest(frame.body);
                    const auto definition = itemId ? inventory->DefinitionOf(*itemId) : std::nullopt;
+                   // Native keyless music boxes use UseItem (1025), not OpenCrate (2534).
+                   // Route only owned, schema-confirmed containers through the same consume/grant transaction.
+                   if (itemId && definition && gc.m_schema && (*itemId >> 60) != 0xF)
+                       if (const auto *crate = gc.m_schema->FindCrate(*definition);
+                           crate && (crate->kind == CrateKind::Capsule || crate->kind == CrateKind::GraffitiBox ||
+                                     crate->kind == CrateKind::Pins || crate->kind == CrateKind::Souvenir ||
+                                     (crate->kind == CrateKind::Case && inventory->Items().Gameplay().free_case_keys)))
+                       {
+                           const auto handler = gc.m_handlers.find(gc_msg::EGCItemMsg::k_EMsgGCOpenCrate);
+                           if (handler != gc.m_handlers.end()) {
+                               PbWriter body; body.Varint(2,*itemId);
+                               FrameView opening{gc_msg::EGCItemMsg::k_EMsgGCOpenCrate | ProtobufMask,frame.header,body.bytes()};
+                               handler->second(opening,gc);
+                               return;
+                           }
+                       }
                    std::optional<std::vector<std::uint8_t>> pass;
                    {
                        std::lock_guard lock(gc.m_txnMutex);
@@ -804,8 +833,19 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
     // generation * 16 + the mask of the three chosen slots; any other event id is ignored as before.
     SetHandler(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_SetEventFavorite,
         [inventory,afterChange](const FrameView &frame, LocalGameCoordinator &gc) {
-            PbReader reader(frame.body); PbField field; std::uint64_t eventId=0;
-            while (reader.Next(field)) if (field.number==1 && field.wire==0) eventId=field.value;
+            PbReader reader(frame.body); PbField field; std::uint64_t eventId=0,favorite=0;
+            while (reader.Next(field)) {
+                if (field.number==1 && field.wire==0) eventId=field.value;
+                if (field.number==2 && field.wire==0) favorite=field.value;
+            }
+            if(!reader.Failed()&&eventId>=PetEventBase&&eventId<PetEventBase+(1ull<<41)) {
+                const auto value=eventId-PetEventBase,localId=value/32,code=value%32;
+                if(favorite!=1||(code>10&&code!=31)||!inventory->EquipPet(localId?CustomItemIdBase+localId:0,
+                    code==31?UINT32_MAX:code?static_cast<std::uint32_t>(55000+code-1):0)) {++gc.m_ignored;return;}
+                if(afterChange)afterChange();
+                if(gc.m_config.diagnostic)gc.m_config.diagnostic("pet equipment saved through local UI request");
+                return;
+            }
             if (!reader.Failed() && eventId>=RotationEventBase && eventId<=RotationEventBase+1000000) {
                 // The Armory page's Refresh button: the GC and the missions follow its rotation offset.
                 gc.m_missionOffset=static_cast<std::uint32_t>(eventId-RotationEventBase);
@@ -1559,9 +1599,18 @@ bool LocalGameCoordinator::ApplyMatchRewards(std::uint64_t completed, const std:
     if (!m_live || !m_schema || !m_rewardRandom) return false;
     const auto drops = m_live->GrantMatchRewards(*m_schema, completed, m_rewardRandom);
     if (!drops) return false;
+    const auto collectibles=m_live->GrantCareerCollectibles(*m_schema);
+    if(m_schema->ItemName(4948)=="chicken_egg")
+        for(const auto &pet:m_live->AdvancePets(completed,m_rewardRandom))
+        {
+            SoSingleObject object;object.typeId=static_cast<std::int32_t>(ItemTypeId);object.owner=m_config.owner;object.version=++m_soVersion;
+            object.data=BuildEconItem(pet,static_cast<std::uint32_t>(m_config.owner.id),CustomItemIdBase+pet.id,pet.petAge?ItemPositionBase:InventoryUnacknowledgedBit);
+            Reply(pet.petAge?gc_msg::ESOMsg::k_ESOMsg_Update:gc_msg::ESOMsg::k_ESOMsg_Create,EncodeSoSingleObject(object));
+        }
     if (afterChange) afterChange();
     if (m_live->Items().Gameplay().care_packages_enabled) NotifyCarePackage();
     else NotifyRewardDrops(*drops);
+    if(!collectibles.empty())NotifyRewardDrops(collectibles);
     if (m_config.diagnostic) m_config.diagnostic("match rewards: " + std::to_string(drops->size()) + " direct drops; care-package queue saved");
     return true;
 }
@@ -1573,10 +1622,21 @@ bool LocalGameCoordinator::ApplyLevelRewards(const std::function<void()> &afterC
     const auto drops = m_live->GrantLevelRewards(*m_schema, m_rewardRandom);
     if (!drops) return false;
     if (afterChange) afterChange();
-    if (m_live->Items().Gameplay().care_packages_enabled) NotifyCarePackage();
+    if (m_live->Items().Gameplay().care_packages_enabled) {NotifyCarePackage();if(!drops->empty())NotifyRewardDrops(*drops);}
     else NotifyRewardDrops(*drops);
     if (m_config.diagnostic) m_config.diagnostic("level rewards: " + std::to_string(drops->size()) + " direct drops; care-package queue saved; no weekly cooldown");
     return true;
+}
+
+bool LocalGameCoordinator::EquipPet(std::uint64_t id,std::uint32_t accessory,const std::function<void()> &afterChange)
+{
+    std::lock_guard lock(m_mutex);if(!m_live||!m_live->EquipPet(id,accessory))return false;
+    if(afterChange)afterChange();return true;
+}
+
+std::string LocalGameCoordinator::PetSnapshot()
+{
+    std::lock_guard lock(m_mutex);return m_live?m_live->Items().PetSnapshot():"{\"selected\":\"0\",\"pets\":[],\"accessories\":[]}";
 }
 
 void LocalGameCoordinator::SendMissingCaseKeys()

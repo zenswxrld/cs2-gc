@@ -1,6 +1,7 @@
 #include "cs2_gc/inventory.h"
 #include "cs2_gc/keyvalues.h"
 #include "cs2_gc/econ_item.h"
+#include "cs2_gc/schema.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -14,6 +15,113 @@
 
 namespace cs2_gc
 {
+namespace
+{
+bool BetterOpening(const OpeningRecord &a, const OpeningRecord &b)
+{
+    const auto ar=a.item.unusual?8u:a.item.rarity, br=b.item.unusual?8u:b.item.rarity;
+    if (ar!=br) return ar>br;
+    if (a.item.statTrak!=b.item.statTrak) return a.item.statTrak;
+    const auto aw=a.item.paintKitIndex?a.item.wear:1.f, bw=b.item.paintKitIndex?b.item.wear:1.f;
+    if (aw!=bw) return aw<bw;
+    return a.sequence>b.sequence;
+}
+}
+
+void Inventory::RecordOpening(const InventoryItem &item, std::uint32_t source, std::uint64_t timestamp)
+{
+    if (!item.id || !item.defIndex || item.rarity>7 || source>1 || m_openings.total==UINT64_MAX) return;
+    // Successful grants have new monotonically increasing IDs. This also catches an accidental repeated callback.
+    if (!m_openings.recent.empty() && item.id<=m_openings.recent.back().item.id) return;
+    const OpeningRecord record{++m_openings.total, timestamp?timestamp:static_cast<std::uint64_t>(std::time(nullptr)), source, item};
+    (source?m_openings.armory:m_openings.containers)++;
+    m_openings.statTrak+=item.statTrak?1u:0u;
+    m_openings.rarities[item.unusual?8:item.rarity]++;
+    m_openings.recent.push_back(record);
+    if (m_openings.recent.size()>8) m_openings.recent.erase(m_openings.recent.begin());
+    m_openings.best.push_back(record);
+    std::stable_sort(m_openings.best.begin(),m_openings.best.end(),BetterOpening);
+    if (m_openings.best.size()>3) m_openings.best.resize(3);
+}
+
+std::vector<InventoryItem> Inventory::AdvancePets(std::uint64_t completed,const std::function<std::uint64_t()> &random)
+{
+    std::vector<InventoryItem> changed;
+    if(completed<=m_petMatchCursor)return changed;
+    m_petMatchCursor=completed;
+    for(auto &pet:m_items)if(pet.petSeed)
+    {
+        pet.petAge=std::min(1000000u,pet.petAge+1);
+        const auto stage=pet.petAge<pet.petHatchAt?0u:std::min(3u,1+pet.petAge-pet.petHatchAt);
+        if(pet.petStage!=stage){pet.petStage=stage;changed.push_back(pet);}
+    }
+    const auto below=[&](std::uint64_t bound){const auto limit=UINT64_MAX-UINT64_MAX%bound;for(;;){const auto n=random();if(n<limit)return n%bound;}};
+    if(below(100)<10)
+        changed.push_back(AddPetEgg(random));
+    return changed;
+}
+
+InventoryItem Inventory::AddPetEgg(const std::function<std::uint64_t()> &random)
+{
+    const auto below=[&](std::uint64_t bound){const auto limit=UINT64_MAX-UINT64_MAX%bound;for(;;){const auto n=random();if(n<limit)return n%bound;}};
+    InventoryItem egg;egg.defIndex=4681;egg.petSeed=static_cast<std::uint32_t>(below(2147483646))+1;
+    const auto breed=below(100);egg.petBreed=breed<60?3u:breed<85?4u:5u;egg.petHatchAt=static_cast<std::uint32_t>(below(2))+1;
+    egg.rarity=3;egg.noStarSale=true;egg.id=Add(egg);
+    if(!m_activePet)m_activePet=egg.id;
+    return egg;
+}
+
+std::optional<InventoryItem> Inventory::GrantTestEggOnce(const std::function<std::uint64_t()> &random)
+{
+    if(m_petTestGranted)return std::nullopt;
+    auto egg=AddPetEgg(random);m_petTestGranted=1;return egg;
+}
+
+bool Inventory::EquipPet(std::uint64_t id,std::uint32_t accessory)
+{
+    if(!id){if(!m_activePet)return false;m_activePet=0;return true;}
+    auto *pet=Find(id);if(!pet||!pet->petSeed)return false;
+    if(accessory!=UINT32_MAX)
+    {
+        if(accessory&&(accessory<55000||accessory>55009||!std::any_of(m_items.begin(),m_items.end(),[&](const auto &i){return i.defIndex==accessory;})))return false;
+        pet->petAccessory=accessory;
+    }
+    m_activePet=id;return true;
+}
+
+std::vector<InventoryItem> Inventory::GrantCareerCollectibles(const Schema &schema)
+{
+    constexpr std::uint64_t targets[]={10,50,100};std::vector<InventoryItem> granted;
+    for(std::uint32_t tier=0;tier<3;++tier)
+    {
+        const auto bit=1u<<tier;
+        if(m_matchRewardTotal<targets[tier]||(m_careerCollectibleMask&bit))continue;
+        const auto pool=schema.CollectibleDefinitions(tier+1);if(pool.empty())continue;
+        for(const auto definition:pool)
+        {
+            if(std::any_of(m_items.begin(),m_items.end(),[&](const auto &i){return i.defIndex==definition;}))continue;
+            InventoryItem item;item.defIndex=definition;item.rarity=schema.ItemRarity(definition);item.noStarSale=true;item.id=Add(item);granted.push_back(item);break;
+        }
+        m_careerCollectibleMask|=bit;
+    }
+    return granted;
+}
+
+std::string Inventory::PetSnapshot() const
+{
+    std::ostringstream out;out << "{\"selected\":\"" << (m_activePet?CustomItemIdBase+m_activePet:0) << "\",\"pets\":[";bool comma=false;
+    for(const auto &p:m_items)if(p.petSeed)
+    {
+        if(comma)out<<',';comma=true;
+        out << "{\"id\":\"" << CustomItemIdBase+p.id << "\",\"seed\":" << p.petSeed << ",\"breed\":" << p.petBreed << ",\"stage\":" << p.petStage
+            << ",\"age\":" << p.petAge << ",\"hatch_at\":" << p.petHatchAt << ",\"accessory\":" << p.petAccessory << '}';
+    }
+    out << "],\"accessories\":[";std::set<std::uint32_t> accessories;
+    for(const auto &i:m_items)if(i.defIndex>=55000&&i.defIndex<=55009)accessories.insert(i.defIndex);
+    comma=false;for(auto id:accessories){if(comma)out<<',';comma=true;out<<id;}
+    out << "]}";return out.str();
+}
+
 void Inventory::SetGameplay(const GameplayConfig &config)
 {
     for (auto &track : m_xpTracks)
@@ -39,8 +147,13 @@ bool Inventory::ApplyEarnedXp(std::uint64_t cumulativeXp)
         return false;
     const auto delta = cumulativeXp - m_progress.rewardTotal;
     m_progress.rewardTotal = cumulativeXp;
-    const auto profileDelta = m_gameplay.xp_enabled ? delta : 0;
     const auto needed = std::uint64_t{40 - m_progress.level} * ProfileLevelXp;
+    // Cumulative fractional phase avoids losing the boost on one-point events.
+    // Bound before multiplying, including malformed/overflow-sized bridge totals.
+    const auto phase = (cumulativeXp - delta) % 100;
+    const auto bounded = std::min(delta, needed * 100);
+    const auto profileDelta = m_gameplay.xp_enabled ?
+        ((phase + bounded) * m_gameplay.profile_xp_percent / 100 - phase * m_gameplay.profile_xp_percent / 100) : 0;
     const auto xp = std::uint64_t{m_progress.xp} + std::min(profileDelta, needed);
     m_progress.level += static_cast<std::uint32_t>(std::min<std::uint64_t>(xp / ProfileLevelXp, 40 - m_progress.level));
     m_progress.xp = m_progress.level == 40 ? 0 : static_cast<std::uint32_t>(xp % ProfileLevelXp);
@@ -75,7 +188,7 @@ std::uint64_t Inventory::Add(InventoryItem item)
 bool Inventory::Remove(std::uint64_t id)
 {
     const auto it = std::find_if(m_items.begin(), m_items.end(), [id](const InventoryItem &i) { return i.id == id; });
-    if (it == m_items.end())
+    if (it == m_items.end() || it->petSeed)
         return false;
     m_items.erase(it);
     std::erase_if(m_loadout, [id](const LoadoutSlot &slot) {
@@ -122,6 +235,52 @@ bool ParseSticker(std::string_view text, AppliedSticker &sticker)
     return text.empty();
 }
 
+bool ParseOpeningStats(const KvNode &node, OpeningStats &stats, std::uint64_t nextId)
+{
+    if (!node.block || node.children.size()!=8) return false;
+    std::set<std::string> fields;
+    for (const auto &field:node.children) if (!fields.insert(field.key).second) return false;
+    std::uint32_t version=0;
+    const auto number=[&](const char *key,auto &value) {const auto *n=node.Find(key);return n&&!n->block&&ParseNumber(n->value,value);};
+    if (!number("version",version)||version!=1||!number("total",stats.total)||!stats.total||
+        !number("containers",stats.containers)||stats.containers>stats.total||!number("armory",stats.armory)||
+        stats.armory!=stats.total-stats.containers||!number("stattrak",stats.statTrak)||stats.statTrak>stats.total) return false;
+    const auto *rarities=node.Find("rarities");
+    if (!rarities||!rarities->block||rarities->children.size()!=9) return false;
+    std::set<std::uint32_t> found;std::uint64_t sum=0;
+    for (const auto &r:rarities->children)
+    {
+        std::uint32_t index=0;std::uint64_t count=0;
+        if (r.block||!ParseNumber(r.key,index)||index>8||!found.insert(index).second||!ParseNumber(r.value,count)||count>stats.total-sum) return false;
+        sum+=count;stats.rarities[index]=count;
+    }
+    if (sum!=stats.total) return false;
+    for (const auto name:{"recent","best"})
+    {
+        const auto *list=node.Find(name);const bool recent=std::string_view(name)=="recent";
+        if (!list||!list->block||list->children.empty()||list->children.size()>(recent?8u:3u)) return false;
+        auto &rows=recent?stats.recent:stats.best;std::set<std::uint64_t> sequences;
+        for (const auto &n:list->children)
+        {
+            OpeningRecord r;std::uint32_t st=0,gold=0;auto &i=r.item;std::string_view text=n.value;
+            const auto next=[&]() {auto end=text.find(' ');auto word=text.substr(0,end);text=end==std::string_view::npos?std::string_view{}:text.substr(end+1);return word;};
+            if (n.block||!ParseNumber(n.key,r.sequence)||!r.sequence||r.sequence>stats.total||!sequences.insert(r.sequence).second||
+                !ParseNumber(next(),r.timestamp)||!ParseNumber(next(),r.source)||r.source>1||
+                !ParseNumber(next(),i.id)||!i.id||i.id>=nextId||!ParseNumber(next(),i.defIndex)||!i.defIndex||
+                !ParseNumber(next(),i.paintKitIndex)||!ParseNumber(next(),i.wear)||!std::isfinite(i.wear)||i.wear<0||i.wear>1||
+                !ParseNumber(next(),i.seed)||i.seed>1000||!ParseNumber(next(),i.rarity)||i.rarity>7||
+                !ParseNumber(next(),st)||st>1||!ParseNumber(next(),gold)||gold>1||!ParseNumber(next(),i.stickerKit)||
+                !ParseNumber(next(),i.musicKit)||!ParseNumber(next(),i.keychain)||!text.empty()) return false;
+            i.statTrak=st!=0;i.unusual=gold!=0;
+            if (!stats.rarities[i.unusual?8:i.rarity]) return false;
+            if (recent&&!rows.empty()&&(r.sequence<=rows.back().sequence||i.id<=rows.back().item.id)) return false;
+            rows.push_back(r);
+        }
+        if (!recent&&!std::is_sorted(rows.begin(),rows.end(),BetterOpening)) return false;
+    }
+    return stats.recent.back().sequence==stats.total;
+}
+
 std::string FloatText(float value)
 {
     char buffer[32];
@@ -159,6 +318,31 @@ std::string Inventory::ToText() const
         out << "\t}\n";
     }
     out << "\t\"case_pity\"\t\"" << m_casePity << "\"\n";
+    out << "\t\"pet_match_cursor\" \"" << m_petMatchCursor << "\"\n\"pet_active\" \"" << m_activePet << "\"\n";
+    out << "\t\"pet_test_granted\" \"" << m_petTestGranted << "\"\n";
+    out << "\t\"career_collectible_mask\" \"" << m_careerCollectibleMask << "\"\n";
+    if (m_openings.total)
+    {
+        out << "\t\"unboxing\" {\n\"version\" \"1\"\n\"total\" \"" << m_openings.total
+            << "\"\n\"containers\" \"" << m_openings.containers << "\"\n\"armory\" \"" << m_openings.armory
+            << "\"\n\"stattrak\" \"" << m_openings.statTrak << "\"\n\"rarities\" {\n";
+        for (std::size_t i=0;i<m_openings.rarities.size();++i) out << '"' << i << "\" \"" << m_openings.rarities[i] << "\"\n";
+        out << "}\n";
+        for (const auto name:{"recent","best"})
+        {
+            out << '"' << name << "\" {\n";
+            const auto &rows=std::string_view(name)=="recent"?m_openings.recent:m_openings.best;
+            for (const auto &r:rows)
+            {
+                const auto &i=r.item;
+                out << '"' << r.sequence << "\" \"" << r.timestamp << ' ' << r.source << ' ' << i.id << ' ' << i.defIndex << ' '
+                    << i.paintKitIndex << ' ' << FloatText(i.wear) << ' ' << i.seed << ' ' << i.rarity << ' ' << i.statTrak << ' '
+                    << i.unusual << ' ' << i.stickerKit << ' ' << i.musicKit << ' ' << i.keychain << "\"\n";
+            }
+            out << "}\n";
+        }
+        out << "}\n";
+    }
     out << "\t\"match_reward_total\" \"" << m_matchRewardTotal << "\"\n";
     out << "\t\"console_star_total\" \"" << m_consoleStarTotal << "\"\n";
     out << "\t\"mission_star_total\" \"" << m_missionStarTotal << "\"\n";
@@ -224,6 +408,7 @@ std::string Inventory::ToText() const
             out << "\t\t\t\"contract_stattrak\"\t\"1\"\n";
         if (item.noStarSale)
             out << "\t\t\t\"no_star_sale\"\t\"1\"\n";
+        if(item.petSeed)out << "\"pet\" \"" << item.petSeed << ' ' << item.petBreed << ' ' << item.petStage << ' ' << item.petAge << ' ' << item.petHatchAt << ' ' << item.petAccessory << "\"\n";
         if (item.unusual)
             out << "\t\t\t\"unusual\"\t\"1\"\n";
         if (item.terminalRemaining)
@@ -266,6 +451,10 @@ std::optional<Inventory> Inventory::FromText(std::string_view sourceText)
     if (!ParseNumber(root->Value("next_id"), inventory.m_nextId) || inventory.m_nextId == 0)
         return std::nullopt;
 
+    if (std::count_if(root->children.begin(),root->children.end(),[](const auto &n){return n.key=="unboxing";})>1) return std::nullopt;
+    if (const auto *openings=root->Find("unboxing"))
+        if (!ParseOpeningStats(*openings,inventory.m_openings,inventory.m_nextId)) return std::nullopt;
+
     if (const auto *pity = root->Find("case_pity"))
         if (pity->block || !ParseNumber(pity->value, inventory.m_casePity) || inventory.m_casePity > 99)
             return std::nullopt;
@@ -273,6 +462,15 @@ std::optional<Inventory> Inventory::FromText(std::string_view sourceText)
     if (const auto *matches = root->Find("match_reward_total"))
         if (matches->block || !ParseNumber(matches->value, inventory.m_matchRewardTotal))
             return std::nullopt;
+    inventory.m_petMatchCursor=inventory.m_matchRewardTotal;
+    if(const auto *paid=root->Find("career_collectible_mask"))
+        if(paid->block||!ParseNumber(paid->value,inventory.m_careerCollectibleMask)||inventory.m_careerCollectibleMask>7)return std::nullopt;
+    if(const auto *test=root->Find("pet_test_granted"))
+        if(test->block||!ParseNumber(test->value,inventory.m_petTestGranted)||inventory.m_petTestGranted>1)return std::nullopt;
+    if(const auto *cursor=root->Find("pet_match_cursor"))
+        if(cursor->block||!ParseNumber(cursor->value,inventory.m_petMatchCursor))return std::nullopt;
+    if(const auto *active=root->Find("pet_active"))
+        if(active->block||!ParseNumber(active->value,inventory.m_activePet)||inventory.m_activePet>=inventory.m_nextId)return std::nullopt;
     if (const auto *stars = root->Find("console_star_total"))
         if (stars->block || !ParseNumber(stars->value, inventory.m_consoleStarTotal))
             return std::nullopt;
@@ -392,6 +590,14 @@ std::optional<Inventory> Inventory::FromText(std::string_view sourceText)
             if (node->block || !ParseSticker(node->value, sticker))
                 return std::nullopt;
             item.stickers.push_back(sticker);
+        }
+        if(const auto *pet=entry.Find("pet"))
+        {
+            std::istringstream row(pet->value);std::string extra;
+            if(pet->block||!(row>>item.petSeed>>item.petBreed>>item.petStage>>item.petAge>>item.petHatchAt>>item.petAccessory)||(row>>extra)||
+                (item.defIndex!=4948&&item.defIndex!=4681)||!item.petSeed||item.petBreed<3||item.petBreed>5||item.petStage>3||item.petAge>1000000||
+                item.petHatchAt<1||item.petHatchAt>2||(item.petAccessory&&(item.petAccessory<55000||item.petAccessory>55009)))return std::nullopt;
+            item.defIndex=4681; // migrate the old consumable definition without replacing the owned item
         }
         if (const KvNode *slab = entry.Find("slab_sticker"))
         {
@@ -546,6 +752,11 @@ std::optional<Inventory> Inventory::FromText(std::string_view sourceText)
                 if (!seen.insert(item.id).second || item.storedIn || item.casketCount) return std::nullopt;
             inventory.m_carePackages.push_back({generation, preview->m_items});
         }
+    }
+    if(inventory.m_activePet)
+    {
+        const auto *pet=inventory.Find(inventory.m_activePet);
+        if(!pet||!pet->petSeed)return std::nullopt;
     }
     return inventory;
 }

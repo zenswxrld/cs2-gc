@@ -287,6 +287,19 @@ public:
         PollCareClaims();
         PollCarePackageRequest();
         PollMissions();
+        {
+            std::ifstream request(m_rewardPath.parent_path()/"cs2_gc_pet_request.txt");
+            std::uint64_t pid=0,sequence=0,id=0;std::uint32_t accessory=0;std::string extra;
+            if((request>>pid>>sequence>>id>>accessory)&&!(request>>extra)&&pid==GetCurrentProcessId()&&sequence>m_petRequest)
+            {m_petRequest=sequence;m_gc.EquipPet(id,accessory,m_afterReward);}
+            const auto data=m_gc.PetSnapshot();
+            if(data!=m_petPublished)
+            {
+                const auto target=m_rewardPath.parent_path()/"cs2_gc_pets.json",temporary=m_rewardPath.parent_path()/"cs2_gc_pets.json.tmp";
+                std::ofstream out(temporary,std::ios::binary|std::ios::trunc);out<<data;out.close();
+                if(out&&MoveFileExW(temporary.c_str(),target.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))m_petPublished=data;
+            }
+        }
 #ifdef CS2_GC_DEBUG_TOOLS
         {
             std::ifstream control(m_rewardPath.parent_path() / "cs2_gc_console.txt");
@@ -329,6 +342,14 @@ public:
         *m_consoleOffset += text.size();
         for (const auto &claim : ParseCareConsoleClaims(text))
             if (m_gc.ClaimCareFromConsole(claim.generation, claim.tokens, m_afterReward)) m_log.Write("care package: console claim granted");
+        std::istringstream petLines(text);std::string line;
+        while(std::getline(petLines,line))
+        {
+            constexpr std::string_view marker="CS2GC_PET_EQUIP ";const auto at=line.find(marker);
+            if(at==std::string::npos)continue;
+            std::istringstream command(line.substr(at+marker.size()));std::uint64_t id=0;std::uint32_t accessory=0;std::string extra;
+            if((command>>id>>accessory)&&!(command>>extra))m_gc.EquipPet(id,accessory,m_afterReward);
+        }
     }
     // Weekly missions: cs2_gc_missions.bin (the 9226 body, written by native_missions.py before launch) and
     // cs2_gc_mission_progress.txt ("mission period progress" lines from the rewards helper).
@@ -350,7 +371,7 @@ public:
             if (error != std::errc{} || end != word.data() + word.size() || !(lines >> entry.period >> entry.progress)) break;
             progress.push_back(entry);
         }
-        if (stars && m_gc.ApplyMissionStars(stars, m_afterReward)) m_log.Write("missions: step stars paid");
+        if (stars && m_gc.ApplyMissionStars(stars, m_afterReward)) m_log.Write("rewards: cumulative mission/gameplay stars paid");
         std::vector<std::uint8_t> schema;
         if (!m_missionsLoaded)
         {
@@ -367,7 +388,13 @@ public:
     // Missions rotate with the Armory: tell the rewards helper which variant and period are current.
     void TickMissions(const std::filesystem::path &directory)
     {
-        const auto current = m_gc.MissionTick(static_cast<std::uint64_t>(std::time(nullptr)));
+        const auto now = static_cast<std::uint64_t>(std::time(nullptr));
+        std::optional<std::pair<std::uint32_t, std::uint32_t>> pinned;
+        std::ifstream session(directory / "cs2_gc_mission_session.txt");
+        std::uint32_t variant{}, period{}; std::uint64_t heartbeat{};
+        if (session >> variant >> period >> heartbeat && heartbeat <= now && now - heartbeat <= 15)
+            pinned = std::pair{variant,period};
+        const auto current = m_gc.MissionTick(now,pinned);
         if (!current) return;
         const auto path = directory / "cs2_gc_mission_current.txt";
         const auto staging = directory / "cs2_gc_mission_current.txt.tmp";
@@ -512,6 +539,8 @@ private:
     std::optional<std::uintmax_t> m_consoleOffset; // console.log bytes already read (care claims)
     bool m_missionsLoaded{};
     std::string m_missionProgressText;
+    std::string m_petPublished;
+    std::uint64_t m_petRequest{};
     std::function<void()> m_afterReward;
     std::chrono::steady_clock::time_point m_nextRewardPoll{};
     std::mutex m_rewardMutex;
@@ -1071,8 +1100,7 @@ State &Init()
                             if (inventoryFileUsable && !live->Save(inventoryPath))
                                 saveLog->Write("could not save cs2_gc_inventory.txt");
                         });
-                    s.log->Write("containers: cases (with their key), sticker capsules and graffiti boxes open "
-                                 "locally; naming items works. Music kit boxes and souvenir packages are not handled");
+                    s.log->Write("containers: local cases, capsules, music boxes, pins, graffiti and souvenir packages; keyless UseItem requests supported");
                     s.log->Write("store: purchases are granted locally and free (needs the Store price sheet to list "
                                  "the item); saved to cs2_gc_inventory.txt");
                     std::uint32_t campaign = 0;

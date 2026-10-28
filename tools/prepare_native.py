@@ -19,9 +19,16 @@ from skip_key_select import prepare as key_select
 from native_endmatch_stock import prepare as stock_results
 from native_care_packages import prepare as care_packages
 from native_mainmenu import prepare as mainmenu
+from music_store import prepare as music_store
 from native_mission_launch import prepare as missions
 from native_knife_reel import prepare as knife_reel
 from native_missions import prepare as missions_schedule
+from native_stats import prepare as stats_page
+from combat_events import prepare as combat_tracking
+from native_local_play import prepare as local_play
+from chicken_cosmetics import prepare as chicken_cosmetics
+from native_profile_pins import prepare as profile_pins
+from glove_refresh import prepare as glove_palettes
 from native_resources import ensure_first_game_path
 from vpk_signatures import update as signatures
 from preparation_cache import PreparationCache
@@ -78,6 +85,9 @@ def prepare(directory, force_rebuild=False):
         print('Recipes/catalogue: ' + recipes(directory, bool(config['mixed_stattrak_tradeups']), config) +
               ' [%.2fs]' % (time.perf_counter() - step), flush=True)
     print('Finish resources: ' + mount_finish_resources(directory, config), flush=True)
+    print('Chicken Cosmetics: ' + chicken_cosmetics(directory,config),flush=True)
+    print('Music-kit Store: ' + music_store(directory,config),flush=True)
+    print('Glove palettes: ' + glove_palettes(directory,config),flush=True)
     actions = [('Armory', armory), ('Scoreboard', scoreboard), ('Store', store),
                          ('Opening confirmation', confirmation), ('Item sales', sales), ('Multi-sell', multi_sell),
                          ('Match results', results), ('Terminal offers', offers), ('Key picker', key_select),
@@ -88,6 +98,10 @@ def prepare(directory, force_rebuild=False):
             print(name + ': ' + action(directory, config) + ' [%.2fs]' % (time.perf_counter()-step), flush=True)
     try: print('Missions: ' + missions_schedule(directory, config), flush=True)  # cheap; follows the calendar
     except (OSError, ValueError, KeyError) as error: print('Missions skipped (recorded missions stay): ' + str(error), flush=True)
+    print('Combat event tracking: ' + combat_tracking(directory,config),flush=True)
+    print('Local Premier and night maps: ' + local_play(directory,config),flush=True)
+    print('Stats & achievements: ' + stats_page(directory, config),flush=True)
+    print('Profile pins: ' + profile_pins(directory,config),flush=True)
     try: print('Bot names: ' + bot_names(directory, config, reshuffle=True), flush=True)
     except (OSError, ValueError, KeyError) as error: print('Bot names skipped (bots keep their normal names): ' + str(error), flush=True)
     print(ensure_first_game_path(directory), flush=True)

@@ -330,6 +330,7 @@ void CaseOpening()
     Check(OpenCase(inventory, *schema, crate, 999, random).error == OpenError::NoSuchKey, "unknown key");
     Check(OpenCase(inventory, *schema, crate, wrong, random).error == OpenError::WrongKey, "wrong key");
     Check(inventory.Items().size() == 4, "failed opens change nothing");
+    Check(inventory.Openings().total==0, "failed opens do not enter the unboxing tracker");
     {
         // free_case_keys (default): one key per case type is added and opening never uses it up.
         LiveInventory live(Inventory{});
@@ -343,6 +344,7 @@ void CaseOpening()
         const auto k = inv.Add({0, 50});
         Check(OpenCase(inv, *schema, c, k, random).error == OpenError::None && !inv.Find(c) && inv.Find(k),
               "free_case_keys: the case is opened and the key is kept");
+        Check(inv.Openings().total==1 && inv.Openings().containers==1, "successful container is recorded once");
     }
 
     // Statistical check on many opens, each with a fresh crate and key.
@@ -401,6 +403,27 @@ void CaseOpening()
     Check(empty.has_value() && empty->FindCrate(60), "empty fixture loads");
     Check(OpenCase(inv, *empty, c, k, random).error == OpenError::EmptyLootList && inv.Items().size() == 2,
           "nothing consumed");
+}
+
+void OpeningHistory()
+{
+    Inventory inv;
+    for (int n=0;n<12;++n)
+    {
+        InventoryItem item;item.defIndex=7;item.paintKitIndex=100;item.rarity=n==0?6:3;item.wear=.2f;
+        item.statTrak=n==1;item.unusual=n==2;
+        item.id=inv.Add(item);inv.RecordOpening(item,n%2,1000+n);inv.RecordOpening(item,n%2,1000+n);
+        inv.Remove(item.id);
+    }
+    const auto &stats=inv.Openings();
+    Check(stats.total==12&&stats.containers==6&&stats.armory==6&&stats.statTrak==1,"opening counters and repeated callback");
+    Check(stats.recent.size()==8&&stats.recent.front().sequence==5&&stats.recent.back().sequence==12,"bounded recent ordering");
+    Check(stats.best.size()==3&&stats.best[0].item.unusual&&stats.best[1].item.rarity==6,"golds outrank reds independently of StatTrak");
+    const auto text=inv.ToText();const auto saved=Inventory::FromText(text);
+    Check(saved&&saved->Openings().total==12&&saved->Openings().best[0].item.unusual&&saved->Items().empty(),"opening history persists after sales/removal");
+    auto bad=text;auto at=bad.find("\"stattrak\" \"1\"");bad.replace(at,std::string("\"stattrak\" \"1\"").size(),"\"stattrak\" \"99\"");
+    Check(!Inventory::FromText(bad),"inconsistent opening counters rejected");
+    Check(Inventory::FromText(Inventory{}.ToText())->Openings().total==0,"older inventory starts an empty factual record");
 }
 
 void InventoryPersistence()
@@ -3257,7 +3280,50 @@ void TradeUps()
 
 void SavedProgressionAndServerItems()
 {
+    auto awardsSchema=Schema::Load(R"("items_game" {
+      "prefabs" { "collectible" { "item_class" "collectible_item" } "commodity_pin" { "prefab" "collectible" }
+        "collectible_untradable_coin" { "prefab" "collectible" } "majors_trophy" { "prefab" "collectible" }
+        "prestige_coin" { "prefab" "collectible_untradable_coin" } }
+      "items" { "100" { "name" "local_pin" "prefab" "commodity_pin" } "101" { "name" "local_coin" "prefab" "collectible_untradable_coin" }
+        "102" { "name" "local_trophy" "prefab" "majors_trophy" } "103" { "name" "prestige" "prefab" "prestige_coin" } } })");
+    Check(awardsSchema&&awardsSchema->CollectibleDefinitions(2)==std::vector<std::uint32_t>{101},"earned collectible pool excludes service medals");
+    Inventory awards;
+    for(int match=0;match<10;++match)awards.MarkMatchRewarded();
+    Check(awards.GrantCareerCollectibles(*awardsSchema).size()==1 && awards.GrantCareerCollectibles(*awardsSchema).empty(),"pin milestone pays once");
+    auto savedAwards=Inventory::FromText(awards.ToText());
+    Check(savedAwards&&savedAwards->GrantCareerCollectibles(*awardsSchema).empty(),"collectible checkpoint survives relaunch");
+    for(int match=10;match<100;++match)savedAwards->MarkMatchRewarded();
+    Check(savedAwards->GrantCareerCollectibles(*awardsSchema).size()==2,"coin and trophy milestones pay at 50 and 100 matches");
+    Inventory pets; auto random=[]()->std::uint64_t{return 42;};
+    auto egg=pets.GrantTestEggOnce(random);
+    Check(egg && egg->defIndex==4681 && egg->petStage==0 && !pets.GrantTestEggOnce(random),"test egg is one-time, initially unhatched");
+    auto oldPetSave=pets.ToText();auto petDefinition=oldPetSave.find("\"def_index\"\t\"4681\"");
+    Check(petDefinition!=std::string::npos,"native pet definition is saved");
+    oldPetSave.replace(petDefinition,std::string("\"def_index\"\t\"4681\"").size(),"\"def_index\"\t\"4948\"");
+    auto petsReloaded=Inventory::FromText(oldPetSave);
+    Check(petsReloaded&&petsReloaded->Find(egg->id)->defIndex==4681&&petsReloaded->Find(egg->id)->petSeed==egg->petSeed,
+          "old consumable egg migrates to the native pet definition without changing identity or seed");
+    Check(petsReloaded && !petsReloaded->GrantTestEggOnce(random) && !petsReloaded->Remove(egg->id),
+          "test grant is consumed permanently and pet cannot be destroyed after reload");
+    petsReloaded->AdvancePets(1,random);petsReloaded->AdvancePets(2,random);
+    Check(petsReloaded->Find(egg->id)->petStage>=1,"egg hatches within two completed matches");
+    auto petLive=std::make_shared<LiveInventory>(*petsReloaded);LocalGameCoordinator petGc({});int petSaves=0;
+    petGc.EnableContainers(petLive,std::make_shared<Schema>(std::move(*awardsSchema)),random,[&]{++petSaves;});
+    const auto equipPet=[&](std::uint64_t localId,std::uint32_t code){
+        PbWriter body;body.Varint(1,4400000000000000ull+localId*32+code);body.Varint(2,1);
+        std::vector<std::uint8_t> wire;WriteProtobufFrame(9200,{},body.bytes(),wire);petGc.SendMessage(9200|ProtobufMask,wire.data(),wire.size());
+    };
+    equipPet(egg->id,1);equipPet(egg->id,11);equipPet(999999,31);
+    Check(petSaves==0,"native pet UI transport rejects unowned hats, malformed slots and unknown pets");
+    InventoryItem hat;hat.defIndex=55000;petLive->AddItem(hat);equipPet(egg->id,1);
+    Check(petSaves==1&&petLive->Items().Find(egg->id)->petAccessory==55000,"pet accessories save immediately through the local UI transport");
+    equipPet(0,31);Check(petSaves==2&&petLive->Items().PetSnapshot().find("\"selected\":\"0\"")!=std::string::npos,"local UI can unequip the follower without console-log polling");
+    Inventory boosted; boosted.XpTracks()={1};
+    for (std::uint64_t point=1;point<=400;++point) boosted.ApplyEarnedXp(point);
+    Check(boosted.Progress().xp==500 && boosted.XpTracks()[0]==401 && boosted.ArmoryCredits()==1,
+          "25 percent profile boost preserves fractional XP without boosting pass stars");
     Inventory inventory;
+    GameplayConfig legacyXp; legacyXp.profile_xp_percent=100; inventory.SetGameplay(legacyXp);
     Check(inventory.Progress().level == 1 && inventory.Progress().xp == 0 && inventory.Progress().rewardTotal == 0,
           "new local profiles start at level 1, zero XP");
     inventory.SetArmoryCredits(30);
@@ -3269,6 +3335,7 @@ void SavedProgressionAndServerItems()
     auto restored = Inventory::FromText(inventory.ToText());
     Check(restored && !restored->ApplyEarnedXp(399) && restored->Progress().xp == 399,
           "the reward checkpoint and rank survive relaunch together");
+    restored->SetGameplay(legacyXp);
     restored->ApplyEarnedXp(5001);
     Check(restored->Progress().level == 2 && restored->Progress().xp == 1, "profile levels roll over at 5000 XP");
     {
@@ -3636,8 +3703,12 @@ void HowlAndArmoryRotation()
 
 void ConfiguredRewardsAndPity()
 {
-    Check(CaseGoldChance(0) == 26 && CaseGoldChance(8) == 26 && CaseGoldChance(9) == 135 &&
-          CaseGoldChance(99) == 10000, "case pity starts on 10 and guarantees 100");
+    Check(CaseGoldChance(0) == 26 && CaseGoldChance(68) == 26 && CaseGoldChance(69) == 36 &&
+          CaseGoldChance(99) == 10000, "case pity starts gently on 70 and guarantees 100");
+    const auto newWeights=CollectionTierWeights(5);
+    const auto redRate=PityRate(50,GameplayConfig{});
+    Check(newWeights[3]==300 && newWeights[4]==50 && redRate < (1-redRate)*300/9950,
+          "default collection pinks remain more common than reds including pity");
     for (unsigned n = 1; n <= 99; ++n)
         Check(CaseGoldChance(n) >= CaseGoldChance(n - 1), "pity chance is monotonic");
     auto settings = ParseGameplayConfig("armory_xp_per_star=200\nmatch_drop_count=4\npity_soft_at=5\npity_hard_at=20\n");
@@ -3651,13 +3722,13 @@ void ConfiguredRewardsAndPity()
     progression.SetGameplay(*settings);
     Check(progression.XpTracks()[0] == 100 && progression.DisplayXpTracks()[0] == 200, "changing pass XP preserves pass fraction in native UI units");
     progression.ApplyEarnedXp(100);
-    Check(progression.ArmoryCredits() == 1u && progression.DisplayXpTracks()[0] == 400 && progression.Progress().xp == 100,
+    Check(progression.ArmoryCredits() == 1u && progression.DisplayXpTracks()[0] == 400 && progression.Progress().xp == 125,
           "configured pass XP awards a star and native display matches");
     auto reloadedProgress = Inventory::FromText(progression.ToText());
     Check(reloadedProgress && reloadedProgress->DisplayXpTracks()[0] == 400, "pass XP unit survives relaunch");
     settings->stars_enabled = 0; settings->xp_enabled = 0;
     progression.SetGameplay(*settings); progression.ApplyEarnedXp(300);
-    Check(progression.Progress().xp == 100 && progression.ArmoryCredits() == 1u, "profile and star switches consume cursor without paying");
+    Check(progression.Progress().xp == 125 && progression.ArmoryCredits() == 1u, "profile and star switches consume cursor without paying");
 
     auto schema = Schema::Load(R"("items_game" {
       "rarities" { "common" { "value" "1" } "rare" { "value" "3" } "ancient" { "value" "6" } }
@@ -3983,6 +4054,23 @@ void MusicKitsAndCouponMigration()
         while(inner.Next(attribute)) if(attribute.number == 1 && attribute.value == 166) musicAttribute = true;
     }
     Check(musicAttribute,"native econ item carries the schema music id attribute");
+    // A real keyless UI sends 1025 UseItem rather than the synthetic OpenCrate used above.
+    auto kitInventory=std::make_shared<LiveInventory>(Inventory{});
+    const auto box=kitInventory->AddItem({0,61});
+    auto shared=std::shared_ptr<const Schema>(&*schema,[](const Schema*){});
+    LocalGameCoordinator gc({});int saves=0;
+    gc.EnableContainers(kitInventory,shared,[]{return 0ull;},[&]{++saves;});
+    gc.EnableArmory(std::make_shared<Armory>(*schema,11,0),kitInventory,[]{return 0ull;},[&]{++saves;});
+    PbWriter use;use.Varint(1,CustomItemIdBase+box.id);
+    std::vector<std::uint8_t> request;
+    const auto message=gc_msg::EGCItemMsg::k_EMsgGCUseItemRequest|ProtobufMask;
+    WriteProtobufFrame(message,{},use.bytes(),request);
+    gc.SendMessage(message,request.data(),static_cast<std::uint32_t>(request.size()));
+    Check(saves==1 && !kitInventory->Items().Find(box.id) && kitInventory->Items().Items().size()==1 &&
+          kitInventory->Items().Items()[0].musicKit==42 && kitInventory->Items().Items()[0].statTrak,
+          "native keyless UseItem consumes a music box and grants its playable StatTrak kit");
+    gc.SendMessage(message,request.data(),static_cast<std::uint32_t>(request.size()));
+    Check(saves==1 && kitInventory->Items().Items().size()==1,"repeated native music opening cannot duplicate its reward");
 }
 
 void ArmoryTerminals()
@@ -4491,10 +4579,13 @@ void NativeCarePackages()
         Check(first && first->first==0 && first->second==interval*3000 && !favGc.MissionTick(t+1),"the mission follows the Armory cycle");
         const auto next=favGc.MissionTick(t+interval);
         Check(next && next->first==1 && next->second==interval*3001,"the next Armory rotation serves the next mission");
+        Check(!favGc.MissionTick(t+2*interval,*next),"an in-progress mission pins the schema across an Armory rotation");
+        const auto released=favGc.MissionTick(t+2*interval);
+        Check(released && released->first==2,"the next mission becomes available after the match releases its pin");
         favourite(4300000000000000ull+1);
         const auto now=static_cast<std::uint64_t>(std::time(nullptr));
         const auto byRefresh=favGc.MissionTick(now);
-        Check(byRefresh && byRefresh->second==now/interval*interval+1 && !favGc.MissionTick(now),
+        Check(byRefresh && byRefresh->second==now/interval*interval-1 && byRefresh->second<=now && !favGc.MissionTick(now),
               "a Refresh's mission is reported to the helper once, with its own period");
         const auto refreshed=favGc.MissionTick(t+interval);
         Check(refreshed && refreshed->first==2 && favInventory->Items().Items().size()==3,
@@ -4696,9 +4787,9 @@ void StarEconomy()
     Check(sells(again) == sells(*generous) && sells(*ParseGameplayConfig("")) == sells(BalancedDefaults()) &&
           sells(Inventory{}.Gameplay()) == sells(BalancedDefaults()), "balanced sale values are a fixed point");
     // Golden values shared with tests/test_gameplay_options.py (the native Sell label must match the GC).
-    Check(sells(BalancedDefaults()) == std::vector<std::uint32_t>{1, 1, 1, 3, 7, 15, 22, 0, 0, 0, 5, 0, 3, 9, 25, 50, 30},
+    Check(sells(BalancedDefaults()) == std::vector<std::uint32_t>{1, 1, 2, 4, 12, 24, 35, 0, 0, 0, 5, 1, 3, 9, 25, 50, 30},
           "balanced default sale values");
-    Check(sells(*generous) == std::vector<std::uint32_t>{1, 1, 1, 2, 4, 9, 18, 0, 0, 0, 4, 0, 2, 9, 25, 85, 90},
+    Check(sells(*generous) == std::vector<std::uint32_t>{1, 1, 2, 3, 6, 13, 25, 0, 0, 0, 5, 1, 3, 9, 25, 85, 90},
           "balanced values for the user's generous settings");
 
     // The analytic audit agrees with the real purchase code (pity included) on the collection and charm rows.
@@ -4760,6 +4851,7 @@ int main()
         SchemaCrates(); std::cout << "PASS schema crates, keys and loot tiers\n";
         CaseOpening(); std::cout << "PASS case opening odds and atomic consumption\n";
         InventoryPersistence(); std::cout << "PASS inventory persistence and strict loading\n";
+        OpeningHistory(); std::cout << "PASS bounded unboxing history and rarity ranking\n";
         GcMessageIds(); std::cout << "PASS extracted GC message IDs and build fingerprint\n";
         ProtobufWire(); std::cout << "PASS protobuf reader and writer\n";
         HandshakeCodec(); std::cout << "PASS handshake message codecs\n";

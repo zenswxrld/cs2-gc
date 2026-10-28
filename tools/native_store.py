@@ -36,6 +36,8 @@ def patch(body, source, terminals_enabled=True):
                      isinstance(dict(values).get('prices'), list) and dict(values)['prices']), None)
     if template is None: raise ValueError('Store sheet has no validated price template')
     added = sheet.add_entries(tree, terminal_names(source), template) if terminals_enabled else 0
+    from music_store import add_store
+    added += add_store(tree, source)
     sections = sheet.items_game.collect(sheet.items_game.parse(source))
     cases = sheet.find_case_items(sections)
     case_names = {row[0] for row in cases}
@@ -82,9 +84,11 @@ def prepare(directory, config):
     target = directory / 'cs2_gc_store_2501.bin'
     original = directory / 'cs2_gc_replay/2501.bin'
     source = directory / 'items_game.txt'
+    owned_schema = directory.resolve().parents[1] / 'cs2_gc_native/scripts/items/items_game.txt'
+    if owned_schema.is_file(): source = owned_schema
     if not original.is_file() or not source.is_file(): return 'unavailable: replay/2501.bin or original schema missing'
     result, count = patch(original.read_bytes(), source.read_text(encoding='utf-8-sig'), bool(config['terminals_enabled']))
     if not target.exists() or target.read_bytes() != result:
         temporary = target.with_name(target.name + '.tmp')
         temporary.write_bytes(result); temporary.replace(target)
-    return f'ready: {count} missing terminal Store definitions added; cases/keys removed from Store; original replay unchanged'
+    return f'ready: {count} missing terminal/music Store offers added; all music selections available; cases/keys removed; original replay unchanged'

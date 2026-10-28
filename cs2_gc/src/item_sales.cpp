@@ -92,10 +92,12 @@ double WindowValue(const std::uint64_t *values, const std::uint32_t *weights, st
 {
     double lower = 0, total = 0;
     const std::size_t plain = pity ? count - 1 : count;
+    const auto collection = CollectionTierWeights(count);
     for (std::size_t rank = 0; rank < plain; ++rank)
     {
-        lower += static_cast<double>(weights[rank]) * static_cast<double>(values[rank]);
-        total += weights[rank];
+        const auto weight = pity ? collection[rank] : weights[rank];
+        lower += static_cast<double>(weight) * static_cast<double>(values[rank]);
+        total += weight;
     }
     lower = total > 0 ? lower / total : 0;
     return pity ? hit * static_cast<double>(values[count - 1]) + (1 - hit) * lower : lower;
@@ -105,12 +107,13 @@ double ArmoryHitRate(std::size_t count, const GameplayConfig &c)
 {
     if (count < 2) return 1.0;
     std::uint64_t total = 0;
-    for (std::size_t rank = 0; rank < count; ++rank) total += CollectionWeights[rank];
+    const auto weights = CollectionTierWeights(count);
+    for (std::size_t rank = 0; rank < count; ++rank) total += weights[rank];
     auto pity = c;
     pity.pity_enabled = c.armory_pity_enabled;
     pity.pity_soft_at = c.armory_pity_soft_at;
     pity.pity_hard_at = c.armory_pity_hard_at;
-    const auto base = std::max<std::uint64_t>(c.armory_top_per_10000, CollectionWeights[count - 1] * 10000 / total);
+    const auto base = std::max<std::uint64_t>(c.armory_top_per_10000, weights[count - 1] * 10000 / total);
     return PityRate(static_cast<std::uint32_t>(base), pity);
 }
 

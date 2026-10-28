@@ -321,7 +321,8 @@ class DetailRebuild(unittest.TestCase):
             self.assertTrue(all(e.get('detail') for e in saved['lineup']['forged']))
             self.assertTrue(any(name.startswith('gc3') for name,_,_ in made[0]),'owned legacy definitions retained')
             self.assertTrue(any(name.startswith('gc4') for name,_,_ in made[0]))
-            self.assertEqual(len([k for k in families if k.startswith('gc4')]),2)
+            self.assertGreaterEqual(len([k for k in families if k.startswith('gc4')]),2)
+            self.assertTrue(any('_deep' in variant for key,variants in families.items() if key.startswith('gc4') for variant in variants))
             variants={v for k,values in families.items() if k.startswith('gc4') for v in values}
             names={name:title for name,title,_ in made[0]}
             self.assertTrue(all(any(names[v].startswith(theme+' ') for theme in ('Crimson','Amber','Cobalt','Teal','Violet','Ember','Ash')) for v in variants))

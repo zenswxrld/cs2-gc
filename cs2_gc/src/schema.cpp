@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <charconv>
 #include <unordered_set>
+#include <functional>
+#include <sstream>
 
 namespace cs2_gc
 {
@@ -877,5 +879,33 @@ std::vector<std::uint32_t> Schema::AgentDefinitions() const
             !ResolveValue(*item, "model_player", m_prefabs).empty()) result.push_back(definition);
     std::sort(result.begin(), result.end());
     return result;
+}
+
+std::vector<std::uint32_t> Schema::CollectibleDefinitions(std::uint32_t tier) const
+{
+    std::vector<std::uint32_t> result;
+    if(tier<1||tier>3)return result;
+    for(const auto &[definition,item]:m_itemsByIndex)
+    {
+        const auto name=ItemName(definition);
+        if(name.find("service")!=std::string::npos||name.find("license")!=std::string::npos||
+           ResolveValue(*item,"item_class",m_prefabs)!="collectible_item")continue;
+        bool pin=false,coin=false,trophy=false,prestige=false;
+        std::unordered_set<std::string> seen;
+        std::function<void(const KvNode&)> scan=[&](const KvNode &node){
+            std::istringstream words(std::string(node.Value("prefab")));std::string prefab;
+            while(words>>prefab)if(seen.insert(prefab).second)
+            {
+                prestige|=prefab=="prestige_coin";
+                pin|=prefab=="attendance_pin"||prefab=="commodity_pin";
+                trophy|=prefab=="majors_trophy"||prefab=="pickem_trophy";
+                coin|=prefab=="collectible_untradable_coin"||(prefab.starts_with("season")&&prefab.ends_with("_coin"));
+                if(const auto p=m_prefabs.find(prefab);p!=m_prefabs.end()&&seen.size()<128)scan(*p->second);
+            }
+        };
+        scan(*item);
+        if(!prestige&&(tier==1?pin:tier==2?coin&&!pin&&!trophy:trophy))result.push_back(definition);
+    }
+    std::sort(result.begin(),result.end());return result;
 }
 }

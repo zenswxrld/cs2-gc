@@ -300,7 +300,7 @@ def clean_title(title):
 def colour_title(base_title, theme):
     colour = {'Royal': 'Royal', 'Galaxy': 'Galaxy', 'Ocean': 'Ocean', 'Forest': 'Forest', 'Lava': 'Lava',
               'Toxin': 'Toxic', 'Toxic': 'Toxic'}.get(theme, theme)
-    return '%s %s' % (colour, clean_title(base_title))
+    return '%s %s' % (colour.replace('_',' '), clean_title(base_title))
 
 
 def official_rarities(source_text):
@@ -596,7 +596,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
     repair_fallbacks = set()
     repaired_existing = set()
 
-    def define(icon, entry):
+    def define(icon, entry, shades=True):
         """The loot entry kit for one lineup entry (defining it), or None when its colours would not show."""
         donor, tier, weapon, mode = entry['donor'], entry['tier'], entry['weapon'], entry['mode']
         if donor not in kits: return None
@@ -625,10 +625,22 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
             if name not in made:
                 new_kits.append((name, title if pattern_source or entry['themes'][0]=='Inverse' else colour_title(title, entry['themes'][0]), values_for(donor, tier, weapon, path)))
                 made.add(name)
+            if shades and not pattern_source:
+                from colour_families import expand
+                variants=[name]
+                for theme in expand(entry['themes']) [1:]:
+                    variant=kit_name(icon,entry,theme)
+                    shade_path=material(donor,theme,detail,palette_source,pattern_source,effect_source)
+                    if shade_path is None:continue
+                    if variant not in made:
+                        new_kits.append((variant,colour_title(title,theme),values_for(donor,tier,weapon,shade_path)));made.add(variant)
+                    variants.append(variant)
+                if len(variants)>1:families[name]=variants
             return name
         variants, first = [], None
         palettes = []
-        for theme in entry['themes']:
+        from colour_families import expand
+        for theme in expand(entry['themes']) if shades else entry['themes']:
             path = material(donor, theme, detail, palette_source,pattern_source,effect_source)
             if path is None and not authored:
                 path = material(donor, theme)
@@ -655,7 +667,7 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
 
     # Owned skins from earlier lineups keep rendering.
     for name, entry in sorted(history.items()):
-        define(entry['icon'], entry)
+        define(entry['icon'], entry,shades=False)
     lists, specs, entries_out, icon_map, failed = [], [], [], {}, []
     for icon in icons:
         tiers = {tier: [] for tier, _ in TIER_COUNTS}

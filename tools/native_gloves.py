@@ -38,6 +38,56 @@ GLOVE_FADES = ('specialist_fade', 'specialist_marble_fade')
 THEMES_PER_GLOVE = 8
 PANEL_STYLES = {'original': '', 'white': 'White Panels', 'black': 'Black Panels', 'inverted': 'Inverted Panels'}
 PALETTE_REPORT = 'cs2_gc_glove_palettes.json'
+# Mostly neutral classic leather palettes need panel colour, otherwise a named
+# colourway changes only a buckle or seam. Keep dark pattern/structural tones.
+NEUTRAL_PANEL_FINISHES = {
+    'bloodhound_black_silver', 'bloodhound_hydra_black_green', 'bloodhound_metallic',
+    'handwrap_leathery_ducttape', 'motorcycle_basic_black',
+    'motorcycle_smoke', 'operation10_snakeskin_black', 'slick_jaguar_white',
+    'slick_stitched_black_white', 'sporty_jaguar',
+}
+
+
+def recolor_neutral_panels(colors, theme, **options):
+    """Colour pale leather without erasing the source's pattern/value hierarchy."""
+    result = recolor_accents(colors, theme, **options)
+    themed = finishes.recolor(colors, theme, keep_value=True)
+    for index, original in enumerate(colors):
+        _, saturation, value = colorsys.rgb_to_hsv(*original[:3])
+        if saturation > .2 or value <= .25:
+            continue
+        hue, target_saturation, _ = colorsys.rgb_to_hsv(*themed[index][:3])
+        # Midnight must read as dark leather, with the original dark marks
+        # still darker. This strictly increasing mapping keeps tonal detail.
+        if theme == 'Midnight':
+            hue,target_saturation,value=224/360,.65,.12+.20*value
+        elif theme == 'Sunset':
+            # Copper leather dominates; a restrained rose highlight replaces
+            # the generic duo's brightness-ranked all-magenta main panels.
+            hue,target_saturation,value=(350/360,.24,value*.8) if index==max(range(len(colors)),key=lambda i:max(colors[i][:3])) else (23/360,.42,value*.75)
+        elif theme == 'Rose':
+            hue,target_saturation=338/360,.28
+        result[index][:3] = colorsys.hsv_to_rgb(hue, target_saturation, value)
+    return result
+
+
+def snow_leopard_palette(colors,theme,panels='original',**options):
+    """Paired light/dark leather treatments, retaining the printed pattern."""
+    result=recolor_neutral_panels(colors,theme,**options)
+    if panels not in ('dark','inverted'):return result
+    # The installed palette's two dark neutral leather masks; do not assume
+    # that the leopard spots printed inside a light mask are separate masks.
+    if panels=='dark':result=[list(c) for c in colors]
+    for index,original in enumerate(colors):
+        _,saturation,value=colorsys.rgb_to_hsv(*original[:3])
+        if saturation>.2 or value>.25:continue
+        if panels=='inverted':result[index][:3]=[.70+.15*value]*3
+        else:
+            probe=recolor_neutral_panels([[.7,.7,.7,original[3]]],theme)[0]
+            hue,sat,_=colorsys.rgb_to_hsv(*probe[:3])
+            target=.12+.20*value if theme=='Midnight' else .38+.30*value
+            result[index][:3]=colorsys.hsv_to_rgb(hue,sat,target)
+    return result
 # User-approved existing finish: keep its exact legacy two-tone palette and saved identity.
 # Panel variants still use accent-only recolouring; approval does not extend to other themes.
 APPROVED_PALETTES = {('gloves/paints/specialist_forest_brown.vcompmat', 'Toxic'),
@@ -52,7 +102,8 @@ GLOVE_TITLES = {'slick_stitched_green_grey': 'Racing'}
 # Finishes whose pattern lives in their neutral tints: the panel variants flatten those tints and erase the
 # pattern (user report: Hand Wraps | Spruce DDPAT Midnight came out plain white; handwrap_camo_grey's camo is
 # seven near-grey green tints, one accent). No new panel variants; owned ones render as the original panels.
-NO_PANEL_VARIANTS = {'gloves/paints/handwrap_camo_grey.vcompmat'}
+NO_PANEL_VARIANTS = {'gloves/paints/handwrap_camo_grey.vcompmat',
+                     'gloves/paints/sporty_light_blue.vcompmat'}
 # Dead Hand gloves whose main colour is printed into a texture (only trim and cuffs can change), from the
 # user's screenshots: offer only colours that sit within 60 degrees of that printed colour, so the result reads
 # as one design (other Dead Hand gloves use their own main accent hue, see dead_hand_main_hue). Beadwork:
@@ -130,8 +181,9 @@ def dead_hand_main_hue(source, compmat):
 def harmonious_themes(hue):
     """Themes whose every hue is within HARMONY_DEGREES of `hue`, plus neutral Ash; in theme order."""
     def close(h): return min(abs(h - hue) % 360, 360 - abs(h - hue) % 360) <= HARMONY_DEGREES
-    picks = [name for name, (base, saturation, spread) in finishes.THEMES.items() if spread == 0 or close(base)]
-    picks += [name for name, (a, b, saturation) in finishes.DUO_THEMES.items() if close(a) and close(b)]
+    from colour_families import split
+    picks = [name for name, (base, saturation, spread) in finishes.THEMES.items() if not split(name)[1] and (spread == 0 or close(base))]
+    picks += [name for name, (a, b, saturation) in finishes.DUO_THEMES.items() if not split(name)[1] and close(a) and close(b)]
     return picks
 # Dead Hand (volatile_02) composites: a LOOSE_VARIABLES container 'paint' names the finish's own material
 # (csgo_customglove_preview.vfx) and COPY_MATCHING_KEYS copies its parameters into the shared, all-white
@@ -170,6 +222,8 @@ def recolor_accents(colors, theme, fade=False, panels='original', accent_saturat
         color = list(original)
         if _is_accent(original,accent_saturation,accent_hue_range):
             hue, target_saturation, _ = colorsys.rgb_to_hsv(*target[:3])
+            if theme=='Midnight':hue,target_saturation,value=224/360,.65,.12+.20*value
+            elif theme=='Rose':hue,target_saturation=338/360,.28
             color[:3] = colorsys.hsv_to_rgb(hue, min(saturation, target_saturation), value)
         elif panels != 'original' and (saturation <= .2 or value <= .12):
             if protect_dark_neutrals and value <= .25:
@@ -391,23 +445,47 @@ def make_glove_finish(source, compmat_path, new_name, theme, fade=False, panels=
     threshold = ACCENT_THRESHOLDS.get(compmat_path,.35)
     hue_range = ACCENT_HUE_RANGES.get(compmat_path)
     protect_dark = compmat_path == 'gloves/paints/slick_jaguar_white.vcompmat'
+    neutral_panels = compmat_path.rsplit('/',1)[-1].removesuffix('.vcompmat') in NEUTRAL_PANEL_FINISHES
+    recolour = recolor_neutral_panels if neutral_panels and panels == 'original' else recolor_accents
     try:
-        new = (finishes.recolor(current, theme, fade=fade, keep_value=True) if approved else
-               recolor_accents(current, theme, fade=fade, panels=panels,accent_saturation=threshold,accent_hue_range=hue_range,
-                               protect_dark_neutrals=protect_dark))
+        if protect_dark and panels in ('original','dark','inverted'):
+            new=snow_leopard_palette(current,theme,panels)
+        else:
+            new = (finishes.recolor(current, theme, fade=fade, keep_value=True) if approved else
+                   recolour(current, theme, fade=fade, panels=panels,accent_saturation=threshold,accent_hue_range=hue_range,
+                                   protect_dark_neutrals=protect_dark))
     except ValueError: return None
+    from colour_families import tone
+    new=tone(new,theme,current)
+    # The installed patterns declare these palette IDs explicitly. Keep
+    # Amphibious's pale pattern ink, logos and dark outlines independent of hue.
+    pattern_ids=m_root.get('m_vectorParams')
+    pattern_entry=next((p for p in pattern_ids.value if p.get('m_name') and p.get('m_name').value=='g_vPatternPaletteIndices'),None) if pattern_ids else None
+    indices=[int(v.value)-1 for v in pattern_entry.get('m_value').value] if pattern_entry else []
+    if compmat_path=='gloves/paints/sporty_light_blue.vcompmat':
+        for index in set(indices):
+            if 0<=index<len(new):new[index]=list(current[index])
+    # Snow Leopard and Queen Jaguar only: the first declared pattern palette
+    # colour is the spot ink. Choose its opposite after the panel treatment.
+    if compmat_path in ('gloves/paints/slick_jaguar_white.vcompmat','gloves/paints/slick_jaguar_yellow.vcompmat') and indices:
+        spot=indices[0]
+        backgrounds=[max(new[i][:3]) for i in set(indices[1:]) if 0<=i<len(new) and i!=spot]
+        if 0<=spot<len(new) and backgrounds:
+            tone=.82 if sum(backgrounds)/len(backgrounds)<.38 else .025
+            new[spot][:3]=[tone]*3
     if report is not None:
         report[compmat_path] = {
             'original_tints': current,
             'accent_channels': [i+1 for i,c in enumerate(current)
-                if _is_accent(c,threshold,hue_range)],
+                if _is_accent(c,threshold,hue_range) or (neutral_panels and max(c[:3]) > .25
+                    and colorsys.rgb_to_hsv(*c[:3])[1] <= .2)],
             'accent_saturation_threshold': threshold,
             'accent_hue_range_degrees': hue_range,
             'protect_dark_neutrals': protect_dark,
-            'policy': 'accent-only-v1',
+            'policy': 'neutral-panels-v2' if neutral_panels else 'accent-only-v1',
             'preserved_legacy_themes': sorted(t for path,t in APPROVED_PALETTES if path == compmat_path),
         }
-    if panels != 'original' and new == recolor_accents(current, theme, fade=fade,accent_saturation=threshold,accent_hue_range=hue_range,
+    if panels not in ('original','dark') and new == recolor_accents(current, theme, fade=fade,accent_saturation=threshold,accent_hue_range=hue_range,
                                                      protect_dark_neutrals=protect_dark): return None
     for name, color in zip(TINTS, new):
         for item, value in zip(tints[name].value, color): item.value = value
@@ -440,7 +518,8 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
         if glove not in gloves or original in kits or name in kits or not source.exists(path + '_c'): continue
         entries.append((kit_id(name), name, title, {'composite_material_path': path}))
         case.append('[%s]%s' % (name, glove))
-    themes = list(finishes.THEMES) + list(finishes.DUO_THEMES)
+    from colour_families import split
+    themes = [t for t in list(finishes.THEMES) + list(finishes.DUO_THEMES) if not split(t)[1]]
     for glove in sorted(official):
         for base in official[glove]:
             values = kits[base][1]
@@ -466,8 +545,15 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
             offered = set(picks)
             picks = picks + retained
             base_title = GLOVE_TITLES.get(base) or titles.get(base) or base.split('_', 1)[-1].replace('_', ' ').title()
+            from colour_families import expand,split
+            if '/volatile_02/' not in compmat:
+                picks=list(dict.fromkeys(t for pick in picks for t in (expand([pick]) if pick in offered else [pick])))
+                offered=set(expand(offered))
             for theme in picks:
-                for panels, panel_title in PANEL_STYLES.items():
+                styles=dict(PANEL_STYLES)
+                if base=='slick_jaguar_white':styles['dark']='Coloured Dark Panels'
+                for panels, panel_title in styles.items():
+                    if split(theme)[1] and panels!='original':continue
                     suffix = '' if panels == 'original' else '_panels_' + panels
                     name = 'rg_%s_%s%s' % (base, theme.lower(), suffix)
                     # Retain known variants in the schema if disabled later, but stop offering them as drops.
@@ -499,7 +585,9 @@ def plan(source_text, gold_pools_text, titles, source, known_ids, used_ids, pane
                     if not has_accents and name not in known_ids: continue
                     files[COMPMAT_DIR + name + '.vcompmat_c'], files[VMAT_DIR + name + '.vmat_c'] = made
                     # Panel style remains in the stable kit identity, not the player-facing name.
-                    title = '%s %s' % (base_title, theme)
+                    title = '%s %s' % (base_title, theme.replace('_',' '))
+                    if base=='slick_jaguar_white' and panels in ('dark','inverted'):
+                        title+=' · '+panel_title
                     entries.append((kit_id(name), name, title,
                                     {'composite_material_path': COMPMAT_DIR + name + '.vcompmat'}))
                     if (has_accents and not no_panels and theme in offered and

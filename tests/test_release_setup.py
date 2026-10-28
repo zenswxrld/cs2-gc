@@ -193,6 +193,7 @@ class ReleaseSetup(unittest.TestCase):
         personal = cfg/'gamemode_casual_server.cfg'
         personal.write_text('my own server config')
         with patch.object(bot_skins,'_get',side_effect=AssertionError('No runtime network')), \
+             patch('fair_bot_policy.require_game_closed'), \
              patch.object(bot_skins,'_mount') as mount, patch.object(bot_skins,'recurate') as curate:
             self.assertTrue(bundled_bots.ensure(self.bin))
             self.assertEqual(curate.call_count,1)

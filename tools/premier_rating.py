@@ -35,15 +35,15 @@ def visible_rating(state, config):
 
 
 def bot_difficulty(state):
-    # Local policy mapped to CS2's normal easy/normal/hard/expert bot_difficulty control; expert from 20,000.
+    # Profile strength ramps separately; native hard starts at 25k, expert at 30k.
     rating = state['rating']
-    return 0 if rating < 5000 else 1 if rating < 10000 else 2 if rating < 20000 else 3
+    return 0 if rating < 10000 else 1 if rating < 25000 else 2 if rating < 30000 else 3
 
 
 def bot_preset(state):
     # Bot Improver skill presets (bot_skins.py) by local rating; the strongest bots from 30,000 (user's request).
     rating = state['rating']
-    return 'Low' if rating < 10000 else 'Medium' if rating < 30000 else 'High'
+    return 'Low' if rating < 20000 else 'Medium' if rating < 30000 else 'High'
 
 
 def status(state, config):

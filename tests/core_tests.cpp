@@ -4570,26 +4570,22 @@ void NativeCarePackages()
         auto broken=favInventory->Items().ToText();
         broken.replace(broken.find("\"slot3\" \""),9,"\"slot3\" \"x");
         Check(!Inventory::FromText(broken),"a malformed claimed record is refused, not half-loaded");
-        // Missions rotate with the Armory: variant = (now / armory_rotation_seconds + Refresh offset) % pool size.
+        // Missions are not tied to the Armory: the helper's choice is served (with period = now) and kept until the
+        // helper chooses the next one after a completion.
         PbWriter pool;
         for(std::uint8_t i=0;i<3;++i){PbWriter entry;entry.Varint(1,i);entry.Bytes(2,std::vector<std::uint8_t>{0,'7',0,i,0x0b});pool.Message(1,entry);}
         favGc.SetMissions(pool.bytes(),{});
-        const std::uint64_t interval=favInventory->Items().Gameplay().armory_rotation_seconds,t=interval*3000+5;
+        const std::uint64_t t=1800000000;
         const auto first=favGc.MissionTick(t);
-        Check(first && first->first==0 && first->second==interval*3000 && !favGc.MissionTick(t+1),"the mission follows the Armory cycle");
-        const auto next=favGc.MissionTick(t+interval);
-        Check(next && next->first==1 && next->second==interval*3001,"the next Armory rotation serves the next mission");
-        Check(!favGc.MissionTick(t+2*interval,*next),"an in-progress mission pins the schema across an Armory rotation");
-        const auto released=favGc.MissionTick(t+2*interval);
-        Check(released && released->first==2,"the next mission becomes available after the match releases its pin");
+        Check(first && first->first==0 && first->second==t && !favGc.MissionTick(t+100000),
+              "without a choice the first mission is served and kept, whatever the time");
         favourite(4300000000000000ull+1);
-        const auto now=static_cast<std::uint64_t>(std::time(nullptr));
-        const auto byRefresh=favGc.MissionTick(now);
-        Check(byRefresh && byRefresh->second==now/interval*interval-1 && byRefresh->second<=now && !favGc.MissionTick(now),
-              "a Refresh's mission is reported to the helper once, with its own period");
-        const auto refreshed=favGc.MissionTick(t+interval);
-        Check(refreshed && refreshed->first==2 && favInventory->Items().Items().size()==3,
-              "an Armory Refresh moves the missions on with the page and grants nothing");
+        Check(!favGc.MissionTick(t+100001) && favInventory->Items().Items().size()==3,
+              "an Armory Refresh no longer changes the mission and grants nothing");
+        const auto next=favGc.MissionTick(t+200000,2u);
+        Check(next && next->first==2 && next->second==t+200000 && !favGc.MissionTick(t+200001,2u),
+              "the helper's next choice is served once, with a fresh period");
+        Check(!favGc.MissionTick(t+300000,7u) && !favGc.MissionTick(t+300001),"an unknown choice keeps the current mission");
     }
     {
         // Weekly missions: progress loaded before the welcome is not pushed; a change afterwards is, as SO type 16.

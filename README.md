@@ -75,7 +75,7 @@ Status key: **confirmed** = checked by the user in the supported client; **imple
 | Local Premier-style rating with placement matches | Confirmed baseline |
 | Care packages: on a level-up choose 3 of 4 rewards; claimed rewards stay labelled until the next package | Confirmed |
 | Missions served locally; the mission tile shows | Confirmed |
-| Mission progress, step XP and stars, and missions rotating with the Armory and REFRESH ARMORY | Implemented; progress did not count in the last test (diagnostics added) |
+| Mission progress, step XP and stars; a mission stays until completed, then a new one is generated straight away (not tied to the Armory) | Implemented; the last live test predated the fix |
 
 ### Bots
 
@@ -106,7 +106,7 @@ More detail: [features and known issues](docs/FEATURES.md) and [roadmap](docs/FE
 
 | Setting | Default | Effect |
 | --- | --- | --- |
-| `armory_rotation_seconds` | 900 | How often the Armory (and missions) rotate |
+| `armory_rotation_seconds` | 900 | How often the Armory rotates |
 | `armory_agent_price` | 25 | Agent collection tile price |
 | `armory_pass_auto_renew` | 1 | Full passes restart on their own |
 | `sell_max_return_percent` | 90 | Highest share of a purchase that selling can return |

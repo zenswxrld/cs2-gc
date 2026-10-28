@@ -1,8 +1,12 @@
-"""Count this week's mission from Game State Integration packets (bot matches never report quest progress).
+"""Count the current mission from Game State Integration packets (bot matches never report quest progress).
 
-Plan: cs2_gc_missions.json (native_missions.py) + cs2_gc_mission_current.txt (the DLL's current variant). Progress: cs2_gc_mission_progress.txt, one "mission period progress"
-line per period plus a cumulative "stars N" line, read by the DLL (shown as the native CSOAccountRecurringMission
-progress). Reaching a points tier pays that tier's XP through the helper's normal XP total and 1 star per 100 XP.
+User (28 Oct): "once the mission is complete it auto generates a new one, remove the link" (to the Armory). The
+helper owns the choice: cs2_gc_mission_choice.txt holds the variant index (cs2_gc_missions.json, native_missions.py)
+the DLL should serve; it changes only when the mission is completed, to the next variant. The DLL serves it with a
+fresh period each launch and writes what it serves to cs2_gc_mission_current.txt ("variant period"). Progress belongs
+to the mission (state key "gen<N>:<variant>"), not to a period, so it survives restarts; cs2_gc_mission_progress.txt
+carries it as "mission period progress" for the served period, plus a cumulative "stars N" line. Reaching a points
+tier pays that tier's XP through the helper's normal XP total and 1 star per 100 XP.
 
 Counting, local player only and only in the mission's mode on one of its maps:
   kill  - kills that rise while the mission weapon is the active weapon (bots count: offline there are no humans;
@@ -17,7 +21,8 @@ import time
 
 PROGRESS_FILE = 'cs2_gc_mission_progress.txt'
 CURRENT_FILE = 'cs2_gc_mission_current.txt'  # "variant period", written by the DLL each rotation
-SESSION_FILE = 'cs2_gc_mission_session.txt'
+SESSION_FILE = 'cs2_gc_mission_session.txt'  # retired match pin (missions no longer rotate); removed when seen
+CHOICE_FILE = 'cs2_gc_mission_choice.txt'  # the variant the DLL should serve, written by this helper
 
 
 class MissionTracker:
@@ -27,62 +32,67 @@ class MissionTracker:
         self.last = None
         self.reason = None
         self.defer_publish=defer_publish
+        self.published=None
 
     def suspend(self,clear=False):
         (self.directory/SESSION_FILE).unlink(missing_ok=True)
         if clear:self.state.pop('mission_session',None)
 
     def keep_alive(self,game_map):
-        session=self.state.get('mission_session')
-        name=str(game_map.get('name') or '').replace('\\','/').rsplit('/',1)[-1]
-        if session and session['map']==name and session['mode']==game_map.get('mode') and game_map.get('phase') in ('warmup','live'):
-            from native_tradeups import atomic_write
-            atomic_write(self.directory/SESSION_FILE,'%d %d %d\n'%(session['index'],session['period'],int(self.now())))
-        else:self.suspend(clear=not name or game_map.get('phase')=='gameover')
+        self.suspend(clear=True)
 
     def session_plan(self,game_map,stats,player):
-        """Keep one compatible mission for the full match; a short lease also pins the GC/UI schema."""
-        name=str(game_map.get('name') or '').replace('\\','/').rsplit('/',1)[-1]
-        mode,phase=game_map.get('mode'),game_map.get('phase')
-        session=self.state.get('mission_session')
-        score=(game_map.get('team_ct') or {}).get('score',0)+(game_map.get('team_t') or {}).get('score',0)
-        kills=stats.get('kills',0)
-        if session and (session['map']!=name or session['mode']!=mode or kills<session['kills'] or score<session['score']):
-            session=None;self.state.pop('mission_session',None);self.last=None
-        key,mission=self.plan()
-        if session:
-            try:
-                variants=json.loads((self.directory/'cs2_gc_missions.json').read_text(encoding='utf-8'))['variants']
-                mission=variants[session['index']];key='%d:%d'%(session['period'],session['index'])
-            except (OSError,ValueError,KeyError,IndexError):session=None
-        if not session and mission and mission.get('kind') and mission.get('mode')==mode and (not mission.get('maps') or name in mission['maps']) and phase in ('warmup','live'):
-            period,index=(int(x) for x in key.split(':'))
-            session={'period':period,'index':index,'map':name,'mode':mode,'kills':kills,'score':score}
-        if session:
-            session.update(kills=kills,score=score)
-            self.state['mission_session']=session
-            if phase in ('warmup','live'):
-                from native_tradeups import atomic_write
-                atomic_write(self.directory/SESSION_FILE,'%d %d %d\n'%(session['index'],session['period'],int(self.now())))
-            else:self.suspend(clear=True)
-        else:self.suspend(clear=True)
-        return key,mission
+        """Missions no longer rotate under a running match, so there is nothing to pin."""
+        self.suspend(clear=True)
+        return self.plan()
+
+    def variants(self):
+        try:
+            return json.loads((self.directory / 'cs2_gc_missions.json').read_text(encoding='utf-8'))['variants']
+        except (OSError, ValueError, KeyError):
+            return []
+
+    def served(self):
+        try:
+            index, period = (int(x) for x in (self.directory / CURRENT_FILE).read_text().split()[:2])
+            return index, period
+        except (OSError, ValueError):
+            return None
+
+    def choice(self, variants):
+        """The mission the player is on: kept until completed, then the next variant."""
+        choice = self.state.get('mission_choice')
+        if not isinstance(choice, dict) or not 0 <= choice.get('index', -1) < len(variants):
+            served = self.served()
+            choice = {'index': served[0] if served and 0 <= served[0] < len(variants) else 0, 'gen': 0}
+            self.state['mission_choice'] = choice
+        path = self.directory / CHOICE_FILE
+        text = '%d\n' % choice['index']
+        try:
+            current = path.read_text()
+        except OSError:
+            current = None
+        if current != text:
+            from native_tradeups import atomic_write
+            atomic_write(path, text)
+        return choice
 
     def plan(self):
-        """(progress key, mission) of the current Armory rotation, from the DLL's cs2_gc_mission_current.txt."""
-        try:
-            variants = json.loads((self.directory / 'cs2_gc_missions.json').read_text(encoding='utf-8'))['variants']
-            index, period = (int(x) for x in (self.directory / CURRENT_FILE).read_text().split()[:2])
-        except (OSError, ValueError, KeyError):
-            return None, None
-        if not 0 <= index < len(variants): return None, None
-        return '%d:%d' % (period, index), variants[index]
+        """(progress key, mission) of the current mission once the DLL serves it."""
+        variants = self.variants()
+        if not variants: return None, None
+        choice = self.choice(variants)
+        served = self.served()
+        if served != self.published: self.publish()  # a new launch serves a new period: move the progress to it
+        if not served or served[0] != choice['index']:
+            return None, None  # the GC has not switched to the new mission yet
+        return 'gen%d:%d' % (choice['gen'], choice['index']), variants[choice['index']]
 
     def observe(self, provider, player, game_map, stats):
         """XP earned by mission tiers for this packet (0 when nothing changed)."""
         period, mission = self.session_plan(game_map,stats,player)
         if mission is None or not mission.get('kind'):
-            self.explain('no countable mission (the DLL has not written %s yet)' % CURRENT_FILE if mission is None
+            self.explain('no countable mission (waiting for the GC to serve the current mission in %s)' % CURRENT_FILE if mission is None
                          else 'mission %s is not a kill/round/match mission' % mission.get('mission'))
             self.last = None
             return 0
@@ -127,6 +137,12 @@ class MissionTracker:
         self.state['missions'][key] = after
         if before < goals[-1] <= after:
             self.state['missions_completed']=self.state.get('missions_completed',0)+1
+            # Completed: the next mission straight away (the DLL picks the choice file up on its next poll).
+            variants = self.variants()
+            choice = self.state.get('mission_choice') or {'index': 0, 'gen': 0}
+            if variants:
+                self.state['mission_choice'] = {'index': (choice['index'] + 1) % len(variants), 'gen': choice['gen'] + 1}
+                self.choice(variants)
         xp = sum(reward for goal, reward in zip(goals, rewards) if before < goal <= after)
         # User: missions also pay stars, 1 per 100 XP of each step reached (rounded up).
         stars = sum(-(-reward // 100) for goal, reward in zip(goals, rewards) if before < goal <= after)
@@ -137,15 +153,15 @@ class MissionTracker:
         return xp
 
     def publish(self):
+        """The current mission's progress, for the period the DLL serves it with, and the cumulative stars."""
         from native_tradeups import atomic_write
-        try:
-            variants = json.loads((self.directory / 'cs2_gc_missions.json').read_text(encoding='utf-8'))['variants']
-        except (OSError, ValueError, KeyError):
-            variants = []
+        variants = self.variants()
+        served = self.served()
+        self.published = served
         lines = []
-        for key, progress in sorted(self.state['missions'].items()):
-            period, _, index = key.partition(':')
-            if index.isdigit() and int(index) < len(variants):
-                lines.append('%d %s %d\n' % (variants[int(index)]['mission'], period, progress))
+        choice = self.state.get('mission_choice')
+        if variants and served and isinstance(choice, dict) and served[0] == choice.get('index') and served[0] < len(variants):
+            progress = self.state['missions'].get('gen%d:%d' % (choice['gen'], choice['index']), 0)
+            if progress: lines.append('%d %d %d\n' % (variants[served[0]]['mission'], served[1], progress))
         lines.append('stars %d\n' % self.state.get('mission_stars', 0))
         atomic_write(self.directory / PROGRESS_FILE, ''.join(lines))

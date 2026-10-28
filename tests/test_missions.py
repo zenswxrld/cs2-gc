@@ -9,7 +9,7 @@ import native_missions as nm
 from mission_tracker import MissionTracker
 
 BASE = 1791939600
-KEY = '%d:1' % BASE
+KEY = 'gen0:1'
 
 
 def template(mission, **fields):
@@ -101,18 +101,27 @@ class Tracking(unittest.TestCase):
         self.assertEqual(tracker.observe(*packet(kills=21)), 0)
         self.assertEqual(tracker.state['mission_stars'], 6)  # 1 star per 100 XP of each step reached
 
-    def test_armory_rotation_waits_until_the_active_match_finishes(self):
+    def test_a_completed_mission_is_replaced_by_the_next_and_progress_survives_restarts(self):
         folder, tracker = self.tracker({'mission': 11003, 'kind': 'kill', 'weapon': 'weapon_awp', 'mode': 'deathmatch',
                                         'maps': [], 'points': [2, 4], 'xp': [200, 200]})
         tracker.observe(*packet(kills=0)); tracker.observe(*packet(kills=1))
-        (folder / 'cs2_gc_mission_current.txt').write_text('0 %d\n' % (BASE + 900))  # rotated to a kind-less mission
-        self.assertEqual(tracker.observe(*packet(kills=2)), 200)
-        self.assertEqual(tracker.state['missions'], {KEY: 2})
-        self.assertTrue((folder/'cs2_gc_mission_session.txt').read_text().startswith('1 %d '%BASE))
-        tracker.observe(*packet(kills=2,phase='gameover'))
-        self.assertFalse((folder/'cs2_gc_mission_session.txt').exists())
-        self.assertEqual(tracker.observe(*packet(kills=0)),0)
-        self.assertNotIn('mission_session',tracker.state)
+        self.assertEqual(tracker.state['missions'], {KEY: 1})
+        self.assertEqual((folder / 'cs2_gc_mission_choice.txt').read_text(), '1\n')
+        # A restart: the DLL serves the same mission with a new period; the progress moves to it.
+        (folder / 'cs2_gc_mission_current.txt').write_text('1 %d\n' % (BASE + 86400))
+        restarted = MissionTracker(folder, tracker.state)
+        restarted.observe(*packet(kills=0))
+        self.assertEqual((folder / 'cs2_gc_mission_progress.txt').read_text(), '11003 %d 1\nstars 0\n' % (BASE + 86400))
+        restarted.observe(*packet(kills=1))
+        self.assertEqual(restarted.observe(*packet(kills=4)), 200)  # finished: the second step's XP (the first was paid at 2)
+        self.assertEqual(restarted.state['missions_completed'], 1)
+        self.assertEqual(restarted.state['mission_choice'], {'index': 0, 'gen': 1})
+        self.assertEqual((folder / 'cs2_gc_mission_choice.txt').read_text(), '0\n')  # the DLL serves this next
+        self.assertEqual(restarted.observe(*packet(kills=5)), 0)  # nothing counts until the GC serves it
+        (folder / 'cs2_gc_mission_current.txt').write_text('0 %d\n' % (BASE + 90000))
+        restarted.observe(*packet(kills=5))
+        self.assertEqual((folder / 'cs2_gc_mission_progress.txt').read_text(), 'stars 4\n')  # fresh mission, no progress
+        self.assertFalse((folder / 'cs2_gc_mission_session.txt').exists())
 
     def test_rounds_and_matches(self):
         _, rounds = self.tracker({'mission': 11004, 'kind': 'round', 'mode': 'competitive', 'maps': ['de_vertigo'],

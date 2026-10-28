@@ -26,7 +26,7 @@ Status reflects the repository and user test reports through **24 October 2026**
 | Complete ZIP / launcher | Direct launch of the separate copy was manually confirmed. The new automated DLL/schema/runtime/profile bootstrap and complete upgrade ZIP need target-client testing. |
 | Gun collections | New generator classifies real finish parameters, separates transferable patterns from per-gun artwork, retains history/IDs and distributes colour families. Reported unchanged official copies, duplicate looks, bad masks/overlays and palette quality require a collection-wide review. |
 | Family colour rolls | Backend selects and saves a colour variant with its matching displayed name. Confirm every advertised family uses a visibly distinct actual material/texture variant. |
-| Missions | Progress tracking, rotated mission templates and tier XP exist. Weapon/mode/map attribution and full native completion require live validation. |
+| Missions | One mission at a time; completing it generates the next (no Armory rotation). Progress, step XP and stars persist across restarts. Weapon/mode/map attribution and the native card after a completion need live validation. |
 | Trade-ups | Standard/mixed StatTrak baseline exists. Native Souvenir selection, custom collection membership, wear/weighting and edge cases need more live coverage. No claim that every custom pool can trade up. |
 | Multi-select selling | Native multi-select path is under validation. Preserve the working single-item sale path. |
 | Economy | Review deterministic purchase/sale loops, rarity-specific charm resale, wear-based skin values, fixed offers, gold costs and limits. Implemented safeguards are not a completed audit. |

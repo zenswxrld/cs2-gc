@@ -31,6 +31,10 @@ jobs:
       - name: Run core and helper checks
         shell: msys2 {0}
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Report failing tests as annotations
+        if: failure()
+        run: |
+          python tools/report_test_failures.py
       - name: Package complete ZIP and smoke-test bundled runtime
         run: python tools/package_release.py
       - uses: actions/upload-artifact@v4

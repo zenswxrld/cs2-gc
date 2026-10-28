@@ -1276,3 +1276,23 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   The page shows the operation's own agents. GC: agent rows with a loot list roll 55/28/12/5% by rarity rank (equal
   rarities share), then a uniform agent; LootTiers strips trailing digits from tier suffixes (ancient1/2 were
   rarity 0 = never dropped). The old Random Agent row only ever gave op09 ancient agents. Not verified live.
+- 28 Oct (Claude, PR #40): missions are no longer tied to the Armory (user: "once the mission is complete it auto
+  generates a new one, remove the link"). mission_tracker owns state['mission_choice'] {index, gen} and writes
+  cs2_gc_mission_choice.txt; a completion advances to the next variant. The DLL (MissionTick(now, wanted)) serves the
+  wanted variant with period = now (fresh each launch, never a future start), pushes 9226 only when it changes, and
+  writes cs2_gc_mission_current.txt; the 9200 Refresh marker now only moves the Armory. Progress is keyed
+  gen<N>:<variant>, so it survives restarts, and is published for the served period. Codex's per-match session pin
+  is retired (keep_alive/session_plan only delete the old session file). Cause of the earlier "SCAR kills do not
+  count": in build 35 Refresh changed the served mission without telling the helper (fixed in 36). The card
+  disappearing / not refreshing matched the unsolicited mid-session 9226 pushes, which now happen only after a
+  completion. Not verified live.
+- 28 Oct (Claude, PR #40) install size and rebuild time (user: 170 GB; "taking forever"; "not everyone will have
+  170gb spare"). preparation_cache FORMAT 2: fingerprints relative to the game folder and without file IDs, so moving
+  or copying the game keeps the cache; a matching format-1 cache is accepted once and rewritten. artwork_cache.py,
+  finish_storage.py and report_test_failures.py are light (not generation inputs); the format-1 heavy check accepts
+  the released ZIP's CRLF/LF artwork_cache.py digests so this update does not force a rebuild. New light step
+  finish_storage.compact (end of every preparation): indexes cached textures by the hard link to their loose copy
+  (cs2_gc_pack_index.json in cs2_gc_finishes, per-archive size+mtime stamps), deletes the loose copies once
+  artwork_archive's record proves the pack holds exactly them, then drops the cache's packed textures;
+  ArtworkCache.restore copies one back from the archive (sha256-checked) when needed, and prune() removes textures
+  a complete generation did not use. Steady state: about one copy (the pack) plus small cache records.

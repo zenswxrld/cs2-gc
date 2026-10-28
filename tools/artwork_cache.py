@@ -1,6 +1,6 @@
 """Content-addressed local artwork cache. No downloaded or shipped game assets."""
 from contextlib import contextmanager
-import hashlib,json,os,tempfile
+import hashlib,json,os,tempfile,time
 from pathlib import Path
 from native_codec import pipeline
 
@@ -37,14 +37,23 @@ def activate(root):
     previous=_ACTIVE
     cache=ArtworkCache(root) if pipeline() else None
     _ACTIVE=cache
-    try:yield cache
+    completed=False
+    try:
+        yield cache
+        completed=True
     finally:
         _ACTIVE=previous
-        if cache:print('Artwork cache: %d reused, %d generated; texture payloads stored on disk.' % (cache.hits,cache.misses),flush=True)
+        if cache:
+            # Only after a complete generation: every texture the current skins use was touched this run.
+            freed=cache.prune() if completed else 0
+            print('Artwork cache: %d reused, %d generated; %.1f GB of unused older textures removed.' % (
+                cache.hits,cache.misses,freed/2**30),flush=True)
 
 class ArtworkCache:
     def __init__(self,root):
-        self.root=Path(root);self.hits=self.misses=0;self.checked={}
+        self.root=Path(root);self.hits=self.misses=0;self.checked={};self.used=set();self._index=None
+        # The finish pack beside the cache holds every texture of the last complete generation (artwork_archive).
+        self.archive=self.root.parent/'cs2_gc_finishes'
         marker=self.root/'owner.json'
         if marker.is_file():
             if json.loads(marker.read_text(encoding='utf-8')).get('owner')!=OWNER:raise ValueError('Unowned artwork cache')
@@ -70,8 +79,27 @@ class ArtworkCache:
                'inputs':[(name,hashlib.sha256(data).hexdigest()) for name,data in inputs]}
         return hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
 
+    def index(self):
+        if self._index is None:
+            from finish_storage import read_index  # textures released to the pack by finish_storage.compact
+            self._index=read_index(self.archive)
+        return self._index
+
+    def restore(self,path,digest,size):
+        """Copy a texture this cache released back out of the packed archive, verified by its sha256."""
+        found=self.index().get(digest)
+        if not found or found[2]!=size:return False
+        archive,offset,length=found
+        try:
+            with archive.open('rb') as source:
+                source.seek(offset);data=source.read(length)
+        except OSError:return False
+        if len(data)!=size or hashlib.sha256(data).hexdigest()!=digest:return False
+        self.atomic(path,data);return True
+
     def valid(self,path,digest,size):
         try:
+            if not path.exists() and not self.restore(path,digest,size):return False
             stat=path.stat();stamp=(stat.st_size,stat.st_mtime_ns,stat.st_ino)
             if stat.st_size!=size:return False
             if self.checked.get(str(path))==stamp:return True
@@ -79,12 +107,16 @@ class ArtworkCache:
             with path.open('rb') as source:
                 for block in iter(lambda:source.read(1<<20),b''):check.update(block)
             if check.hexdigest()!=digest:return False
-            self.checked[str(path)]=stamp;return True
+            # Windows updates modification times coarsely (~15 ms): a same-size rewrite right after a check can keep
+            # the same stamp, so only files that have been unchanged for a while may skip the next hash.
+            if time.time_ns()-stat.st_mtime_ns>2_000_000_000:self.checked[str(path)]=stamp
+            return True
         except OSError:return False
 
     def blob(self,data):
         digest=hashlib.sha256(data).hexdigest();path=self.root/(digest+'.blob')
         if not self.valid(path,digest,len(data)):self.atomic(path,data)
+        self.used.add(path.name)
         return path
 
     def load(self,key):
@@ -101,6 +133,7 @@ class ArtworkCache:
                 if not self.valid(path,digest,row['size']):return None
                 row.pop('digest');row.pop('size')
                 row['file']=path
+            self.used.add(key+'.json');self.used.update(row['file'].name for row in rows)
             self.hits+=1;return rows
         except (OSError,ValueError,KeyError,TypeError):return None
 
@@ -110,4 +143,17 @@ class ArtworkCache:
             path=row['file']
             records.append({**{k:v for k,v in row.items() if k!='file'},'digest':path.stem,'size':path.stat().st_size})
         self.atomic(self.root/(key+'.json'),json.dumps(records,sort_keys=True).encode())
+        self.used.add(key+'.json');self.used.update(row['file'].name for row in rows)
         self.misses+=1
+
+    def prune(self):
+        """Remove cached records and textures this (complete) generation did not use. Returns bytes freed."""
+        freed=0
+        for path in self.root.iterdir():
+            if path.suffix not in ('.blob','.json') or path.name=='owner.json' or path.name in self.used:continue
+            try:
+                info=path.stat()
+                if info.st_nlink<=1:freed+=info.st_size
+                path.unlink()
+            except OSError:pass
+        return freed

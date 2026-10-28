@@ -30,6 +30,48 @@ class PreparationCaching(unittest.TestCase):
         (proxy/'cs2_gc_finish_ids.json').write_text('{"owned":30001}',encoding='utf-8')
         return game,proxy,helpers
 
+    def test_moving_the_game_to_another_folder_or_drive_keeps_the_cache(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as root:
+            game,proxy,_=self.fixture(root)
+            (proxy/'native_finishes.py').write_text('generator',encoding='utf-8')
+            PreparationCache(proxy,{'enabled':True},proxy).save()
+            moved=Path(root)/'other drive'/'game'
+            shutil.copytree(game,moved,copy_function=shutil.copy2)  # a copy keeps sizes and modification times
+            cache=PreparationCache(moved/'bin/win64',{'enabled':True},moved/'bin/win64')
+            self.assertTrue(cache.hit(),cache.reason)
+            (moved/'bin/win64/native_finishes.py').write_text('generator v2',encoding='utf-8')
+            self.assertFalse(cache.hit())  # a real change still rebuilds
+
+    def test_a_format_1_cache_is_accepted_once_and_converted(self):
+        with tempfile.TemporaryDirectory() as root:
+            game,proxy,helpers=self.fixture(root)
+            cache=PreparationCache(proxy,{'enabled':True},helpers)
+            legacy=dict(inputs=cache.inputs(portable=False),heavy=cache.inputs(heavy=True,portable=False),
+                        outputs=cache.outputs(False))
+            cache.path.write_text(json.dumps(legacy),encoding='utf-8')
+            self.assertTrue(cache.hit(),cache.reason)
+            self.assertEqual(json.loads(cache.path.read_text(encoding='utf-8'))['format'],2)
+            self.assertTrue(cache.hit())
+
+    def test_the_installed_release_cache_survives_this_update_without_a_rebuild(self):
+        import hashlib, preparation_cache
+        with tempfile.TemporaryDirectory() as root:
+            game,proxy,helpers=self.fixture(root)
+            old=b'old artwork cache\r\n'
+            (helpers/'artwork_cache.py').write_bytes(old)
+            cache=PreparationCache(proxy,{'enabled':True},helpers)
+            legacy=dict(inputs=cache.inputs(portable=False),heavy=cache.inputs(heavy=True,portable=False),
+                        outputs=cache.outputs(False))
+            cache.path.write_text(json.dumps(legacy),encoding='utf-8')
+            (helpers/'artwork_cache.py').write_bytes(b'new artwork cache')  # this update's changed copy
+            (helpers/'finish_storage.py').write_text('new helper',encoding='utf-8')
+            with patch.object(preparation_cache,'LEGACY_DIGESTS',[{},{'artwork_cache.py':hashlib.sha256(old).hexdigest()}]):
+                self.assertFalse(cache.hit())
+                self.assertTrue(cache.heavy_hit())  # schema and materials reused; only the quick UI steps re-run
+            (helpers/'native_finishes.py').write_text('a real generator change',encoding='utf-8')
+            self.assertFalse(cache.heavy_hit())
+
     def test_ui_helper_or_binary_changes_keep_the_schema_and_materials(self):
         with tempfile.TemporaryDirectory() as root:
             game,proxy,helpers=self.fixture(root)

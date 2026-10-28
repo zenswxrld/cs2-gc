@@ -173,7 +173,7 @@ void LocalGameCoordinator::EnableReplay(std::shared_ptr<const ReplayStore> store
                 gc.MissionTickLocked(static_cast<std::uint64_t>(std::time(nullptr)));
                 gc.m_missionsRequested = true;
                 if (gc.m_config.diagnostic) gc.m_config.diagnostic("missions: the game asked for missions (9225)");
-                gc.Reply(reply, gc.m_missionSchema); // the Armory-rotation mission instead of the recorded fortnight
+                gc.Reply(reply, gc.m_missionSchema); // the current local mission instead of the recorded fortnight
             }
             else
                 gc.Reply(reply, *store->Find(reply));
@@ -195,40 +195,32 @@ std::vector<std::vector<std::uint8_t>> LocalGameCoordinator::EncodedMissionProgr
 }
 
 std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::MissionTick(std::uint64_t unixSeconds,
-    std::optional<std::pair<std::uint32_t, std::uint32_t>> pinned)
+    std::optional<std::uint32_t> wanted)
 {
     std::lock_guard lock(m_mutex);
-    if (pinned && pinned->first >= m_missionPool.size()) pinned.reset();
-    if (m_missionPinned && !pinned) m_missionCycle.reset();
-    m_missionPinned = pinned;
+    if (wanted && *wanted >= m_missionPool.size()) wanted.reset();
+    if (wanted) m_missionWanted = wanted;
     MissionTickLocked(unixSeconds);
-    // A change made by a Refresh (inside the 9200 handler) is reported here too, so the helper follows it.
     return std::exchange(m_missionUnreported, std::nullopt);
 }
 
 std::optional<std::pair<std::uint32_t, std::uint32_t>> LocalGameCoordinator::MissionTickLocked(std::uint64_t unixSeconds)
 {
     if (m_missionPool.empty()) return std::nullopt;
-    const std::uint64_t interval = m_live ? std::max(10u, m_live->Items().Gameplay().armory_rotation_seconds) : 900u;
-    const auto cycle = unixSeconds / interval + m_missionOffset;
-    if (m_missionPinned ? m_missionActive == m_missionPinned : m_missionCycle == cycle) return std::nullopt;
-    m_missionCycle = cycle;
-    const auto variant = m_missionPinned ? m_missionPinned->first : static_cast<std::uint32_t>(cycle % m_missionPool.size());
-    // Keep a distinct period for Refresh, but never advertise a future start:
-    // the native client can hide a mission whose period has not begun yet.
-    const auto windowStart = unixSeconds / interval * interval;
-    const auto offset = std::min<std::uint64_t>(windowStart, m_missionOffset % interval);
-    const auto period = m_missionPinned ? m_missionPinned->second : static_cast<std::uint32_t>(windowStart - offset);
-    m_missionActive = std::pair{variant,period};
+    const auto variant = m_missionWanted && *m_missionWanted < m_missionPool.size() ? *m_missionWanted
+                       : m_missionActive && m_missionActive->first < m_missionPool.size() ? m_missionActive->first : 0u;
+    if (m_missionActive && m_missionActive->first == variant) return std::nullopt;
+    const auto period = static_cast<std::uint32_t>(unixSeconds);
+    m_missionActive = std::pair{variant, period};
     PbWriter list; list.Varint(1, period); list.Bytes(2, m_missionPool[variant]);
     PbWriter schema; schema.Message(1, list);
     m_missionSchema = schema.bytes();
-    if (m_missionsRequested) // the game already asked: push the new rotation's mission
+    if (m_missionsRequested) // the game already asked: push the next mission
         Reply(gc_msg::ECsgoGCMsg::k_EMsgGCCStrike15_v2_RecurringMissionSchema, m_missionSchema);
     if (m_config.diagnostic)
         m_config.diagnostic("missions: variant " + std::to_string(variant) + " period " + std::to_string(period) +
                             (m_missionsRequested ? " pushed to the game" : " ready for the game's request"));
-    m_missionUnreported = std::pair{variant, period};
+    m_missionUnreported = m_missionActive;
     return m_missionUnreported;
 }
 
@@ -244,7 +236,7 @@ void LocalGameCoordinator::SetMissions(std::vector<std::uint8_t> pool, std::vect
             while (entry.Next(part)) if (part.number == 2 && part.wire == 2) blob.assign(part.bytes.begin(), part.bytes.end());
             if (!blob.empty()) m_missionPool.push_back(std::move(blob));
         }
-        m_missionCycle.reset();
+        m_missionActive.reset();
     }
     const auto before = m_missionProgress;
     m_missionProgress = std::move(progress);
@@ -847,11 +839,10 @@ void LocalGameCoordinator::EnableContainers(std::shared_ptr<LiveInventory> inven
                 return;
             }
             if (!reader.Failed() && eventId>=RotationEventBase && eventId<=RotationEventBase+1000000) {
-                // The Armory page's Refresh button: the GC and the missions follow its rotation offset.
-                gc.m_missionOffset=static_cast<std::uint32_t>(eventId-RotationEventBase);
-                if (gc.m_armory) gc.m_armory->SetRotationOffset(gc.m_missionOffset);
-                gc.MissionTickLocked(static_cast<std::uint64_t>(std::time(nullptr)));
-                if (gc.m_config.diagnostic) gc.m_config.diagnostic("armory refresh: rotation offset "+std::to_string(gc.m_missionOffset));
+                // The Armory page's Refresh button: the GC Armory follows its rotation offset (missions do not).
+                const auto offset=static_cast<std::uint32_t>(eventId-RotationEventBase);
+                if (gc.m_armory) gc.m_armory->SetRotationOffset(offset);
+                if (gc.m_config.diagnostic) gc.m_config.diagnostic("armory refresh: rotation offset "+std::to_string(offset));
                 return;
             }
             if (reader.Failed() || eventId<CareEventBase || eventId>=CareEventBase+(1ull<<36)) { ++gc.m_ignored; return; }

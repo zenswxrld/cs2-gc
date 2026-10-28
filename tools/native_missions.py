@@ -1,10 +1,10 @@
-"""Missions that rotate with the Armory (user: "make the missions rotate with the armory").
+"""Locally generated missions, one at a time until completed.
 
 The recorded RecurringMissionSchema (cs2_gc_replay/9226.bin, the answer to 9225) has templates only for two weeks of
 October 2026. This builds a pool of mission variants from the playable templates: every combination of each template's
 random choices ("![a|b]" / "!![a|b]" resolved to one option, keeping the syntax), interleaved by template. The DLL
-serves variant (cycle % pool size) for the current Armory rotation, so the game shows exactly what the rewards helper
-counts, and switches when the Armory rotates or is refreshed.
+serves one variant at a time, chosen by the rewards helper (mission_tracker.py), and moves to the next when it is
+completed (user, 28 Oct: "once the mission is complete it auto generates a new one, remove the link" to the Armory).
 
 Outputs (next to the proxy): cs2_gc_missions.bin (pool: repeated {1: index, 2: template blob}) and
 cs2_gc_missions.json (what each variant counts). Template format: binary KeyValues, objects end with 0x0b.
@@ -182,8 +182,7 @@ class _Fixed:
 
 
 def build(recorded, gamemodes_text):
-    """(pool bytes, plan dict). The pool rotates with the Armory: the DLL serves variant (cycle % size) as the mission
-    of the current Armory rotation (cycle = now / armory_rotation_seconds + Refresh offset)."""
+    """(pool bytes, plan dict). The DLL serves the variant the helper chose; the next one follows a completion."""
     templates = [t for t in recorded_templates(recorded) if playable(t[2])]
     if not templates: raise ValueError('The recorded mission schema has no playable templates')
     mapgroups = mapgroups_from(gamemodes_text)
@@ -213,4 +212,4 @@ def prepare(proxy_directory, config):
     body, plan = build(recorded.read_bytes(), data.decode('utf-8', 'replace') if data else '')
     (proxy / SCHEMA_FILE).write_bytes(body)
     atomic_write(proxy / PLAN_FILE, json.dumps(plan, indent=1, sort_keys=True) + '\n')
-    return '%d mission variants written; they rotate with the Armory' % len(plan['variants'])
+    return '%d mission variants written; a new one follows each completed mission' % len(plan['variants'])

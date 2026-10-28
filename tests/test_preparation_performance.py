@@ -55,6 +55,46 @@ class ArtworkCaching(unittest.TestCase):
             store.version=('fixture-v2',store.version[1])
             self.assertIsNone(store.load(store.key(recipe,[('g_tPattern',b'original')])))
 
+    def test_packed_textures_leave_the_cache_and_come_back_from_the_archive(self):
+        import artwork_archive, finish_storage
+        with tempfile.TemporaryDirectory() as tmp:
+            game=Path(tmp)/'game';proxy=game/'bin/win64';proxy.mkdir(parents=True)
+            with patch.object(cache,'pipeline',return_value='fixture'):
+                store=cache.ArtworkCache(game/'cs2_gc_artwork_cache')
+            payload=b'texture-bytes'*1000
+            key=store.key({'kit':'k'},[]);blob=store.blob(payload)
+            store.save(key,[dict(binding='g_tPattern',stats={'changed_pixels':16,'palette':[[0,1,1,1]]},file=blob)])
+            mod=game/'cs2_gc_finishes';target=mod/'materials/art.vtex_c'
+            publish(target,blob)  # a hard link to the cached texture, as native_finishes writes it
+            (mod/'materials/other.vmat_c').write_bytes(b'material')
+            artwork_archive.pack(mod)
+            summary=finish_storage.compact(proxy)
+            self.assertIn('loose copies removed',summary)
+            self.assertFalse(target.exists() or (mod/'materials').exists())  # loose copies gone; the VPK keeps them
+            self.assertTrue((mod/'pak01_dir.vpk').is_file())
+            self.assertFalse(blob.exists())  # the cache keeps only its small record
+            with patch.object(cache,'pipeline',return_value='fixture'):
+                again=cache.ArtworkCache(game/'cs2_gc_artwork_cache')
+            rows=again.load(key)
+            self.assertIsNotNone(rows)
+            self.assertEqual(rows[0]['file'].read_bytes(),payload)  # restored from the packed archive, verified
+            rows[0]['file'].unlink()
+            archive=mod/'pak01_000.vpk';size=archive.stat().st_size
+            archive.write_bytes(b'x'*size)
+            with patch.object(cache,'pipeline',return_value='fixture'):
+                damaged=cache.ArtworkCache(game/'cs2_gc_artwork_cache')
+            self.assertIsNone(damaged.load(key))  # a changed archive is never trusted: regenerate
+
+    def test_loose_files_newer_than_the_pack_are_kept(self):
+        import artwork_archive, finish_storage
+        with tempfile.TemporaryDirectory() as tmp:
+            game=Path(tmp)/'game';proxy=game/'bin/win64';proxy.mkdir(parents=True)
+            mod=game/'cs2_gc_finishes';(mod/'a').mkdir(parents=True);(mod/'a/x.vtex_c').write_bytes(b'old')
+            artwork_archive.pack(mod)
+            (mod/'a/x.vtex_c').write_bytes(b'new data')  # generated after the pack: the pack does not hold it
+            self.assertIn('kept',finish_storage.compact(proxy))
+            self.assertEqual((mod/'a/x.vtex_c').read_bytes(),b'new data')
+
     def test_damaged_missing_or_partial_cache_regenerates(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(cache,'pipeline',return_value='fixture'):

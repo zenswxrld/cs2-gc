@@ -378,30 +378,30 @@ public:
             std::ifstream schemaFile(directory / "cs2_gc_missions.bin", std::ios::binary);
             schema.assign(std::istreambuf_iterator<char>(schemaFile), {});
             if (schema.empty()) return; // missions off or not prepared: keep the recorded replay
-            m_log.Write("missions: Armory-rotation mission pool loaded");
+            m_log.Write("missions: local mission pool loaded");
         }
         m_missionsLoaded = true; m_missionProgressText = text;
         m_gc.SetMissions(std::move(schema), std::move(progress));
         TickMissions(directory);
     }
 
-    // Missions rotate with the Armory: tell the rewards helper which variant and period are current.
+    // Tell the rewards helper which mission (variant) and period the game is being served.
     void TickMissions(const std::filesystem::path &directory)
     {
         const auto now = static_cast<std::uint64_t>(std::time(nullptr));
-        std::optional<std::pair<std::uint32_t, std::uint32_t>> pinned;
-        std::ifstream session(directory / "cs2_gc_mission_session.txt");
-        std::uint32_t variant{}, period{}; std::uint64_t heartbeat{};
-        if (session >> variant >> period >> heartbeat && heartbeat <= now && now - heartbeat <= 15)
-            pinned = std::pair{variant,period};
-        const auto current = m_gc.MissionTick(now,pinned);
+        // The helper's choice; it changes only when the current mission is completed.
+        std::optional<std::uint32_t> wanted;
+        std::ifstream choice(directory / "cs2_gc_mission_choice.txt");
+        std::uint32_t variant{};
+        if (choice >> variant) wanted = variant;
+        const auto current = m_gc.MissionTick(now, wanted);
         if (!current) return;
         const auto path = directory / "cs2_gc_mission_current.txt";
         const auto staging = directory / "cs2_gc_mission_current.txt.tmp";
         { std::ofstream file(staging, std::ios::trunc); file << current->first << ' ' << current->second << '\n'; }
         std::error_code ignored;
         std::filesystem::rename(staging, path, ignored);
-        m_log.Write("missions: Armory rotation mission variant " + std::to_string(current->first));
+        m_log.Write("missions: serving mission variant " + std::to_string(current->first));
     }
     void EnableLiveInventory(std::shared_ptr<LiveInventory> inventory, std::function<void()> afterChange)
     {

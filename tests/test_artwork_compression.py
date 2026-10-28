@@ -29,11 +29,27 @@ class LosslessArtwork(unittest.TestCase):
         original=kv3.write_resource(1,[['DATA',header]])+bytes(16)*(width*height//16)
         rgba=bytes((12,42,87,0,240,239,200,255))*(width*height//2)
         result=cm.owned_texture(original,rgba)
+        _,_,_,w,h,packed=cm.texture_payload(result)
+        self.assertEqual((w,h),(width,height));self.assertEqual(len(packed),width*height)
+        decoded=subprocess.run([os.environ['CS2_GC_TEXTURE_DECODER'],str(w),str(h)],input=packed,
+            stdout=subprocess.PIPE,check=True).stdout
+        self.assertLessEqual(max(abs(a-b) for a,b in zip(decoded,rgba)),8)
+        self.assertLess(len(result),len(rgba)//3)
+
+    def test_owned_texture_falls_back_to_bgra_without_the_encoder(self):
+        width=height=8
+        header=struct.pack('<HH4fHHHBBIII',1,0,0,0,0,1,width,height,1,20,1,0,8,0)
+        original=kv3.write_resource(1,[['DATA',header]])+bytes(16)*(width*height//16)
+        rgba=bytes(range(256))
+        saved=os.environ.get('CS2_GC_TEXTURE_DECODER')
+        os.environ['CS2_GC_TEXTURE_DECODER']=os.devnull+'-missing'
+        try:result=cm.owned_texture(original,rgba)
+        finally:
+            if saved is None:os.environ.pop('CS2_GC_TEXTURE_DECODER',None)
+            else:os.environ['CS2_GC_TEXTURE_DECODER']=saved
         w,h,bgra=f.read_vtex(result)
-        self.assertEqual((w,h),(width,height))
         expected=bytearray(rgba);expected[0::4],expected[2::4]=rgba[2::4],rgba[0::4]
-        self.assertEqual(bgra,expected)
-        self.assertLess(len(result),len(rgba)//4)
+        self.assertEqual((w,h,bgra),(width,height,expected))
 
 if __name__=='__main__':unittest.main()
 

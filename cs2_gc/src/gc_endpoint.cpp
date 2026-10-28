@@ -1631,7 +1631,8 @@ bool LocalGameCoordinator::ApplyLevelRewards(const std::function<void()> &afterC
 bool LocalGameCoordinator::EquipPet(std::uint64_t id,std::uint32_t accessory,const std::function<void()> &afterChange)
 {
     std::lock_guard lock(m_mutex);if(!m_live||!m_live->EquipPet(id,accessory))return false;
-    if(afterChange)afterChange();return true;
+    if(afterChange)afterChange();
+    return true;
 }
 
 std::string LocalGameCoordinator::PetSnapshot()

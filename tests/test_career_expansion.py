@@ -21,12 +21,14 @@ class Expansion(unittest.TestCase):
         self.assertEqual(music_store.patch_schema(changed),changed)
         import price_sheet as sheet
         tree=[('store',[('entries',[(name,[('item_link',name),('prices',[('AUD',price)])]) for name,price in
-            [('coupon - normal_musickit_capsule',710),('coupon - normal_stattrak_musickit_capsule',1135)]]),('store_banner_layout',[])])]
+            [('coupon - normal_musickit_capsule',710),('coupon - normal_stattrak_musickit_capsule',1135)]]),
+            ('store_banner_layout',[('200',[('custom_format','new')])])])]
         self.assertEqual(music_store.add_store(tree,changed),3)
         self.assertEqual(music_store.add_store(tree,changed),0)
         entries=dict(sheet.section(tree,'store','entries'))
         self.assertEqual(dict(dict(entries[offers[('two',True)][1]])['prices'])['AUD'],1135)
         layout=dict(sheet.section(tree,'store','store_banner_layout'))
+        self.assertEqual(dict(layout.pop('200'))['custom_format'],'coupon_new','a recorded new kit keeps its badge')
         self.assertTrue(layout and all(dict(row)['custom_format']=='coupon' for row in layout.values()),'GENERAL tab')
 
     def test_shades_keep_detail_neutrals_and_alpha_without_flattening(self):

@@ -1286,3 +1286,13 @@ command (no default RCON exposure). Still open: random bot names did not apply (
   count": in build 35 Refresh changed the served mission without telling the helper (fixed in 36). The card
   disappearing / not refreshing matched the unsolicited mid-session 9226 pushes, which now happen only after a
   completion. Not verified live.
+- 28 Oct (Claude, PR #40) install size and rebuild time (user: 170 GB; "taking forever"; "not everyone will have
+  170gb spare"). preparation_cache FORMAT 2: fingerprints relative to the game folder and without file IDs, so moving
+  or copying the game keeps the cache; a matching format-1 cache is accepted once and rewritten. artwork_cache.py,
+  finish_storage.py and report_test_failures.py are light (not generation inputs); the format-1 heavy check accepts
+  the released ZIP's CRLF/LF artwork_cache.py digests so this update does not force a rebuild. New light step
+  finish_storage.compact (end of every preparation): indexes cached textures by the hard link to their loose copy
+  (cs2_gc_pack_index.json in cs2_gc_finishes, per-archive size+mtime stamps), deletes the loose copies once
+  artwork_archive's record proves the pack holds exactly them, then drops the cache's packed textures;
+  ArtworkCache.restore copies one back from the archive (sha256-checked) when needed, and prune() removes textures
+  a complete generation did not use. Steady state: about one copy (the pack) plus small cache records.

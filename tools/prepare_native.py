@@ -106,6 +106,11 @@ def prepare(directory, force_rebuild=False):
     except (OSError, ValueError, KeyError) as error: print('Bot names skipped (bots keep their normal names): ' + str(error), flush=True)
     print(ensure_first_game_path(directory), flush=True)
     print(signatures(directory), flush=True)
+    try:
+        from finish_storage import compact
+        print('Finish storage: ' + compact(directory), flush=True)  # one copy on disk: the pack CS2 reads
+    except (OSError, ValueError) as error:
+        print('Finish storage: left unchanged (' + str(error) + ')', flush=True)
     cache.save()
     print('Preparation time: %.2fs (%s).' % (time.perf_counter()-started, 'cache hit' if cached else 'rebuilt'), flush=True)
     print('Native preparation complete; safe to start CS2.', flush=True)

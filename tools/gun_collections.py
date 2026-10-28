@@ -585,6 +585,30 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
     if lineup_path is not None:
         lineup_path.write_text(json.dumps({'version': VERSION, 'lineup': lineup, 'history': history},
                                           indent=1, sort_keys=True) + '\n', encoding='utf-8')
+    # User (29 Oct): colour shades only for the chase and one Classified skin per collection; every other
+    # skin is one colour. Shade variants already in the inventory keep rendering but no longer roll.
+    shaded, owned = set(), set()
+    for icon, entries in lineup.items():
+        top = [e for e in entries if 'donor' in e and e['tier'] == 'ancient']
+        classified = [e for e in entries if 'donor' in e and e['tier'] == 'legendary']
+        top += sorted(classified, key=lambda e: e['mode'] != 'family')[:1]
+        shaded.update(kit_name(icon, e) for e in top)
+    if lineup_path is not None:
+        try:
+            ids = json.loads((lineup_path.parent / 'cs2_gc_finish_ids.json').read_text(encoding='utf-8'))
+            held = set(re.findall(r'"paint_kit"\s+"(\d+)"',
+                                  (lineup_path.parent / 'cs2_gc_inventory.txt').read_text(encoding='utf-8', errors='replace')))
+            owned = {name for name, kit_id in ids.items() if str(kit_id) in held}
+        except (OSError, ValueError, AttributeError):
+            owned = set()
+
+    def shade_themes(icon, entry):
+        from colour_families import expand
+        name = kit_name(icon, entry)
+        return [t for t in expand(entry.get('themes', ())) if name in shaded or t in entry.get('themes', ())
+                or kit_name(icon, entry, t) in owned]
+    prewarm(source, kits, kit_path, [dict(e, themes=shade_themes(icon, e)) for icon, entries in lineup.items()
+                                     for e in entries if 'donor' in e])
     base_rarities = weapon_rarity_tags(source_text)
 
     def values_for(donor, tier, weapon, path):
@@ -630,34 +654,40 @@ def build(source_text, kits, titles, kit_path, source, families, lineup_path=Non
                 variants=[name]
                 for theme in expand(entry['themes']) [1:]:
                     variant=kit_name(icon,entry,theme)
+                    if name not in shaded and variant not in owned:continue
                     shade_path=material(donor,theme,detail,palette_source,pattern_source,effect_source)
                     if shade_path is None:continue
                     if variant not in made:
                         new_kits.append((variant,colour_title(title,theme),values_for(donor,tier,weapon,shade_path)));made.add(variant)
-                    variants.append(variant)
+                    if name in shaded:variants.append(variant)
                 if len(variants)>1:families[name]=variants
             return name
-        variants, first = [], None
-        palettes = []
-        from colour_families import expand
-        for theme in expand(entry['themes']) if shades else entry['themes']:
-            path = material(donor, theme, detail, palette_source,pattern_source,effect_source)
-            if path is None and not authored:
-                path = material(donor, theme)
-                repair_fallbacks.add(name)
-            elif path and not authored:
-                repaired_existing.add(name)
-            if path is None: continue
-            if authored:
-                from collection_detail import palettes_distinct
-                palette = report['colours'][material_name(donor,theme,True,palette_source,pattern_source,effect_source)]['to']
-                if any(not palettes_distinct(palette,previous) for previous in palettes): continue
-                palettes.append(palette)
-            variant = kit_name(icon, entry, theme)
-            if variant not in made:
-                new_kits.append((variant, colour_title(title,theme), values_for(donor, tier, weapon, path)))
-                made.add(variant)
-            variants.append(variant); first = first or path
+        from colour_families import expand, split as split_shade
+        # A family that would fall below three colours without shades keeps them, so no collection loses a slot.
+        for all_shades in dict.fromkeys((name in shaded or not shades, True)):
+            variants, first = [], None
+            palettes = []
+            for theme in expand(entry['themes']) if shades else entry['themes']:
+                variant = kit_name(icon, entry, theme)
+                rolled = all_shades or not split_shade(theme)[1]
+                if not rolled and variant not in owned: continue
+                path = material(donor, theme, detail, palette_source,pattern_source,effect_source)
+                if path is None and not authored:
+                    path = material(donor, theme)
+                    repair_fallbacks.add(name)
+                elif path and not authored:
+                    repaired_existing.add(name)
+                if path is None: continue
+                if authored:
+                    from collection_detail import palettes_distinct
+                    palette = report['colours'][material_name(donor,theme,True,palette_source,pattern_source,effect_source)]['to']
+                    if any(not palettes_distinct(palette,previous) for previous in palettes): continue
+                    palettes.append(palette)
+                if variant not in made:
+                    new_kits.append((variant, colour_title(title,theme), values_for(donor, tier, weapon, path)))
+                    made.add(variant)
+                if rolled: variants.append(variant); first = first or path
+            if len(variants) >= 3: break
         if len(variants) < 3: return None
         if name not in made:
             new_kits.append((name, clean_title(title), values_for(donor, tier, weapon, first)))

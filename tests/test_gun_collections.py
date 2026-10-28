@@ -330,6 +330,25 @@ class DetailRebuild(unittest.TestCase):
             again=gc.build(text,kits,titles,finishes.kit_path,source,{},lineup_path=path,icons=['forged'])
             self.assertEqual(again[4],made[4])
             self.assertEqual(json.loads(path.read_text())['history'],saved['history'])
+            # Shades only for the chase and one Classified skin; lower tiers are one colour each.
+            from colour_families import split
+            lower=('_mythical','_rare','_uncommon')
+            self.assertFalse([n for n,_,_ in made[0] if n.startswith('gc4') and split(n.rsplit('_',1)[0]+'_'+n.rsplit('_',1)[1].title())[1]
+                              and any(t in n for t in lower)])
+            self.assertFalse([k for k in families if k.startswith('gc4') and any(t in k for t in lower)])
+            classified=[k for k,values in families.items() if k.startswith('gc4') and '_legendary' in k
+                        and any(split(v.rsplit('_',2)[-2].title()+'_'+v.rsplit('_',1)[1].title())[1] for v in values)]
+            self.assertLessEqual(len(classified),1)
+            # An owned shade of a one-colour skin still renders, but no longer rolls.
+            entry=next(e for e in saved['lineup']['forged'] if e['tier']=='mythical' and e['mode']=='fixed')
+            shade=gc.kit_name('forged',entry,entry['themes'][0]+'_Deep')
+            (Path(temp)/'cs2_gc_finish_ids.json').write_text(json.dumps({shade:4242}))
+            (Path(temp)/'cs2_gc_inventory.txt').write_text('"items" { "1" { "paint_kit" "4242" } }')
+            rolled={}
+            kept=gc.build(text,kits,titles,finishes.kit_path,source,rolled,lineup_path=path,icons=['forged'])
+            self.assertIn(shade,{n for n,_,_ in kept[0]})
+            self.assertNotIn(shade,{v for values in rolled.values() for v in values})
+            self.assertEqual(kept[4],made[4])
 
     def test_laurel_steel_review_changes_colour_channels_without_changing_artwork(self):
         from collection_channel_palettes import channels

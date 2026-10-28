@@ -11,6 +11,8 @@ def files():
         'These are private saves: they contain your local profile. Keep them locally.\r\n').encode()
     result['CS2 GC Settings/Edit Rewards.cmd']=('@echo off\r\ncd /d "%~dp0.."\r\n'
         '"game\\bin\\win64\\cs2_gc_python\\python.exe" -B "game\\bin\\win64\\settings_editor.py"\r\n').encode()
+    result['CS2 GC Settings/Edit Settings.cmd']=('@echo off\r\ncd /d "%~dp0.."\r\n'
+        '"game\\bin\\win64\\cs2_gc_python\\python.exe" -B "game\\bin\\win64\\settings_editor.py" --all\r\n').encode()
     return result
 
 def install(root):

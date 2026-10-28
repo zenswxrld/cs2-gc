@@ -88,7 +88,7 @@ def add_store(tree,source):
     wanted=set(wanted)
     for index,entry in sheet.section(tree,'store','store_banner_layout'):
         if index in wanted and isinstance(entry,list):
-            entry[:]=[(k,'coupon' if k=='custom_format' and v=='single' else v) for k,v in entry]
+            entry[:]=[(k,{'single':'coupon','new':'coupon_new'}.get(v,v) if k=='custom_format' else v) for k,v in entry]
     return added
 
 def prepare(directory,config):

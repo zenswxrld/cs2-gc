@@ -36,11 +36,6 @@ Manifest references:
 
 SteamDB is a third-party index; DepotDownloader and your Steam account obtain the actual files from Steam. Historical download availability is controlled by Steam. If a download returns access denied or manifest unavailable, retain the exact error. No unverified manifest or third-party game-file mirror is a substitute.
 
-## Steam beta selection
-
-Steam exposes version branches under **CS2 → Properties → Game Versions & Betas**. The 1.41.9.1 branch was listed at build 25947352 when checked, while the supported tested hotfix is 25966348. Do not assume selecting that branch produces the exact supported files.
-
-[Valve's branch instructions](https://partner.steamgames.com/doc/store/application/branches).
 
 ## Keeping the mod copy stable
 

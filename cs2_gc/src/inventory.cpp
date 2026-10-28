@@ -112,7 +112,8 @@ std::string Inventory::PetSnapshot() const
     std::ostringstream out;out << "{\"selected\":\"" << (m_activePet?CustomItemIdBase+m_activePet:0) << "\",\"pets\":[";bool comma=false;
     for(const auto &p:m_items)if(p.petSeed)
     {
-        if(comma)out<<',';comma=true;
+        if(comma)out<<',';
+        comma=true;
         out << "{\"id\":\"" << CustomItemIdBase+p.id << "\",\"seed\":" << p.petSeed << ",\"breed\":" << p.petBreed << ",\"stage\":" << p.petStage
             << ",\"age\":" << p.petAge << ",\"hatch_at\":" << p.petHatchAt << ",\"accessory\":" << p.petAccessory << '}';
     }
